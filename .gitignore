@@ -14,7 +14,8 @@ viceroy.toml
 
 # Frontend
 node_modules/
-web/dist/
+web/dist/*
+!web/dist/.keep
 web/.vite/
 e2e/test-results/
 e2e/playwright-report/
