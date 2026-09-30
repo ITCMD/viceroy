@@ -63,7 +63,7 @@ JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id
 WHERE t.household_id = sqlc.arg(household_id) AND t.created_at >= sqlc.arg(created_since)
   AND t.date >= sqlc.arg(from_date) AND t.amount_cents <= sqlc.arg(max_amount)
-  AND t.source != 'manual' AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+  AND t.source NOT IN ('manual', 'import') AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
   AND NOT EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id)
 ORDER BY t.id;
 

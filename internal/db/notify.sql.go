@@ -194,7 +194,7 @@ JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id
 WHERE t.household_id = ?1 AND t.created_at >= ?2
   AND t.date >= ?3 AND t.amount_cents <= ?4
-  AND t.source != 'manual' AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+  AND t.source NOT IN ('manual', 'import') AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
   AND NOT EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id)
 ORDER BY t.id
 `

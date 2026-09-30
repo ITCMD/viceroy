@@ -61,7 +61,7 @@ var keywordTypes = []struct {
 	{[]string{"mortgage", "heloc"}, Mortgage},
 	{[]string{"loan", "auto finance", "student"}, Loan},
 	{[]string{"credit", "visa", "mastercard", "amex", "card", "discover"}, CreditCard},
-	{[]string{"401k", "401(k)", "403b", "ira", "roth", "brokerage", "invest", "hsa", "stock", "retirement"}, Investment},
+	{[]string{"401k", "401(k)", "403b", "ira", "roth", "brokerage", "invest", "hsa", "stock", "retirement", "pension", "457"}, Investment},
 	{[]string{"saving", "money market", "cd "}, Savings},
 	{[]string{"checking", "chk", "spend"}, Checking},
 }
@@ -86,6 +86,11 @@ func InferType(name string, balanceCents int64) string {
 		return CreditCard
 	}
 	return Checking
+}
+
+// HasTypeKeyword reports whether the name alone decides the type in InferType.
+func HasTypeKeyword(name string) bool {
+	return InferType(name, 0) != Checking || strings.Contains(" "+strings.ToLower(name)+" ", "checking")
 }
 
 var maskRe = regexp.MustCompile(`(?i)(?:\((?:\.{0,3}|x*)(\d{4})\)|(?:\.{2,}|x+|#|-|\s)(\d{4}))\s*$`)

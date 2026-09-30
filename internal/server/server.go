@@ -74,6 +74,7 @@ func (s *Server) Handler() http.Handler {
 			s.reportRoutes(r)
 			s.notifyRoutes(r)
 			s.chatRoutes(r)
+			s.importRoutes(r)
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")
@@ -303,7 +304,11 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	return readJSONLimit(w, r, v, 1<<20)
+}
+
+func readJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")

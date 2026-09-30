@@ -22,7 +22,7 @@ export type Transaction = {
   needs_review: boolean;
   pending: boolean;
   provisional: boolean;
-  source: "manual" | "simplefin" | "email";
+  source: "manual" | "simplefin" | "email" | "import";
   has_linked: boolean;
   linked_txn_id: number | null;
   goal_id: number | null;

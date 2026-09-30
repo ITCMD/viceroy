@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ListFilter, Plus, Trash2 } from "lucide-react";
+import { ListFilter, Plus, Trash2, Upload } from "lucide-react";
 import { useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader, Switch } from "@/components/ui";
 import { accountsQuery, useAccountsMutation } from "@/features/accounts/api";
 import { categoriesQuery, tagsQuery, useTxnMutation } from "@/features/transactions/api";
 import { EmailSettings } from "@/features/email/EmailSettings";
+import { MonarchImportDialog } from "@/features/import/MonarchImportDialog";
 import { NotificationSettingsCard } from "@/features/notifications/NotificationSettingsCard";
 import { api } from "@/lib/api";
 import { BudgetSettingsCard } from "./BudgetSettingsCard";
@@ -50,12 +51,32 @@ export function SettingsPage() {
         <AccountsCard />
         <BudgetSettingsCard />
         <RulesCard />
+        <ImportCard />
         <div id="notifications" className="scroll-mt-16">
           <NotificationSettingsCard />
         </div>
         <EmailSettings />
       </div>
     </>
+  );
+}
+
+function ImportCard() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card
+      title="Import"
+      action={
+        <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+          <Upload size={14} /> Import from Monarch
+        </Button>
+      }
+    >
+      <p className="text-sm text-muted">
+        Bring in your history from Monarch Money's CSV exports: transactions with their categories, notes and tags, plus account balance history.
+      </p>
+      <MonarchImportDialog open={open} onOpenChange={setOpen} />
+    </Card>
   );
 }
 

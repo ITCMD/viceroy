@@ -75,6 +75,7 @@ function Details({
           {t.pending && <Badge>{pendingLabel(t)}</Badge>}
           {t.source === "manual" && !t.provisional && <Badge>Manual</Badge>}
           {t.source === "email" && !t.pending && <Badge>Email alert</Badge>}
+          {t.source === "import" && <Badge>Imported</Badge>}
           {t.hidden && <Badge>Hidden</Badge>}
         </div>
       </div>

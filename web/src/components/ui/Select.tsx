@@ -5,14 +5,15 @@ import { useId, type SelectHTMLAttributes } from "react";
 /** Native select styled like Field (native keeps mobile pickers and a11y for free). */
 export function Select({
   label,
+  hideLabel,
   options,
   className,
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; options: { value: string; label: string }[] }) {
+}: SelectHTMLAttributes<HTMLSelectElement> & { label: string; hideLabel?: boolean; options: { value: string; label: string }[] }) {
   const id = useId();
   return (
     <div className={clsx("flex flex-col gap-1", className)}>
-      <label htmlFor={id} className="text-[13px] font-medium text-text">
+      <label htmlFor={id} className={hideLabel ? "sr-only" : "text-[13px] font-medium text-text"}>
         {label}
       </label>
       <div className="relative">

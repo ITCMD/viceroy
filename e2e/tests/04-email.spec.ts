@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const shots = process.env.SCREENSHOT_DIR ?? "test-results/screens";
 const shot = (page: Page, name: string) => page.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
-const fakeImap = "http://127.0.0.1:18432";
+const fakeImap = "http://127.0.0.1:28432";
 const admin = { email: "admin@example.com", password: "correct horse battery" };
 
 test.describe.configure({ mode: "serial" });
@@ -38,7 +38,7 @@ test("connect a mailbox and list emails to review", async ({ page }) => {
   await dialog.getByLabel("Email address or username").fill("test@example.com");
   await dialog.getByLabel("App password").fill("wrong");
   await dialog.getByLabel("IMAP server").fill("127.0.0.1");
-  await dialog.getByLabel("Port").fill("18431");
+  await dialog.getByLabel("Port").fill("28431");
   await dialog.getByLabel("Security").selectOption("none");
   await dialog.getByLabel("Folder or label").fill("INBOX");
   await dialog.getByRole("button", { name: "Connect" }).click();
