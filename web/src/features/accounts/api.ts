@@ -96,3 +96,8 @@ export function accountSubtitle(a: Account) {
   const parts = [a.is_manual ? "Manual" : a.institution_name || "Linked", a.mask && `••${a.mask}`];
   return parts.filter(Boolean).join(" · ");
 }
+
+/** Name plus "••1234" unless the name already shows the last four digits. */
+export function accountLabel(a: { name: string; mask: string }) {
+  return a.mask && !a.name.includes(a.mask) ? `${a.name} ••${a.mask}` : a.name;
+}

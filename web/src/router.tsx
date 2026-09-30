@@ -5,6 +5,8 @@ import { navItems } from "@/components/nav";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { SetupPage } from "@/features/auth/SetupPage";
 import { AccountsPage } from "@/features/accounts/AccountsPage";
+import { SettingsPage } from "@/features/settings/SettingsPage";
+import { TransactionsPage } from "@/features/transactions/TransactionsPage";
 import { ComingSoon } from "@/features/placeholders/ComingSoon";
 import { loadSession } from "@/lib/session";
 
@@ -50,6 +52,8 @@ const phases: Record<string, number> = {
 
 const pages: Record<string, () => React.ReactNode> = {
   "/accounts": AccountsPage,
+  "/transactions": TransactionsPage,
+  "/settings": SettingsPage,
 };
 
 const pageRoutes = navItems.map((item) =>

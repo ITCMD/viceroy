@@ -3,7 +3,7 @@ import clsx from "clsx";
 import { AlertTriangle, ChevronRight, Landmark, Plus, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AreaChart } from "@/components/charts/AreaChart";
-import { Badge, Button, Card, EmptyState, FormError, MoneyText, PageHeader, Tabs } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, FormError, MoneyText, PageHeader, Segmented, Tabs } from "@/components/ui";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import { AccountSheet } from "./AccountSheet";
@@ -163,18 +163,7 @@ function NetWorthCard() {
             <MoneyText cents={Math.abs(change)} /> <span className="text-muted">over {label}</span>
           </div>
         </div>
-        <div className="flex rounded-lg border border-border p-0.5" role="group" aria-label="Time range">
-          {ranges.map((r) => (
-            <button
-              key={r.days}
-              onClick={() => setDays(r.days)}
-              aria-pressed={r.days === days}
-              className={clsx("rounded-md px-2.5 py-1 text-xs font-medium", r.days === days ? "bg-surface-2 text-text" : "text-muted hover:text-text")}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Time range" value={days} onChange={setDays} items={ranges.map((r) => ({ value: r.days, label: r.label }))} />
       </div>
       <div className="mt-3">
         <AreaChart points={points} label="Net worth" />

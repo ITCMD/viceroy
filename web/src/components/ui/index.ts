@@ -10,3 +10,8 @@ export { Dialog, Sheet } from "./Dialog";
 export { Select } from "./Select";
 export { Switch } from "./Switch";
 export { Tabs } from "./Tabs";
+export { CategoryIcon, CategoryPill } from "./CategoryPill";
+export { CategoryPicker } from "./CategoryPicker";
+export { TagInput } from "./TagInput";
+export { TextArea } from "./TextArea";
+export { Segmented } from "./Segmented";

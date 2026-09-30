@@ -1,5 +1,6 @@
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  /** `data` is the parsed JSON error body, for endpoints that return details alongside `error`. */
+  constructor(public status: number, message: string, public data: Record<string, unknown> = {}) {
     super(message);
   }
 }
@@ -16,7 +17,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   });
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, data.error ?? `Request failed (${res.status})`);
+  if (!res.ok) throw new ApiError(res.status, data.error ?? `Request failed (${res.status})`, data);
   return data as T;
 }
 

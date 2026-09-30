@@ -239,7 +239,7 @@ func TestSyncCategorizesAndLinksPending(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	e.fake.SetScenario("posted")
+	e.fake.SetScenario("initial+posted")
 	if err := e.svc.Sync(e.ctx, c.ID); err != nil {
 		t.Fatal(err)
 	}
