@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader, Switch } from "@/components/ui";
 import { accountsQuery, useAccountsMutation } from "@/features/accounts/api";
 import { categoriesQuery, tagsQuery, useTxnMutation } from "@/features/transactions/api";
+import { EmailSettings } from "@/features/email/EmailSettings";
 import { api } from "@/lib/api";
 import { RuleDialog } from "./RuleDialog";
 import { fieldLabels, opLabels, rulesQuery, type Rule } from "./rules";
@@ -43,6 +44,7 @@ export function SettingsPage() {
       <div className="mx-auto flex max-w-4xl flex-col gap-4 p-4 md:p-6">
         <AccountsCard />
         <RulesCard />
+        <EmailSettings />
         <p className="text-[13px] text-muted">Notification, household and AI settings arrive in a later phase.</p>
       </div>
     </>

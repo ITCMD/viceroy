@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link2, Unlink } from "lucide-react";
+import { Link2, Mail, Unlink } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, CategoryPicker, Field, FormError, MoneyText, Sheet, Switch, TagInput, TextArea } from "@/components/ui";
 import { accountLabel } from "@/features/accounts/api";
+import { EmailViewer } from "@/features/email/EmailSettings";
 import { api } from "@/lib/api";
 import {
   categoriesQuery,
   linkCandidatesQuery,
+  pendingLabel,
   shortDate,
   similarQuery,
   sourceLabels,
@@ -14,6 +16,7 @@ import {
   transactionQuery,
   useTxnMutation,
   type Transaction,
+  type TxnEmail,
   type TxnSummary,
 } from "./api";
 
@@ -23,12 +26,25 @@ export function TransactionSheet({ id, onClose, onSelect }: { id: number | null;
   const t = data?.transaction;
   return (
     <Sheet open={id !== null} onOpenChange={(o) => !o && onClose()} title={t?.merchant ?? ""}>
-      {t && t.id === id && <Details t={t} linked={data.linked} onClose={onClose} onSelect={onSelect} />}
+      {t && t.id === id && <Details t={t} linked={data.linked} alert={data.email} onClose={onClose} onSelect={onSelect} />}
     </Sheet>
   );
 }
 
-function Details({ t, linked, onClose, onSelect }: { t: Transaction; linked: Transaction[]; onClose: () => void; onSelect: (id: number) => void }) {
+function Details({
+  t,
+  linked,
+  alert,
+  onClose,
+  onSelect,
+}: {
+  t: Transaction;
+  linked: Transaction[];
+  alert: TxnEmail | null;
+  onClose: () => void;
+  onSelect: (id: number) => void;
+}) {
+  const [viewingEmail, setViewingEmail] = useState(false);
   const [merchant, setMerchant] = useState(t.merchant);
   const [notes, setNotes] = useState(t.notes);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -53,8 +69,9 @@ function Details({ t, linked, onClose, onSelect }: { t: Transaction; linked: Tra
           <span>{shortDate(t.date)}</span>
           <span>·</span>
           <span>{accountLabel({ name: t.account_name, mask: t.account_mask })}</span>
-          {t.pending && <Badge>{t.provisional ? "Pending entry" : "Pending"}</Badge>}
+          {t.pending && <Badge>{pendingLabel(t)}</Badge>}
           {t.source === "manual" && !t.provisional && <Badge>Manual</Badge>}
+          {t.source === "email" && !t.pending && <Badge>Email alert</Badge>}
           {t.hidden && <Badge>Hidden</Badge>}
         </div>
       </div>
@@ -79,6 +96,12 @@ function Details({ t, linked, onClose, onSelect }: { t: Transaction; linked: Tra
           <div className="mt-0.5 break-words font-mono text-xs text-muted" data-testid="original-statement">
             {t.description}
           </div>
+          {alert && (
+            <button type="button" onClick={() => setViewingEmail(true)} className="mt-1 flex max-w-full items-center gap-1.5 text-xs text-accent hover:underline" data-testid="txn-email">
+              <Mail size={12} className="shrink-0" /> <span className="truncate">From email: {alert.subject || alert.from_addr}</span>
+            </button>
+          )}
+          <EmailViewer message={viewingEmail ? alert : null} onClose={() => setViewingEmail(false)} />
         </div>
         <div>
           <CategoryPicker label="Category" groups={cats?.groups ?? []} value={t.category_id} onChange={(v) => patch.mutate({ category_id: v })} />

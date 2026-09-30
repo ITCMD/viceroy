@@ -6,7 +6,8 @@ import { Badge, Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader, S
 import { accountLabel, accountsQuery, canAddTo } from "@/features/accounts/api";
 import { AddTransactionDialog } from "./AddTransactionDialog";
 import { TransactionSheet } from "./TransactionSheet";
-import { dayLabel, transactionsQuery, type Transaction, type TxnFilters } from "./api";
+import { dayLabel, pendingLabel, transactionsQuery, type Transaction, type TxnFilters } from "./api";
+import { EmailReviewBanner } from "@/features/email/EmailReviewBanner";
 
 const views: { value: NonNullable<TxnFilters["view"]>; label: string }[] = [
   { value: "all", label: "All" },
@@ -57,6 +58,7 @@ export function TransactionsPage() {
         }
       />
       <div className="mx-auto flex max-w-4xl flex-col gap-4 p-4 md:p-6">
+        <EmailReviewBanner />
         <div className="flex flex-wrap items-center gap-2">
           <label className="relative min-w-48 flex-1">
             <span className="sr-only">Search transactions</span>
@@ -166,7 +168,7 @@ export function TransactionRow({ txn: t, onClick }: { txn: Transaction; onClick:
       </span>
       <span className="flex shrink-0 flex-col items-end gap-0.5">
         <MoneyText cents={t.amount_cents} colored className={clsx("text-sm font-medium", t.hidden && "text-muted line-through")} />
-        {t.pending && <Badge>{t.provisional ? "Pending entry" : "Pending"}</Badge>}
+        {t.pending && <Badge>{pendingLabel(t)}</Badge>}
       </span>
     </button>
   );

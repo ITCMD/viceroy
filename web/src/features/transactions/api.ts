@@ -80,7 +80,7 @@ export const transactionsQuery = (f: TxnFilters) =>
 export const transactionQuery = (id: number) =>
   queryOptions({
     queryKey: ["transactions", "detail", id],
-    queryFn: () => api.get<{ transaction: Transaction; linked: Transaction[] }>(`/transactions/${id}`),
+    queryFn: () => api.get<{ transaction: Transaction; linked: Transaction[]; email: TxnEmail | null }>(`/transactions/${id}`),
   });
 
 export const similarQuery = (id: number) =>
@@ -140,4 +140,13 @@ export function shortDate(date: string) {
 export function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** The alert email an email-sourced transaction came from. */
+export type TxnEmail = { id: number; from_addr: string; from_name: string; subject: string; received_at: number };
+
+/** Badge text for a pending row: email alerts and manual pending entries are stand-ins. */
+export function pendingLabel(t: { source: string; provisional: boolean }) {
+  if (t.source === "email") return "Email alert";
+  return t.provisional ? "Pending entry" : "Pending";
 }
