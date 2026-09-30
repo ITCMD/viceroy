@@ -44,7 +44,7 @@ const appRoute = createRoute({
 });
 
 const phases: Record<string, number> = {
-  "/": 5, "/accounts": 2, "/transactions": 3, "/budget": 4, "/reports": 5, "/goals": 4, "/settings": 6,
+  "/": 6, "/accounts": 2, "/transactions": 3, "/budget": 5, "/reports": 6, "/goals": 5, "/settings": 7,
 };
 
 const pageRoutes = navItems.map((item) =>
