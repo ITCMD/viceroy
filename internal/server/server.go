@@ -18,6 +18,7 @@ import (
 	"viceroy/internal/auth"
 	"viceroy/internal/config"
 	"viceroy/internal/db"
+	"viceroy/internal/syncer"
 )
 
 const sessionCookie = "viceroy_session"
@@ -29,12 +30,13 @@ type Server struct {
 	web     fs.FS
 	limiter *loginLimiter
 	log     *slog.Logger
+	sync    *syncer.Service
 }
 
-func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger) *Server {
+func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger, sync *syncer.Service) *Server {
 	return &Server{
 		cfg: cfg, db: conn, auth: auth.New(conn), web: web,
-		limiter: newLoginLimiter(10, 15*time.Minute), log: log,
+		limiter: newLoginLimiter(10, 15*time.Minute), log: log, sync: sync,
 	}
 }
 
@@ -57,7 +59,7 @@ func (s *Server) Handler() http.Handler {
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireUser)
-			// Authenticated feature routes are mounted here as they are built.
+			s.accountRoutes(r)
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")
@@ -96,11 +98,19 @@ func requireCSRFHeader(next http.Handler) http.Handler {
 }
 
 type userKey struct{}
+type householdKey struct{}
 
 // CurrentUser returns the authenticated user set by requireUser.
 func CurrentUser(r *http.Request) db.User {
 	u, _ := r.Context().Value(userKey{}).(db.User)
 	return u
+}
+
+// HouseholdID returns the current user's household, set by requireUser. All feature data is
+// scoped by it.
+func HouseholdID(r *http.Request) int64 {
+	h, _ := r.Context().Value(householdKey{}).(int64)
+	return h
 }
 
 func (s *Server) requireUser(next http.Handler) http.Handler {
@@ -110,7 +120,14 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "not signed in")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, u)))
+		h, err := db.New(s.db).GetUserHousehold(r.Context(), u.ID)
+		if err != nil {
+			s.internalError(w, err)
+			return
+		}
+		ctx := context.WithValue(r.Context(), userKey{}, u)
+		ctx = context.WithValue(ctx, householdKey{}, h.ID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

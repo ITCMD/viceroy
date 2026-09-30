@@ -169,3 +169,7 @@ SELECT * FROM sync_events WHERE connection_id = ? ORDER BY at DESC, id DESC LIMI
 
 -- name: SetTransactionExternal :exec
 UPDATE transactions SET external_id = ? WHERE id = ?;
+
+-- name: DisconnectConnectionAccounts :exec
+UPDATE accounts SET status = 'disconnected', updated_at = ?
+WHERE connection_id = ? AND status IN ('active', 'review');

@@ -196,6 +196,21 @@ func (q *Queries) DeleteTransaction(ctx context.Context, id int64) error {
 	return err
 }
 
+const disconnectConnectionAccounts = `-- name: DisconnectConnectionAccounts :exec
+UPDATE accounts SET status = 'disconnected', updated_at = ?
+WHERE connection_id = ? AND status IN ('active', 'review')
+`
+
+type DisconnectConnectionAccountsParams struct {
+	UpdatedAt    int64         `json:"updated_at"`
+	ConnectionID sql.NullInt64 `json:"connection_id"`
+}
+
+func (q *Queries) DisconnectConnectionAccounts(ctx context.Context, arg DisconnectConnectionAccountsParams) error {
+	_, err := q.db.ExecContext(ctx, disconnectConnectionAccounts, arg.UpdatedAt, arg.ConnectionID)
+	return err
+}
+
 const getAccount = `-- name: GetAccount :one
 SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at FROM accounts WHERE id = ? AND household_id = ?
 `

@@ -194,7 +194,7 @@ func build(scenario string, now time.Time) simplefin.AccountSet {
 		sa := simplefin.Account{ID: a.id, Name: a.name, ConnID: a.conn, Currency: "USD", Balance: a.balance, BalanceDate: now.Unix()}
 		for i, t := range a.txns {
 			st := simplefin.Transaction{
-				ID: fmt.Sprintf("TRN-%s-%d-%s", strings.TrimPrefix(a.id, "ACT-"), i, strings.ToLower(t.desc[:3])),
+				ID:     fmt.Sprintf("TRN-%s-%d-%s", strings.TrimPrefix(a.id, "ACT-"), i, strings.ToLower(t.desc[:3])),
 				Amount: t.amount, Description: t.desc, Pending: t.pending, TransactedAt: day(t.daysAgo),
 			}
 			if !t.pending {

@@ -18,7 +18,9 @@ import (
 	"viceroy/internal/auth"
 	"viceroy/internal/config"
 	"viceroy/internal/db"
+	"viceroy/internal/secrets"
 	"viceroy/internal/server"
+	"viceroy/internal/syncer"
 	"viceroy/web"
 )
 
@@ -84,19 +86,26 @@ func runServe(path string) error {
 	}
 	defer conn.Close()
 
+	box, err := secrets.LoadOrCreate(filepath.Join(cfg.DataDir, "secret.key"))
+	if err != nil {
+		return err
+	}
+	sync := syncer.New(conn, box, log)
+
 	webFS, err := web.Dist()
 	if err != nil {
 		return err
 	}
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           server.New(cfg, conn, webFS, log).Handler(),
+		Handler:           server.New(cfg, conn, webFS, log, sync).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go pruneSessions(ctx, auth.New(conn), log)
+	go sync.Run(ctx)
 
 	errc := make(chan error, 1)
 	go func() {
