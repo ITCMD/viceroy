@@ -66,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 			s.settingsRoutes(r)
 			s.emailRoutes(r)
 			s.budgetRoutes(r)
+			s.reportRoutes(r)
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")

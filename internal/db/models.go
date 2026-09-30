@@ -192,6 +192,11 @@ type Merchant struct {
 	Normalized  string `json:"normalized"`
 }
 
+type RecurringDismissed struct {
+	HouseholdID int64  `json:"household_id"`
+	Key         string `json:"key"`
+}
+
 type Rule struct {
 	ID            int64         `json:"id"`
 	HouseholdID   int64         `json:"household_id"`

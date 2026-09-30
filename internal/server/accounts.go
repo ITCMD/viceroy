@@ -504,6 +504,8 @@ type netWorthPoint struct {
 	Assets      int64  `json:"assets"`
 	Liabilities int64  `json:"liabilities"`
 	Net         int64  `json:"net"`
+	// Signed balance per account group (cash, credit, investments, loans, other).
+	Groups map[string]int64 `json:"groups"`
 }
 
 // handleNetWorthHistory returns one point per day, carrying each account's last known
@@ -522,8 +524,10 @@ func (s *Server) handleNetWorthHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	counted := map[int64]bool{}
+	group := map[int64]string{}
 	for _, a := range accts {
 		counted[a.ID] = a.IncludeInNetWorth == 1 && a.Status != "ignored" && a.Status != "review"
+		group[a.ID] = accounts.Group(a.Type)
 	}
 	end := time.Now()
 	start := end.AddDate(0, 0, -(days - 1))
@@ -555,7 +559,7 @@ func (s *Server) handleNetWorthHistory(w http.ResponseWriter, r *http.Request) {
 		if len(cur) == 0 {
 			continue // no history yet; don't draw a fake zero line
 		}
-		p := netWorthPoint{Date: ds}
+		p := netWorthPoint{Date: ds, Groups: map[string]int64{}}
 		ids := make([]int64, 0, len(cur))
 		for id := range cur {
 			ids = append(ids, id)
@@ -565,7 +569,9 @@ func (s *Server) handleNetWorthHistory(w http.ResponseWriter, r *http.Request) {
 			if !counted[id] {
 				continue
 			}
-			if b := cur[id]; b >= 0 {
+			b := cur[id]
+			p.Groups[group[id]] += b
+			if b >= 0 {
 				p.Assets += b
 			} else {
 				p.Liabilities -= b
