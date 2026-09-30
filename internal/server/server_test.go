@@ -283,8 +283,37 @@ func TestPaperCash(t *testing.T) {
 	if code, _ := c.do("PATCH", "/api/accounts/"+id, `{"type":"checking"}`, true); code != 400 {
 		t.Fatalf("retype = %d", code)
 	}
-	if code, out := c.do("POST", "/api/transactions", `{"account_id":`+id+`,"date":"2026-09-10","amount":"-3","description":"Farmers market"}`, true); code != 201 {
+	balance := func() float64 {
+		_, out := c.do("GET", "/api/accounts", "", false)
+		for _, a := range out["accounts"].([]any) {
+			if m := a.(map[string]any); m["builtin"] == "paper_cash" {
+				return m["balance_cents"].(float64)
+			}
+		}
+		return -1
+	}
+	c.do("PATCH", "/api/accounts/"+id, `{"balance":"40"}`, true)
+	code, out := c.do("POST", "/api/transactions", `{"account_id":`+id+`,"date":"2026-09-10","amount":"-3","description":"Farmers market"}`, true)
+	if code != 201 {
 		t.Fatalf("cash txn = %d %v", code, out)
+	}
+	txn := strconv.FormatInt(int64(out["id"].(float64)), 10)
+	if b := balance(); b != 3700 {
+		t.Fatalf("balance after spending = %v", b)
+	}
+	c.do("PATCH", "/api/transactions/"+txn, `{"amount":"-5"}`, true)
+	if b := balance(); b != 3500 {
+		t.Fatalf("balance after edit = %v", b)
+	}
+	c.do("POST", "/api/transactions", `{"account_id":`+id+`,"date":"2026-09-11","amount":"20","description":"ATM withdrawal"}`, true)
+	if b := balance(); b != 5500 {
+		t.Fatalf("balance after withdrawal = %v", b)
+	}
+	if code, _ := c.do("DELETE", "/api/transactions/"+txn, "", true); code != 204 {
+		t.Fatalf("delete = %d", code)
+	}
+	if b := balance(); b != 6000 {
+		t.Fatalf("balance after delete = %v", b)
 	}
 
 	if code, out := c.do("PATCH", "/api/settings", `{"paper_cash_enabled":false}`, true); code != 200 || out["paper_cash_enabled"] != false {
@@ -296,7 +325,7 @@ func TestPaperCash(t *testing.T) {
 			t.Fatalf("disabled paper cash = %v", m)
 		}
 	}
-	if _, list := c.do("GET", "/api/transactions?q=farmers", "", false); len(list["transactions"].([]any)) != 1 {
+	if _, list := c.do("GET", "/api/transactions?q=atm", "", false); len(list["transactions"].([]any)) != 1 {
 		t.Fatal("history lost when disabling")
 	}
 	if _, out := c.do("PATCH", "/api/settings", `{"paper_cash_enabled":true}`, true); out["paper_cash_enabled"] != true {

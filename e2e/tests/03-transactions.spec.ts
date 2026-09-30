@@ -141,8 +141,13 @@ test("paper cash: standalone entries default to it, and it can be turned off", a
   await dlg.getByLabel("Merchant").fill("Farmers Market");
   await dlg.getByLabel("Amount").fill("9");
   await dlg.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByRole("dialog").getByTestId("original-statement")).toHaveText("Farmers Market");
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.getByTestId("txn-row").filter({ hasText: "Farmers Market" })).toContainText("Paper Cash");
+  await page.getByRole("link", { name: "Accounts" }).first().click();
+  await expect(page.getByTestId("account-row").filter({ hasText: "Paper Cash" })).toContainText("-$9.00");
+  await openTransactions(page);
 
   await page.getByRole("link", { name: "Settings" }).first().click();
   const toggle = page.getByRole("switch", { name: "Paper Cash account" });

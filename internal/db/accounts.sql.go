@@ -10,6 +10,26 @@ import (
 	"database/sql"
 )
 
+const adjustManualBalance = `-- name: AdjustManualBalance :one
+UPDATE accounts SET balance_cents = balance_cents + ?1, balance_at = ?2, updated_at = ?2
+WHERE id = ?3 AND is_manual = 1
+RETURNING balance_cents
+`
+
+type AdjustManualBalanceParams struct {
+	Delta int64         `json:"delta"`
+	Now   sql.NullInt64 `json:"now"`
+	ID    int64         `json:"id"`
+}
+
+// Manual accounts only: a manual transaction moved money in or out.
+func (q *Queries) AdjustManualBalance(ctx context.Context, arg AdjustManualBalanceParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, adjustManualBalance, arg.Delta, arg.Now, arg.ID)
+	var balance_cents int64
+	err := row.Scan(&balance_cents)
+	return balance_cents, err
+}
+
 const clearAccountExternal = `-- name: ClearAccountExternal :exec
 UPDATE accounts SET external_id = NULL, updated_at = ? WHERE id = ?
 `

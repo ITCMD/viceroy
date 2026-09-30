@@ -305,6 +305,10 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		s.internalError(w, err)
 		return
 	}
+	if err := adjustManualBalance(ctx, q, in.AccountID, amt); err != nil {
+		s.internalError(w, err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		s.internalError(w, err)
 		return
@@ -315,6 +319,24 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusCreated, t)
+}
+
+// adjustManualBalance moves a manual account's balance by delta cents (a manual transaction
+// was added, changed or deleted) and records today's snapshot. Synced accounts are left alone:
+// their balance comes from the bank.
+func adjustManualBalance(ctx context.Context, q *db.Queries, accountID, delta int64) error {
+	if delta == 0 {
+		return nil
+	}
+	now := time.Now()
+	bal, err := q.AdjustManualBalance(ctx, db.AdjustManualBalanceParams{Delta: delta, Now: sql.NullInt64{Int64: now.Unix(), Valid: true}, ID: accountID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return q.UpsertBalanceSnapshot(ctx, db.UpsertBalanceSnapshotParams{AccountID: accountID, Date: now.Format(time.DateOnly), BalanceCents: bal})
 }
 
 // setTags replaces a transaction's tags with names (creating missing tags). keep leaves
@@ -380,6 +402,7 @@ func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	bad := func(msg string) { writeError(w, http.StatusBadRequest, msg) }
+	oldAmount := t.AmountCents
 
 	if len(in.CategoryID) > 0 {
 		if string(in.CategoryID) == "null" {
@@ -460,6 +483,10 @@ func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request)
 		s.internalError(w, err)
 		return
 	}
+	if err := adjustManualBalance(ctx, q, t.AccountID, t.AmountCents-oldAmount); err != nil {
+		s.internalError(w, err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		s.internalError(w, err)
 		return
@@ -473,8 +500,15 @@ func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleDeleteTransaction(w http.ResponseWriter, r *http.Request) {
-	q := db.New(s.db)
-	t, err := q.GetTransaction(r.Context(), db.GetTransactionParams{ID: txnID(r), HouseholdID: HouseholdID(r)})
+	ctx := r.Context()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	defer tx.Rollback()
+	q := db.New(tx)
+	t, err := q.GetTransaction(ctx, db.GetTransactionParams{ID: txnID(r), HouseholdID: HouseholdID(r)})
 	if err != nil {
 		writeError(w, http.StatusNotFound, "Transaction not found.")
 		return
@@ -483,7 +517,15 @@ func (s *Server) handleDeleteTransaction(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "Synced transactions can't be deleted; hide them instead.")
 		return
 	}
-	if err := q.DeleteManualTransaction(r.Context(), db.DeleteManualTransactionParams{ID: t.ID, HouseholdID: t.HouseholdID}); err != nil {
+	if err := q.DeleteManualTransaction(ctx, db.DeleteManualTransactionParams{ID: t.ID, HouseholdID: t.HouseholdID}); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if err := adjustManualBalance(ctx, q, t.AccountID, -t.AmountCents); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		s.internalError(w, err)
 		return
 	}

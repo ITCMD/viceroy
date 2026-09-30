@@ -63,6 +63,7 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
               inputMode="decimal"
               value={balance}
               onChange={(e) => setBalance(e.target.value)}
+              hint="Transactions you add to this account adjust it automatically."
             />
           )}
           <FormError error={patch.error} />

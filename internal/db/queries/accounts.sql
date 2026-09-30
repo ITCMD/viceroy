@@ -183,3 +183,9 @@ SELECT * FROM accounts WHERE household_id = ? AND builtin = ?;
 INSERT INTO accounts (household_id, name, type, currency, balance_cents, balance_at, status, is_manual, builtin, created_at, updated_at)
 VALUES (?, ?, ?, 'USD', 0, ?, 'active', 1, ?, ?, ?)
 RETURNING *;
+
+-- Manual accounts only: a manual transaction moved money in or out.
+-- name: AdjustManualBalance :one
+UPDATE accounts SET balance_cents = balance_cents + sqlc.arg(delta), balance_at = sqlc.arg(now), updated_at = sqlc.arg(now)
+WHERE id = sqlc.arg(id) AND is_manual = 1
+RETURNING balance_cents;
