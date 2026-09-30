@@ -1,7 +1,8 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListFilter, Plus, Trash2, Upload } from "lucide-react";
 import { useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import type { Logo } from "@/components/AppLogo";
 import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader, Switch } from "@/components/ui";
 import { accountsQuery, useAccountsMutation } from "@/features/accounts/api";
 import { categoriesQuery, tagsQuery, useTxnMutation } from "@/features/transactions/api";
@@ -49,6 +50,7 @@ export function SettingsPage() {
       <PageHeader title="Settings" />
       <div className="mx-auto flex max-w-4xl flex-col gap-4 p-4 md:p-6">
         <AccountsCard />
+        <AppearanceCard />
         <BudgetSettingsCard />
         <RulesCard />
         <ImportCard />
@@ -58,6 +60,27 @@ export function SettingsPage() {
         <EmailSettings />
       </div>
     </>
+  );
+}
+
+function AppearanceCard() {
+  const qc = useQueryClient();
+  const { data } = useQuery(settingsQuery);
+  const save = useMutation({
+    mutationFn: (logo: Logo) => api.patch<Settings>("/settings", { logo }),
+    onSuccess: (s) => qc.setQueryData(["settings"], s),
+  });
+  return (
+    <Card title="Appearance">
+      <Switch
+        label="Butterfly logo"
+        hint="Use the viceroy butterfly as the logo and browser icon. Off shows the classic V."
+        checked={(data?.logo ?? "butterfly") === "butterfly"}
+        disabled={!data || save.isPending}
+        onCheckedChange={(v) => save.mutate(v ? "butterfly" : "classic")}
+      />
+      <FormError error={save.error} />
+    </Card>
   );
 }
 

@@ -10,7 +10,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["icon.svg"],
+      includeAssets: ["icon.svg", "favicon-butterfly.png", "apple-touch-butterfly.png", "logo-butterfly.png"],
       manifest: {
         name: "Viceroy",
         short_name: "Viceroy",
@@ -19,9 +19,11 @@ export default defineConfig({
         background_color: "#f6f5f3",
         display: "standalone",
         start_url: "/",
+        // The installed app's icon is fixed at install time, so it doesn't follow the logo toggle.
         icons: [
-          { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
-          { src: "icon-maskable.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+          { src: "icon-butterfly-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "icon-butterfly-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "icon-butterfly-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -17,8 +18,29 @@ func (s *Server) settingsRoutes(r chi.Router) {
 	r.Patch("/settings", s.handleUpdateSettings)
 }
 
+// Logo choices: the viceroy butterfly (default) or the original "V" mark.
+const (
+	setLogo       = "appearance.logo"
+	logoButterfly = "butterfly"
+	logoClassic   = "classic"
+)
+
+func loadLogo(ctx context.Context, q *db.Queries, hh int64) (string, error) {
+	rows, err := q.ListHouseholdSettings(ctx, hh)
+	if err != nil {
+		return "", err
+	}
+	for _, r := range rows {
+		if r.Key == setLogo && r.Value == logoClassic {
+			return logoClassic, nil
+		}
+	}
+	return logoButterfly, nil
+}
+
 type settingsDTO struct {
 	PaperCashEnabled bool                `json:"paper_cash_enabled"`
+	Logo             string              `json:"logo"` // butterfly | classic
 	Budget           budgetview.Settings `json:"budget"`
 }
 
@@ -33,12 +55,18 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, settingsDTO{PaperCashEnabled: accounts.PaperCashEnabled(a), Budget: bs})
+	logo, err := loadLogo(r.Context(), db.New(s.db), HouseholdID(r))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, settingsDTO{PaperCashEnabled: accounts.PaperCashEnabled(a), Logo: logo, Budget: bs})
 }
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		PaperCashEnabled *bool `json:"paper_cash_enabled"`
+		PaperCashEnabled *bool   `json:"paper_cash_enabled"`
+		Logo             *string `json:"logo"`
 		Budget           *struct {
 			ForwardDefault *bool               `json:"forward_default"`
 			WeekStart      *int                `json:"week_start"`
@@ -49,6 +77,16 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := db.New(s.db)
+	if in.Logo != nil {
+		if *in.Logo != logoButterfly && *in.Logo != logoClassic {
+			writeError(w, http.StatusBadRequest, "Unknown logo.")
+			return
+		}
+		if err := q.SetHouseholdSetting(r.Context(), db.SetHouseholdSettingParams{HouseholdID: HouseholdID(r), Key: setLogo, Value: *in.Logo}); err != nil {
+			s.internalError(w, err)
+			return
+		}
+	}
 	if b := in.Budget; b != nil {
 		msg, err := budgetview.SaveSettings(r.Context(), q, HouseholdID(r), b.ForwardDefault, b.WeekStart, b.PaySchedule)
 		if err != nil {

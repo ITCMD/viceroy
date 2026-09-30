@@ -1,9 +1,12 @@
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { LogOut } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRefreshSession, useSession } from "@/lib/session";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
+import { settingsQuery } from "@/features/settings/settings";
+import { AppLogo, applyLogo, cachedLogo } from "./AppLogo";
 import { navItems } from "./nav";
 
 const linkBase = "flex items-center gap-3 rounded-lg px-3 py-2 text-[14px] font-medium text-muted transition hover:bg-surface-2 hover:text-text";
@@ -11,6 +14,9 @@ const linkActive = "!bg-accent-soft !text-accent";
 
 export function AppShell() {
   const { data } = useSession();
+  const { data: settings } = useQuery(settingsQuery);
+  const logo = settings?.logo ?? cachedLogo();
+  useEffect(() => applyLogo(logo), [logo]);
   const refresh = useRefreshSession();
   const navigate = useNavigate();
   const logout = useMutation({
@@ -25,7 +31,7 @@ export function AppShell() {
     <div className="flex h-full">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-sidebar md:flex">
         <div className="flex h-14 items-center gap-2 px-5">
-          <img src="/icon.svg" alt="" className="size-7" />
+          <AppLogo logo={logo} size={28} />
           <span className="text-[16px] font-semibold tracking-tight">Viceroy</span>
           <NotificationBell className="ml-auto" />
         </div>
