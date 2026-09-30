@@ -79,7 +79,7 @@ func (q *Queries) CountCategoryGroups(ctx context.Context, householdID int64) (i
 }
 
 const createCategory = `-- name: CreateCategory :one
-INSERT INTO categories (household_id, group_id, name, icon, sort) VALUES (?, ?, ?, ?, ?) RETURNING id, household_id, group_id, name, icon, sort, archived
+INSERT INTO categories (household_id, group_id, name, icon, sort) VALUES (?, ?, ?, ?, ?) RETURNING id, household_id, group_id, name, icon, sort, archived, chunk
 `
 
 type CreateCategoryParams struct {
@@ -107,6 +107,7 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 		&i.Icon,
 		&i.Sort,
 		&i.Archived,
+		&i.Chunk,
 	)
 	return i, err
 }
@@ -228,7 +229,7 @@ func (q *Queries) DeleteRule(ctx context.Context, arg DeleteRuleParams) error {
 }
 
 const getCategory = `-- name: GetCategory :one
-SELECT id, household_id, group_id, name, icon, sort, archived FROM categories WHERE id = ? AND household_id = ?
+SELECT id, household_id, group_id, name, icon, sort, archived, chunk FROM categories WHERE id = ? AND household_id = ?
 `
 
 type GetCategoryParams struct {
@@ -247,6 +248,7 @@ func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (Categ
 		&i.Icon,
 		&i.Sort,
 		&i.Archived,
+		&i.Chunk,
 	)
 	return i, err
 }
@@ -534,7 +536,7 @@ func (q *Queries) LinkTransaction(ctx context.Context, arg LinkTransactionParams
 }
 
 const listCategories = `-- name: ListCategories :many
-SELECT id, household_id, group_id, name, icon, sort, archived FROM categories WHERE household_id = ? ORDER BY sort, id
+SELECT id, household_id, group_id, name, icon, sort, archived, chunk FROM categories WHERE household_id = ? ORDER BY sort, id
 `
 
 func (q *Queries) ListCategories(ctx context.Context, householdID int64) ([]Category, error) {
@@ -554,6 +556,7 @@ func (q *Queries) ListCategories(ctx context.Context, householdID int64) ([]Cate
 			&i.Icon,
 			&i.Sort,
 			&i.Archived,
+			&i.Chunk,
 		); err != nil {
 			return nil, err
 		}

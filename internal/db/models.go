@@ -40,6 +40,16 @@ type BalanceSnapshot struct {
 	BalanceCents int64  `json:"balance_cents"`
 }
 
+type BudgetAmount struct {
+	ID          int64         `json:"id"`
+	HouseholdID int64         `json:"household_id"`
+	CategoryID  sql.NullInt64 `json:"category_id"`
+	GoalID      sql.NullInt64 `json:"goal_id"`
+	Month       string        `json:"month"`
+	AmountCents int64         `json:"amount_cents"`
+	Forward     int64         `json:"forward"`
+}
+
 type Category struct {
 	ID          int64  `json:"id"`
 	HouseholdID int64  `json:"household_id"`
@@ -48,6 +58,7 @@ type Category struct {
 	Icon        string `json:"icon"`
 	Sort        int64  `json:"sort"`
 	Archived    int64  `json:"archived"`
+	Chunk       string `json:"chunk"`
 }
 
 type CategoryGroup struct {
@@ -128,6 +139,19 @@ type EmailMessage struct {
 	CreatedAt     int64         `json:"created_at"`
 }
 
+type Goal struct {
+	ID            int64          `json:"id"`
+	HouseholdID   int64          `json:"household_id"`
+	Name          string         `json:"name"`
+	Icon          string         `json:"icon"`
+	TargetCents   int64          `json:"target_cents"`
+	TargetDate    sql.NullString `json:"target_date"`
+	StartingCents int64          `json:"starting_cents"`
+	Archived      int64          `json:"archived"`
+	Sort          int64          `json:"sort"`
+	CreatedAt     int64          `json:"created_at"`
+}
+
 type Household struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
@@ -138,6 +162,12 @@ type HouseholdMember struct {
 	HouseholdID int64  `json:"household_id"`
 	UserID      int64  `json:"user_id"`
 	Role        string `json:"role"`
+}
+
+type HouseholdSetting struct {
+	HouseholdID int64  `json:"household_id"`
+	Key         string `json:"key"`
+	Value       string `json:"value"`
 }
 
 type Institution struct {

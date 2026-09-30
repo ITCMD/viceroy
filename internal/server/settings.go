@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"viceroy/internal/accounts"
+	"viceroy/internal/budget"
 	"viceroy/internal/db"
 )
 
@@ -16,7 +17,8 @@ func (s *Server) settingsRoutes(r chi.Router) {
 }
 
 type settingsDTO struct {
-	PaperCashEnabled bool `json:"paper_cash_enabled"`
+	PaperCashEnabled bool           `json:"paper_cash_enabled"`
+	Budget           budgetSettings `json:"budget"`
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -25,17 +27,38 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, settingsDTO{PaperCashEnabled: accounts.PaperCashEnabled(a)})
+	bs, err := loadBudgetSettings(r.Context(), db.New(s.db), HouseholdID(r))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, settingsDTO{PaperCashEnabled: accounts.PaperCashEnabled(a), Budget: bs})
 }
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		PaperCashEnabled *bool `json:"paper_cash_enabled"`
+		Budget           *struct {
+			ForwardDefault *bool               `json:"forward_default"`
+			WeekStart      *int                `json:"week_start"`
+			PaySchedule    *budget.PaySchedule `json:"pay_schedule"`
+		} `json:"budget"`
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
 	q := db.New(s.db)
+	if b := in.Budget; b != nil {
+		msg, err := saveBudgetSettings(r.Context(), q, HouseholdID(r), b.ForwardDefault, b.WeekStart, b.PaySchedule)
+		if err != nil {
+			s.internalError(w, err)
+			return
+		}
+		if msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+	}
 	if in.PaperCashEnabled != nil {
 		a, err := q.GetBuiltinAccount(r.Context(), db.GetBuiltinAccountParams{HouseholdID: HouseholdID(r), Builtin: accounts.PaperCash})
 		if err != nil {
