@@ -19,9 +19,8 @@ type Config struct {
 	DataDir        string   `toml:"data_dir"`
 	PublicURL      string   `toml:"public_url"`
 
-	TLS    TLSConfig    `toml:"tls"`
-	Teller TellerConfig `toml:"teller"`
-	AI     AIConfig     `toml:"ai"`
+	TLS TLSConfig `toml:"tls"`
+	AI  AIConfig  `toml:"ai"`
 
 	// Parsed forms, filled by Validate.
 	Allowed []netip.Prefix `toml:"-"`
@@ -31,13 +30,6 @@ type Config struct {
 type TLSConfig struct {
 	Cert string `toml:"cert"`
 	Key  string `toml:"key"`
-}
-
-type TellerConfig struct {
-	AppID string `toml:"app_id"`
-	Cert  string `toml:"cert"`
-	Key   string `toml:"key"`
-	Env   string `toml:"env"`
 }
 
 type AIConfig struct {
@@ -52,7 +44,6 @@ func Default() Config {
 		AllowedCIDRs:   []string{"127.0.0.1/32", "::1/128"},
 		TrustedProxies: []string{},
 		DataDir:        "./data",
-		Teller:         TellerConfig{Env: "sandbox"},
 		AI:             AIConfig{ChatModel: "anthropic/claude-sonnet-5.5", LocalCategorizer: true},
 	}
 }
@@ -153,13 +144,6 @@ public_url = ""
 # Optional built-in TLS. Leave empty when using a reverse proxy.
 cert = ""
 key = ""
-
-[teller]
-# From https://teller.io/settings — application id plus the mTLS certificate pair.
-app_id = ""
-cert = ""
-key = ""
-env = "sandbox"   # sandbox | development | production
 
 [ai]
 openrouter_key = ""
