@@ -35,6 +35,7 @@ type TLSConfig struct {
 type AIConfig struct {
 	OpenRouterKey    string `toml:"openrouter_key"`
 	ChatModel        string `toml:"chat_model"`
+	BaseURL          string `toml:"base_url"` // OpenAI-compatible API root; default OpenRouter
 	LocalCategorizer bool   `toml:"local_categorizer"`
 }
 
@@ -146,8 +147,12 @@ cert = ""
 key = ""
 
 [ai]
+# OpenRouter API key (https://openrouter.ai/keys) for "Chat with your budget". Empty = chat off.
 openrouter_key = ""
+# Any OpenRouter model id that supports tool calling.
 chat_model = "anthropic/claude-sonnet-5.5"
+# Optional: another OpenAI-compatible endpoint instead of OpenRouter.
+base_url = ""
 local_categorizer = true
 `
 

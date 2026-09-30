@@ -26,9 +26,10 @@ import (
 )
 
 type client struct {
-	t    *testing.T
-	base string
-	http *http.Client
+	t      *testing.T
+	base   string
+	http   *http.Client
+	server *Server
 }
 
 func newTestServer(t *testing.T) *client {
@@ -47,10 +48,11 @@ func newTestServer(t *testing.T) *client {
 	mail := email.New(conn, box, slog.New(slog.DiscardHandler))
 	mail.Poll = 100 * time.Millisecond
 	go mail.Run(t.Context())
-	srv := httptest.NewServer(New(cfg, conn, web, slog.New(slog.DiscardHandler), syncer.New(conn, box, slog.New(slog.DiscardHandler)), mail).Handler())
+	s := New(cfg, conn, web, slog.New(slog.DiscardHandler), syncer.New(conn, box, slog.New(slog.DiscardHandler)), mail, testNotifier(conn), testAI(t))
+	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}}
+	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, server: s}
 }
 
 func (c *client) do(method, path, body string, csrf bool) (int, map[string]any) {

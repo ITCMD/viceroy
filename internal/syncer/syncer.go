@@ -38,6 +38,8 @@ type Service struct {
 	Client *simplefin.Client
 	Log    *slog.Logger
 	Now    func() time.Time
+	// Changed, when set, is called after a sync (or failed sync) changed the household's data.
+	Changed func(householdID int64)
 
 	locks sync.Map // connection id -> *sync.Mutex
 }
@@ -134,7 +136,17 @@ func (s *Service) Sync(ctx context.Context, connID int64) error {
 		msg += "; bridge reported: " + gen
 	}
 	r.event(ctx, "sync_ok", 0, msg)
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.changed(c.HouseholdID)
+	return nil
+}
+
+func (s *Service) changed(householdID int64) {
+	if s.Changed != nil {
+		s.Changed(householdID)
+	}
 }
 
 func genErrors(set *simplefin.AccountSet) string {
@@ -159,6 +171,7 @@ func (s *Service) fail(ctx context.Context, c db.Connection, status string, caus
 		return err
 	}
 	q.InsertSyncEvent(ctx, db.InsertSyncEventParams{ConnectionID: c.ID, At: s.Now().Unix(), Kind: "sync_error", Message: cause.Error()})
+	s.changed(c.HouseholdID)
 	return cause
 }
 

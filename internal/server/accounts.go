@@ -515,13 +515,20 @@ func (s *Server) handleNetWorthHistory(w http.ResponseWriter, r *http.Request) {
 	if days <= 0 || days > 3660 {
 		days = 90
 	}
-	ctx := r.Context()
-	hh := HouseholdID(r)
-	q := db.New(s.db)
-	accts, err := q.ListAccounts(ctx, hh)
+	out, err := s.netWorthHistory(r.Context(), HouseholdID(r), days)
 	if err != nil {
 		s.internalError(w, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"points": out})
+}
+
+// netWorthHistory returns one point per day for the last days days (from the first snapshot).
+func (s *Server) netWorthHistory(ctx context.Context, hh int64, days int) ([]netWorthPoint, error) {
+	q := db.New(s.db)
+	accts, err := q.ListAccounts(ctx, hh)
+	if err != nil {
+		return nil, err
 	}
 	counted := map[int64]bool{}
 	group := map[int64]string{}
@@ -534,13 +541,11 @@ func (s *Server) handleNetWorthHistory(w http.ResponseWriter, r *http.Request) {
 	startStr := start.Format(time.DateOnly)
 	seed, err := q.ListAccountSnapshotsBefore(ctx, db.ListAccountSnapshotsBeforeParams{HouseholdID: hh, Date: startStr})
 	if err != nil {
-		s.internalError(w, err)
-		return
+		return nil, err
 	}
 	snaps, err := q.ListHouseholdSnapshots(ctx, db.ListHouseholdSnapshotsParams{HouseholdID: hh, Date: startStr})
 	if err != nil {
-		s.internalError(w, err)
-		return
+		return nil, err
 	}
 	cur := map[int64]int64{}
 	for _, sn := range seed {
@@ -580,5 +585,5 @@ func (s *Server) handleNetWorthHistory(w http.ResponseWriter, r *http.Request) {
 		p.Net = p.Assets - p.Liabilities
 		out = append(out, p)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"points": out})
+	return out, nil
 }

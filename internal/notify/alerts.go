@@ -1,0 +1,124 @@
+// Package notify raises alerts (over budget, ahead of pace, large transaction, account stopped
+// syncing), stores them for the in-app list and delivers them with Web Push.
+package notify
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"viceroy/internal/budgetview"
+	"viceroy/internal/db"
+)
+
+// Prefs are one user's notification settings.
+type Prefs struct {
+	OverBudget    bool  `json:"over_budget"`
+	Pacing        bool  `json:"pacing"`
+	PacingPct     int   `json:"pacing_pct"` // alert when spending runs this % ahead of plan
+	LargeTxn      bool  `json:"large_txn"`
+	LargeTxnCents int64 `json:"large_txn_cents"`
+	Disconnected  bool  `json:"disconnected"`
+}
+
+var DefaultPrefs = Prefs{OverBudget: true, Pacing: true, PacingPct: 25, LargeTxn: true, LargeTxnCents: 500_00, Disconnected: true}
+
+func (p Prefs) Validate() error {
+	if p.PacingPct < 5 || p.PacingPct > 200 {
+		return errors.New("pacing threshold must be between 5% and 200%")
+	}
+	if p.LargeTxnCents < 1_00 {
+		return errors.New("large transaction amount must be at least $1")
+	}
+	return nil
+}
+
+// Alert is one notification before it is stored. Key dedupes it: an alert with a key the user
+// already got is dropped.
+type Alert struct {
+	Kind  string `json:"kind"`
+	Key   string `json:"key"`
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	URL   string `json:"url"`
+}
+
+// minPaceGap keeps pacing alerts quiet for tiny amounts.
+const minPaceGap = 10_00
+
+// BudgetAlerts checks the expense lines of a month budget view: over budget, or (when not over)
+// spending more than PacingPct ahead of what the category's schedule expects by today.
+func BudgetAlerts(v budgetview.View, p Prefs) []Alert {
+	var out []Alert
+	for _, g := range v.Groups {
+		if g.Kind == "income" || g.Kind == "goals" {
+			continue
+		}
+		for _, l := range g.Lines {
+			if l.Budget <= 0 {
+				continue
+			}
+			switch {
+			case l.Actual > l.Budget:
+				if p.OverBudget {
+					out = append(out, Alert{
+						Kind: "over_budget", Key: fmt.Sprintf("over:%d:%s", l.ID, v.Month), URL: "/budget",
+						Title: "Over budget: " + l.Name,
+						Body:  fmt.Sprintf("%s spent of %s this month (%s over).", Dollars(l.Actual), Dollars(l.Budget), Dollars(l.Actual-l.Budget)),
+					})
+				}
+			case p.Pacing && l.Expected > 0 && l.Expected < l.Budget &&
+				l.Actual*100 > l.Expected*int64(100+p.PacingPct) && l.Actual-l.Expected >= minPaceGap:
+				out = append(out, Alert{
+					Kind: "pacing", Key: fmt.Sprintf("pace:%d:%s", l.ID, v.Month), URL: "/budget",
+					Title: l.Name + " is ahead of pace",
+					Body: fmt.Sprintf("%s spent so far; about %s was planned by today (%s budget).",
+						Dollars(l.Actual), Dollars(l.Expected), Dollars(l.Budget)),
+				})
+			}
+		}
+	}
+	return out
+}
+
+// LargeTxnAlert describes a large transaction.
+func LargeTxnAlert(t db.ListLargeTransactionsRow) Alert {
+	body := t.Merchant + " · " + t.AccountName
+	if t.Source == "email" {
+		body += " (email alert)"
+	}
+	return Alert{
+		Kind: "large_txn", Key: fmt.Sprintf("txn:%d", t.ID), URL: "/transactions",
+		Title: "Large transaction: " + Dollars(-t.AmountCents), Body: body,
+	}
+}
+
+// BrokenAccountAlert describes an account that stopped syncing. since (the sync event time)
+// makes a later break of the same account alert again.
+func BrokenAccountAlert(a db.ListBrokenAccountsRow) Alert {
+	body := "It wasn't shared in the latest SimpleFIN sync. Check the connection on SimpleFIN Bridge."
+	if a.Status == "active" && a.InstitutionStatus == "reauth" {
+		body = "The bank needs you to sign in again on SimpleFIN Bridge."
+	}
+	return Alert{
+		Kind: "disconnected", Key: fmt.Sprintf("disc:%d:%d", a.ID, a.Since), URL: "/accounts",
+		Title: a.Name + " stopped syncing", Body: body,
+	}
+}
+
+// Dollars formats cents as "$1,234.56" (or "-$5.00").
+func Dollars(cents int64) string {
+	sign := ""
+	if cents < 0 {
+		sign, cents = "-", -cents
+	}
+	whole := fmt.Sprint(cents / 100)
+	var b strings.Builder
+	for i, r := range whole {
+		if i > 0 && (len(whole)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(r)
+	}
+	return fmt.Sprintf("%s$%s.%02d", sign, b.String(), cents%100)
+}

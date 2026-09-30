@@ -8,6 +8,7 @@ import (
 
 	"viceroy/internal/accounts"
 	"viceroy/internal/budget"
+	"viceroy/internal/budgetview"
 	"viceroy/internal/db"
 )
 
@@ -17,8 +18,8 @@ func (s *Server) settingsRoutes(r chi.Router) {
 }
 
 type settingsDTO struct {
-	PaperCashEnabled bool           `json:"paper_cash_enabled"`
-	Budget           budgetSettings `json:"budget"`
+	PaperCashEnabled bool                `json:"paper_cash_enabled"`
+	Budget           budgetview.Settings `json:"budget"`
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +28,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
-	bs, err := loadBudgetSettings(r.Context(), db.New(s.db), HouseholdID(r))
+	bs, err := budgetview.LoadSettings(r.Context(), db.New(s.db), HouseholdID(r))
 	if err != nil {
 		s.internalError(w, err)
 		return
@@ -49,7 +50,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	q := db.New(s.db)
 	if b := in.Budget; b != nil {
-		msg, err := saveBudgetSettings(r.Context(), q, HouseholdID(r), b.ForwardDefault, b.WeekStart, b.PaySchedule)
+		msg, err := budgetview.SaveSettings(r.Context(), q, HouseholdID(r), b.ForwardDefault, b.WeekStart, b.PaySchedule)
 		if err != nil {
 			s.internalError(w, err)
 			return

@@ -33,6 +33,8 @@ type Service struct {
 	Now func() time.Time
 	// Poll is the fallback check interval while IDLE is quiet (or unsupported).
 	Poll time.Duration
+	// Changed, when set, is called after routing may have created transactions.
+	Changed func(householdID int64)
 
 	mu       sync.Mutex
 	watchers map[int64]*watcher
@@ -82,7 +84,18 @@ func (s *Service) Ingest(ctx context.Context, householdID, mailboxID int64, uid 
 	if err := s.route(ctx, q, row, filters); err != nil {
 		return 0, err
 	}
-	return id, tx.Commit()
+	return id, s.commit(tx, householdID)
+}
+
+// commit commits tx and reports the change.
+func (s *Service) commit(tx *sql.Tx, householdID int64) error {
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if s.Changed != nil {
+		s.Changed(householdID)
+	}
+	return nil
 }
 
 // Reroute runs open messages (unrouted or parse_failed, newest 500) through the filters again,
@@ -111,7 +124,7 @@ func (s *Service) Reroute(ctx context.Context, householdID int64) (int, error) {
 			n++
 		}
 	}
-	return n, tx.Commit()
+	return n, s.commit(tx, householdID)
 }
 
 // Retry routes one message again (the user fixed its filter, or un-ignored it).
@@ -139,7 +152,7 @@ func (s *Service) Retry(ctx context.Context, householdID, id int64) (db.EmailMes
 	if m, err = q.GetEmailMessage(ctx, db.GetEmailMessageParams{ID: id, HouseholdID: householdID}); err != nil {
 		return m, err
 	}
-	return m, tx.Commit()
+	return m, s.commit(tx, householdID)
 }
 
 // FromRow rebuilds the parse input from a stored message.

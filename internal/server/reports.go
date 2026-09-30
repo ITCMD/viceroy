@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"viceroy/internal/budgetview"
 	"viceroy/internal/db"
 	"viceroy/internal/recurring"
 	"viceroy/internal/reports"
@@ -77,7 +78,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	to, ok := parseDate(qs.Get("to"))
 	if !ok {
-		to = today()
+		to = budgetview.Today()
 	}
 	from, ok := parseDate(qs.Get("from"))
 	if qs.Get("from") == "all" {
@@ -120,7 +121,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 // month and the one before, for the dashboard's "this month vs last month" chart.
 func (s *Server) handleSpendingPace(w http.ResponseWriter, r *http.Request) {
 	ctx, hh, q := r.Context(), HouseholdID(r), db.New(s.db)
-	now := today()
+	now := budgetview.Today()
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	if m, err := time.Parse("2006-01", r.URL.Query().Get("month")); err == nil {
 		month = m
@@ -164,7 +165,7 @@ type recurringDTO struct {
 
 func (s *Server) recurringSeries(ctx context.Context, hh int64) ([]recurringDTO, error) {
 	q := db.New(s.db)
-	now := today()
+	now := budgetview.Today()
 	rows, err := q.RecurringCandidates(ctx, db.RecurringCandidatesParams{
 		HouseholdID: hh, FromDate: now.AddDate(0, 0, -recurring.HistoryDays).Format(time.DateOnly),
 	})
@@ -202,7 +203,7 @@ func (s *Server) handleListRecurring(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sort.SliceStable(list, func(i, j int) bool { return !list[i].Dismissed && list[j].Dismissed })
-	writeJSON(w, http.StatusOK, map[string]any{"series": list, "today": today().Format(time.DateOnly)})
+	writeJSON(w, http.StatusOK, map[string]any{"series": list, "today": budgetview.Today().Format(time.DateOnly)})
 }
 
 // PUT /recurring/dismissed {key, dismissed}

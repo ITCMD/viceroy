@@ -12,15 +12,18 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"viceroy/internal/accounts"
+	"viceroy/internal/ai"
 	"viceroy/internal/auth"
 	"viceroy/internal/categorize"
 	"viceroy/internal/config"
 	"viceroy/internal/db"
 	"viceroy/internal/email"
+	"viceroy/internal/notify"
 	"viceroy/internal/secrets"
 	"viceroy/internal/server"
 	"viceroy/internal/syncer"
@@ -99,8 +102,21 @@ func runServe(path string) error {
 	if err != nil {
 		return err
 	}
+	keys, err := notify.LoadOrCreateKeys(filepath.Join(cfg.DataDir, "vapid.json"))
+	if err != nil {
+		return err
+	}
+	subject := ""
+	if strings.HasPrefix(cfg.PublicURL, "https://") {
+		subject = cfg.PublicURL
+	}
+	notifier := notify.New(conn, log, keys, subject)
 	sync := syncer.New(conn, box, log)
+	sync.Changed = notifier.Changed
 	mail := email.New(conn, box, log)
+	mail.Changed = notifier.Changed
+	chat := ai.New(cfg.AI.BaseURL, cfg.AI.OpenRouterKey, cfg.AI.ChatModel)
+	chat.Referer = cfg.PublicURL
 
 	webFS, err := web.Dist()
 	if err != nil {
@@ -108,7 +124,7 @@ func runServe(path string) error {
 	}
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           server.New(cfg, conn, webFS, log, sync, mail).Handler(),
+		Handler:           server.New(cfg, conn, webFS, log, sync, mail, notifier, chat).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -117,6 +133,7 @@ func runServe(path string) error {
 	go pruneSessions(ctx, auth.New(conn), log)
 	go sync.Run(ctx)
 	go mail.Run(ctx)
+	go notifier.Run(ctx)
 
 	errc := make(chan error, 1)
 	go func() {

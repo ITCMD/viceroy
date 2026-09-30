@@ -69,6 +69,24 @@ type CategoryGroup struct {
 	Sort        int64  `json:"sort"`
 }
 
+type ChatMessage struct {
+	ID         int64  `json:"id"`
+	ThreadID   int64  `json:"thread_id"`
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	ToolCalls  string `json:"tool_calls"`
+	ToolCallID string `json:"tool_call_id"`
+	CreatedAt  int64  `json:"created_at"`
+}
+
+type ChatThread struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	Title     string `json:"title"`
+	CreatedAt int64  `json:"created_at"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
 type Connection struct {
 	ID            int64         `json:"id"`
 	HouseholdID   int64         `json:"household_id"`
@@ -190,6 +208,33 @@ type Merchant struct {
 	HouseholdID int64  `json:"household_id"`
 	Name        string `json:"name"`
 	Normalized  string `json:"normalized"`
+}
+
+type Notification struct {
+	ID        int64         `json:"id"`
+	UserID    int64         `json:"user_id"`
+	Kind      string        `json:"kind"`
+	DedupeKey string        `json:"dedupe_key"`
+	Title     string        `json:"title"`
+	Body      string        `json:"body"`
+	Url       string        `json:"url"`
+	CreatedAt int64         `json:"created_at"`
+	ReadAt    sql.NullInt64 `json:"read_at"`
+}
+
+type NotificationPref struct {
+	UserID int64  `json:"user_id"`
+	Prefs  string `json:"prefs"`
+}
+
+type PushSubscription struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	Endpoint  string `json:"endpoint"`
+	P256dh    string `json:"p256dh"`
+	Auth      string `json:"auth"`
+	UserAgent string `json:"user_agent"`
+	CreatedAt int64  `json:"created_at"`
 }
 
 type RecurringDismissed struct {

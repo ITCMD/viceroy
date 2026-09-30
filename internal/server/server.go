@@ -15,10 +15,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"viceroy/internal/ai"
 	"viceroy/internal/auth"
 	"viceroy/internal/config"
 	"viceroy/internal/db"
 	"viceroy/internal/email"
+	"viceroy/internal/notify"
 	"viceroy/internal/syncer"
 )
 
@@ -33,12 +35,14 @@ type Server struct {
 	log     *slog.Logger
 	sync    *syncer.Service
 	mail    *email.Service
+	notify  *notify.Service
+	ai      *ai.Client
 }
 
-func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger, sync *syncer.Service, mail *email.Service) *Server {
+func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger, sync *syncer.Service, mail *email.Service, nt *notify.Service, chat *ai.Client) *Server {
 	return &Server{
 		cfg: cfg, db: conn, auth: auth.New(conn), web: web,
-		limiter: newLoginLimiter(10, 15*time.Minute), log: log, sync: sync, mail: mail,
+		limiter: newLoginLimiter(10, 15*time.Minute), log: log, sync: sync, mail: mail, notify: nt, ai: chat,
 	}
 }
 
@@ -67,6 +71,8 @@ func (s *Server) Handler() http.Handler {
 			s.emailRoutes(r)
 			s.budgetRoutes(r)
 			s.reportRoutes(r)
+			s.notifyRoutes(r)
+			s.chatRoutes(r)
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")
