@@ -40,7 +40,7 @@ export type Connection = {
   events: { at: number; kind: string; account_id: number | null; message: string }[];
 };
 
-export type NetWorthPoint = { date: string; assets: number; liabilities: number; net: number };
+export type NetWorthPoint = { date: string; assets: number; liabilities: number; net: number; groups: Partial<Record<AccountGroup, number>> };
 
 export const typeLabels: Record<string, string> = {
   checking: "Checking",

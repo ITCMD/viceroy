@@ -12,6 +12,8 @@ export function readTokens() {
     accent: v("--c-accent"),
     positive: v("--c-positive"),
     negative: v("--c-negative"),
+    /** Categorical series colors, in fixed order. */
+    series: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => v(`--c-chart-${i}`)),
   };
 }
 

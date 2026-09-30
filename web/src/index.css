@@ -15,6 +15,15 @@
   --c-positive: #1c8a4f;
   --c-negative: #d4382c;
   --c-sidebar: #ffffff;
+  /* Categorical chart hues, fixed order (validated for colorblind separation). */
+  --c-chart-1: #2a78d6;
+  --c-chart-2: #eb6834;
+  --c-chart-3: #1baf7a;
+  --c-chart-4: #eda100;
+  --c-chart-5: #e87ba4;
+  --c-chart-6: #008300;
+  --c-chart-7: #4a3aa7;
+  --c-chart-8: #e34948;
   color-scheme: light;
 }
 
@@ -32,6 +41,14 @@
     --c-positive: #3cc07a;
     --c-negative: #f0675b;
     --c-sidebar: #191816;
+    --c-chart-1: #3987e5;
+    --c-chart-2: #d95926;
+    --c-chart-3: #199e70;
+    --c-chart-4: #c98500;
+    --c-chart-5: #d55181;
+    --c-chart-6: #008300;
+    --c-chart-7: #9085e9;
+    --c-chart-8: #e66767;
     color-scheme: dark;
   }
 }

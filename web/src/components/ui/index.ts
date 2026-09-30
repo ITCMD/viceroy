@@ -15,3 +15,4 @@ export { CategoryPicker } from "./CategoryPicker";
 export { TagInput } from "./TagInput";
 export { TextArea } from "./TextArea";
 export { Segmented } from "./Segmented";
+export { StatTile } from "./StatTile";

@@ -62,7 +62,7 @@ test("mobile layout uses bottom tab bar", async ({ browser }) => {
   await page.getByLabel("Password").fill(admin.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
-  await page.getByRole("link", { name: "Budget" }).click();
+  await page.getByRole("link", { name: "Budget", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Budget", level: 1 })).toBeVisible();
   await shot(page, "04-mobile-budget");
   await ctx.close();

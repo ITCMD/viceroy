@@ -114,7 +114,7 @@ export function useTxnMutation<TVars, TRes = unknown>(fn: (v: TVars) => Promise<
     mutationFn: fn,
     onSuccess,
     onSettled: () =>
-      Promise.all(["transactions", "tags", "budget", "goals"].map((k) => qc.invalidateQueries({ queryKey: [k] }))),
+      Promise.all(["transactions", "tags", "budget", "goals", "reports", "recurring"].map((k) => qc.invalidateQueries({ queryKey: [k] }))),
   });
 }
 

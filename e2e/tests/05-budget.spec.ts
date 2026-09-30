@@ -15,7 +15,7 @@ async function login(page: Page) {
 }
 
 async function openBudget(page: Page) {
-  await page.getByRole("link", { name: "Budget" }).first().click();
+  await page.getByRole("link", { name: "Budget", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Budget", level: 1 })).toBeVisible();
 }
 

@@ -9,6 +9,8 @@ import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TransactionsPage } from "@/features/transactions/TransactionsPage";
 import { BudgetPage } from "@/features/budget/BudgetPage";
 import { GoalsPage } from "@/features/goals/GoalsPage";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
+import { ReportsPage } from "@/features/reports/ReportsPage";
 import { ComingSoon } from "@/features/placeholders/ComingSoon";
 import { loadSession } from "@/lib/session";
 
@@ -49,10 +51,12 @@ const appRoute = createRoute({
 });
 
 const phases: Record<string, number> = {
-  "/": 6, "/accounts": 2, "/transactions": 3, "/budget": 5, "/reports": 6, "/goals": 5, "/settings": 7,
+  "/settings": 7,
 };
 
 const pages: Record<string, () => React.ReactNode> = {
+  "/": DashboardPage,
+  "/reports": ReportsPage,
   "/accounts": AccountsPage,
   "/transactions": TransactionsPage,
   "/budget": BudgetPage,
