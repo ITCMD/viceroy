@@ -1,10 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListFilter, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useLocation } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader, Switch } from "@/components/ui";
 import { accountsQuery, useAccountsMutation } from "@/features/accounts/api";
 import { categoriesQuery, tagsQuery, useTxnMutation } from "@/features/transactions/api";
 import { EmailSettings } from "@/features/email/EmailSettings";
+import { NotificationSettingsCard } from "@/features/notifications/NotificationSettingsCard";
 import { api } from "@/lib/api";
 import { BudgetSettingsCard } from "./BudgetSettingsCard";
 import { RuleDialog } from "./RuleDialog";
@@ -37,6 +39,10 @@ function AccountsCard() {
 }
 
 export function SettingsPage() {
+  const hash = useLocation({ select: (l) => l.hash });
+  useEffect(() => {
+    if (hash) document.getElementById(hash)?.scrollIntoView({ block: "start" });
+  }, [hash]);
   return (
     <>
       <PageHeader title="Settings" />
@@ -44,8 +50,10 @@ export function SettingsPage() {
         <AccountsCard />
         <BudgetSettingsCard />
         <RulesCard />
+        <div id="notifications" className="scroll-mt-16">
+          <NotificationSettingsCard />
+        </div>
         <EmailSettings />
-        <p className="text-[13px] text-muted">Notification, household and AI settings arrive in a later phase.</p>
       </div>
     </>
   );

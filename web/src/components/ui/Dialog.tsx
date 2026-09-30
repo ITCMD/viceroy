@@ -57,26 +57,41 @@ export function Sheet({
   open,
   onOpenChange,
   title,
+  actions,
   children,
+  className,
+  bodyClassName,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: ReactNode;
+  /** Extra header buttons, left of the close button. */
+  actions?: ReactNode;
   children: ReactNode;
+  className?: string;
+  bodyClassName?: string;
 }) {
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-black/30" />
-        <D.Content className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-xl outline-none">
+        <D.Content
+          className={clsx(
+            "fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-xl outline-none",
+            className,
+          )}
+        >
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
             <D.Title className="truncate text-[15px] font-semibold">{title}</D.Title>
             <D.Description className="sr-only">Details</D.Description>
-            <D.Close className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-text" aria-label="Close">
-              <X size={16} />
-            </D.Close>
+            <div className="flex items-center gap-1">
+              {actions}
+              <D.Close className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-text" aria-label="Close">
+                <X size={16} />
+              </D.Close>
+            </div>
           </header>
-          <div className="flex-1 overflow-y-auto p-5">{children}</div>
+          <div className={clsx("flex-1 overflow-y-auto p-5", bodyClassName)}>{children}</div>
         </D.Content>
       </D.Portal>
     </D.Root>

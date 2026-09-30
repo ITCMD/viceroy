@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { CalendarClock, LineChart, Target } from "lucide-react";
+import { CalendarClock, LineChart, Sparkles, Target } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Legend } from "@/components/charts/Legend";
 import { SeriesChart, type Series } from "@/components/charts/SeriesChart";
 import { useChartTokens } from "@/components/charts/tokens";
-import { Card, CategoryIcon, EmptyState, MoneyText, PageHeader } from "@/components/ui";
+import { Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader } from "@/components/ui";
+import { ChatSheet } from "@/features/chat/ChatSheet";
 import { accountsQuery, accountSubtitle } from "@/features/accounts/api";
 import { NetWorthCard } from "@/features/accounts/NetWorthCard";
 import { budgetQuery, monthLabel, type BudgetGroup } from "@/features/budget/api";
@@ -25,9 +26,20 @@ function greeting() {
 export function DashboardPage() {
   const { data: session } = useSession();
   const first = session?.user?.name.split(" ")[0];
+  const [chatOpen, setChatOpen] = useState(false);
   return (
     <>
-      <PageHeader title="Dashboard" />
+      <PageHeader
+        title="Dashboard"
+        actions={
+          <Button size="sm" variant="secondary" onClick={() => setChatOpen(true)}>
+            <Sparkles size={14} className="text-accent" />
+            <span className="sm:hidden">Chat</span>
+            <span className="hidden sm:inline">Chat with your budget</span>
+          </Button>
+        }
+      />
+      <ChatSheet open={chatOpen} onOpenChange={setChatOpen} />
       <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6">
         <h2 className="text-xl font-semibold tracking-tight">
           {greeting()}

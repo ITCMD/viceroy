@@ -15,7 +15,11 @@ Open the printed URL; the first visit creates the admin account.
 
 To reach it from other devices, set `listen = "0.0.0.0:8420"` and add your LAN to
 `allowed_cidrs`. For PWA install and push notifications, put it behind an HTTPS
-reverse proxy and list the proxy's IP in `trusted_proxies`.
+reverse proxy, list the proxy's IP in `trusted_proxies` and set `public_url`. Then turn
+on push per device in Settings → Notifications (alerts also appear under the bell).
+
+"Chat with your budget" on the dashboard needs an OpenRouter key: set
+`[ai] openrouter_key` (and optionally `chat_model`) and restart.
 
 ## Development
 

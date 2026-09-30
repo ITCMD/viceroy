@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { LogOut } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRefreshSession, useSession } from "@/lib/session";
+import { NotificationBell } from "@/features/notifications/NotificationBell";
 import { navItems } from "./nav";
 
 const linkBase = "flex items-center gap-3 rounded-lg px-3 py-2 text-[14px] font-medium text-muted transition hover:bg-surface-2 hover:text-text";
@@ -26,6 +27,7 @@ export function AppShell() {
         <div className="flex h-14 items-center gap-2 px-5">
           <img src="/icon.svg" alt="" className="size-7" />
           <span className="text-[16px] font-semibold tracking-tight">Viceroy</span>
+          <NotificationBell className="ml-auto" />
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 px-3 py-2">
           {navItems.map(({ to, label, icon: Icon }) => (

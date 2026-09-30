@@ -65,6 +65,7 @@ func (s *Server) Handler() http.Handler {
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireUser)
+			r.Use(s.notifyOnChange)
 			s.accountRoutes(r)
 			s.transactionRoutes(r)
 			s.settingsRoutes(r)
@@ -107,6 +108,22 @@ func requireCSRFHeader(next http.Handler) http.Handler {
 			}
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// notifyOnChange asks the notifier to re-check the household after any successful change
+// (a new manual transaction, a recategorization, a lower budget...). Evaluation is debounced.
+func (s *Server) notifyOnChange(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || s.notify == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+		if ww.Status() < 400 {
+			s.notify.Changed(HouseholdID(r))
+		}
 	})
 }
 
