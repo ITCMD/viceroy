@@ -151,11 +151,11 @@ WHERE id = ?;
 -- name: DeleteManualTransaction :exec
 DELETE FROM transactions WHERE id = ? AND household_id = ? AND source = 'manual';
 
--- Transactions a rule may recategorize: everything the user hasn't categorized by hand.
+-- Transactions a rule may apply to (it never overrides a category the user chose by hand).
 -- name: ListRuleTargets :many
 SELECT t.id, t.account_id, t.amount_cents, t.description, t.payee, t.merchant_id, COALESCE(m.name, '') AS merchant_name
 FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id
-WHERE t.household_id = ? AND t.category_source != 'user' AND t.linked_txn_id IS NULL;
+WHERE t.household_id = ? AND t.linked_txn_id IS NULL;
 
 -- ---- linking ----
 
@@ -169,12 +169,13 @@ WHERE t.account_id = sqlc.arg(account_id) AND t.provisional = 1 AND t.linked_txn
 
 -- Posted rows a provisional entry could be linked to by hand.
 -- name: ListPostedForLink :many
-SELECT t.id, t.date, t.amount_cents, t.description, COALESCE(m.name, '') AS merchant_name
+SELECT t.id, t.date, t.amount_cents, t.description, COALESCE(m.name, '') AS merchant_name,
+    CAST(ABS(t.amount_cents - sqlc.arg(amount_cents)) AS INTEGER) AS distance
 FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id
 WHERE t.account_id = sqlc.arg(account_id) AND t.provisional = 0
   AND t.date >= sqlc.arg(date_lo) AND t.date <= sqlc.arg(date_hi)
   AND NOT EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id)
-ORDER BY ABS(t.amount_cents - sqlc.arg(amount_cents)), t.date DESC
+ORDER BY distance, t.date DESC
 LIMIT 20;
 
 -- Posted rows that look like the same purchase as a new pending entry (duplicate warning).

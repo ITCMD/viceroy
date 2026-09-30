@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -175,5 +176,87 @@ func TestAccountsAPI(t *testing.T) {
 	}
 	if code, _ := c.do("PATCH", "/api/accounts/999", `{"name":"x"}`, true); code != 404 {
 		t.Fatalf("missing account = %d", code)
+	}
+}
+
+func TestTransactionsAPI(t *testing.T) {
+	c := newTestServer(t)
+	c.do("POST", "/api/setup", `{"name":"A","email":"a@example.com","password":"correct horse battery"}`, true)
+	_, out := c.do("POST", "/api/accounts", `{"name":"Wallet","type":"cash","balance":"40"}`, true)
+	acct := strconv.FormatInt(int64(out["id"].(float64)), 10)
+
+	_, cats := c.do("GET", "/api/categories", "", false)
+	groups := cats["groups"].([]any)
+	if len(groups) != 5 {
+		t.Fatalf("seeded groups = %d", len(groups))
+	}
+	var coffee float64
+	for _, g := range groups {
+		for _, ct := range g.(map[string]any)["categories"].([]any) {
+			if m := ct.(map[string]any); m["name"] == "Coffee Shops" {
+				coffee = m["id"].(float64)
+			}
+		}
+	}
+
+	code, out := c.do("POST", "/api/transactions", `{"account_id":`+acct+`,"date":"2026-09-10","amount":"-4.50","description":"Blue Bottle","tags":["treat"]}`, true)
+	if code != 201 || out["merchant"] != "Blue Bottle" || out["needs_review"] != true || len(out["tags"].([]any)) != 1 {
+		t.Fatalf("create = %d %v", code, out)
+	}
+	id := strconv.FormatInt(int64(out["id"].(float64)), 10)
+	code, out = c.do("PATCH", "/api/transactions/"+id, fmt.Sprintf(`{"category_id":%v,"notes":"latte"}`, coffee), true)
+	if code != 200 || out["category_name"] != "Coffee Shops" || out["needs_review"] != false || out["notes"] != "latte" {
+		t.Fatalf("patch = %d %v", code, out)
+	}
+	if code, _ := c.do("PATCH", "/api/transactions/"+id, `{"category_id":99999}`, true); code != 400 {
+		t.Fatalf("bad category = %d", code)
+	}
+
+	// A pending entry that matches a transaction posted the day before gets a warning.
+	body := `{"account_id":` + acct + `,"date":"2026-09-11","amount":"-4.50","description":"Blue Bottle","pending":true}`
+	if code, out := c.do("POST", "/api/transactions", body, true); code != 409 || len(out["duplicates"].([]any)) != 1 {
+		t.Fatalf("duplicate warning = %d %v", code, out)
+	}
+	body = strings.Replace(body, `"pending":true`, `"pending":true,"force":true`, 1)
+	code, out = c.do("POST", "/api/transactions", body, true)
+	if code != 201 || out["provisional"] != true || out["category_name"] != "Coffee Shops" {
+		t.Fatalf("forced pending = %d %v", code, out)
+	}
+	prov := strconv.FormatInt(int64(out["id"].(float64)), 10)
+
+	// Link by hand, then unlink.
+	if code, out := c.do("POST", "/api/transactions/"+prov+"/link", `{"posted_id":`+id+`}`, true); code != 200 || out["linked_txn_id"] == nil {
+		t.Fatalf("link = %d %v", code, out)
+	}
+	_, list := c.do("GET", "/api/transactions?account="+acct, "", false)
+	txns := list["transactions"].([]any)
+	if len(txns) != 1 || txns[0].(map[string]any)["has_linked"] != true {
+		t.Fatalf("list after link = %v", txns)
+	}
+	_, detail := c.do("GET", "/api/transactions/"+id, "", false)
+	if len(detail["linked"].([]any)) != 1 {
+		t.Fatalf("detail linked = %v", detail["linked"])
+	}
+	if code, _ := c.do("POST", "/api/transactions/"+prov+"/unlink", "", true); code != 200 {
+		t.Fatalf("unlink = %d", code)
+	}
+	if _, list := c.do("GET", "/api/transactions?q=bottle", "", false); len(list["transactions"].([]any)) != 2 {
+		t.Fatalf("search after unlink = %v", list)
+	}
+
+	// Rules: create, apply to existing.
+	code, out = c.do("POST", "/api/rules", `{"match_field":"merchant","match_op":"contains","match_value":"bottle","set_merchant":"Blue Bottle Coffee","add_tag":"coffee"}`, true)
+	if code != 201 {
+		t.Fatalf("create rule = %d %v", code, out)
+	}
+	rule := strconv.FormatInt(int64(out["id"].(float64)), 10)
+	if code, out := c.do("POST", "/api/rules/"+rule+"/apply", "", true); code != 200 || out["updated"].(float64) != 2 {
+		t.Fatalf("apply rule = %d %v", code, out)
+	}
+	if code, _ := c.do("POST", "/api/rules", `{"match_field":"merchant","match_op":"contains","match_value":"x"}`, true); code != 400 {
+		t.Fatalf("rule without action = %d", code)
+	}
+	if code, _ := c.do("DELETE", "/api/transactions/"+prov, "", true); code != 204 {
+		t.Fatalf("delete manual = %d", code)
 	}
 }

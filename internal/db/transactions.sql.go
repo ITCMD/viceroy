@@ -857,19 +857,21 @@ func (q *Queries) ListPostedDuplicates(ctx context.Context, arg ListPostedDuplic
 }
 
 const listPostedForLink = `-- name: ListPostedForLink :many
-SELECT t.id, t.date, t.amount_cents, t.description, COALESCE(m.name, '') AS merchant_name
+SELECT t.id, t.date, t.amount_cents, t.description, COALESCE(m.name, '') AS merchant_name,
+    CAST(ABS(t.amount_cents - ?1) AS INTEGER) AS distance
 FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id
-WHERE t.account_id = ?1 AND t.provisional = 0
-  AND t.date >= ?2 AND t.date <= ?3
+WHERE t.account_id = ?2 AND t.provisional = 0
+  AND t.date >= ?3 AND t.date <= ?4
   AND NOT EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id)
-ORDER BY ABS(t.amount_cents - sqlc.arg(amount_cents)), t.date DESC
+ORDER BY distance, t.date DESC
 LIMIT 20
 `
 
 type ListPostedForLinkParams struct {
-	AccountID int64  `json:"account_id"`
-	DateLo    string `json:"date_lo"`
-	DateHi    string `json:"date_hi"`
+	AmountCents int64  `json:"amount_cents"`
+	AccountID   int64  `json:"account_id"`
+	DateLo      string `json:"date_lo"`
+	DateHi      string `json:"date_hi"`
 }
 
 type ListPostedForLinkRow struct {
@@ -878,11 +880,17 @@ type ListPostedForLinkRow struct {
 	AmountCents  int64  `json:"amount_cents"`
 	Description  string `json:"description"`
 	MerchantName string `json:"merchant_name"`
+	Distance     int64  `json:"distance"`
 }
 
 // Posted rows a provisional entry could be linked to by hand.
 func (q *Queries) ListPostedForLink(ctx context.Context, arg ListPostedForLinkParams) ([]ListPostedForLinkRow, error) {
-	rows, err := q.db.QueryContext(ctx, listPostedForLink, arg.AccountID, arg.DateLo, arg.DateHi)
+	rows, err := q.db.QueryContext(ctx, listPostedForLink,
+		arg.AmountCents,
+		arg.AccountID,
+		arg.DateLo,
+		arg.DateHi,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -896,6 +904,7 @@ func (q *Queries) ListPostedForLink(ctx context.Context, arg ListPostedForLinkPa
 			&i.AmountCents,
 			&i.Description,
 			&i.MerchantName,
+			&i.Distance,
 		); err != nil {
 			return nil, err
 		}
@@ -913,7 +922,7 @@ func (q *Queries) ListPostedForLink(ctx context.Context, arg ListPostedForLinkPa
 const listRuleTargets = `-- name: ListRuleTargets :many
 SELECT t.id, t.account_id, t.amount_cents, t.description, t.payee, t.merchant_id, COALESCE(m.name, '') AS merchant_name
 FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id
-WHERE t.household_id = ? AND t.category_source != 'user' AND t.linked_txn_id IS NULL
+WHERE t.household_id = ? AND t.linked_txn_id IS NULL
 `
 
 type ListRuleTargetsRow struct {
@@ -926,7 +935,7 @@ type ListRuleTargetsRow struct {
 	MerchantName string        `json:"merchant_name"`
 }
 
-// Transactions a rule may recategorize: everything the user hasn't categorized by hand.
+// Transactions a rule may apply to (it never overrides a category the user chose by hand).
 func (q *Queries) ListRuleTargets(ctx context.Context, householdID int64) ([]ListRuleTargetsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRuleTargets, householdID)
 	if err != nil {
