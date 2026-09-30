@@ -538,6 +538,9 @@ func (s *Server) handleNetWorthHistory(w http.ResponseWriter, r *http.Request) {
 		for _, sn := range byDate[ds] {
 			cur[sn.AccountID] = sn.BalanceCents
 		}
+		if len(cur) == 0 {
+			continue // no history yet; don't draw a fake zero line
+		}
 		p := netWorthPoint{Date: ds}
 		ids := make([]int64, 0, len(cur))
 		for id := range cur {

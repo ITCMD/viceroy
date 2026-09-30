@@ -1,0 +1,99 @@
+import { expect, test, type Page } from "@playwright/test";
+
+const shots = process.env.SCREENSHOT_DIR ?? "test-results/screens";
+const shot = (page: Page, name: string) => page.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
+const fake = "http://127.0.0.1:18430";
+const admin = { email: "admin@example.com", password: "correct horse battery" };
+
+test.describe.configure({ mode: "serial" });
+
+async function login(page: Page) {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(admin.email);
+  await page.getByLabel("Password").fill(admin.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "Accounts" }).first().click();
+  await expect(page.getByRole("heading", { name: "Accounts", level: 1 })).toBeVisible();
+}
+
+test("manual account and SimpleFIN connect", async ({ page, request }) => {
+  await request.post(`${fake}/_control/scenario`, { data: { name: "initial" } });
+  await login(page);
+  await expect(page.getByText("No accounts yet")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add account" }).first().click();
+  await page.getByRole("button", { name: /Add a manual account/ }).click();
+  await page.getByLabel("Account name").fill("Wallet");
+  await page.getByLabel("Type").selectOption("cash");
+  await page.getByLabel("Current balance").fill("40.25");
+  await page.getByRole("dialog").getByRole("button", { name: "Add account" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page.getByTestId("account-row").filter({ hasText: "Wallet" })).toBeVisible();
+
+  const token = await (await request.get(`${fake}/_control/token`)).text();
+  await page.getByRole("button", { name: "Add account" }).first().click();
+  await page.getByRole("button", { name: /Connect with SimpleFIN/ }).click();
+  await page.getByLabel("Setup token").fill(token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page.getByTestId("account-row")).toHaveCount(7);
+  await expect(page.getByText("360 Checking (1111)")).toBeVisible();
+  await expect(page.getByText("Online Savings (4444)")).toBeVisible();
+  await shot(page, "10-accounts-networth");
+
+  await page.getByRole("tab", { name: "Credit cards" }).click();
+  await expect(page.getByTestId("account-row")).toHaveCount(3);
+  await shot(page, "11-accounts-credit");
+});
+
+test("relink keeps history, review links duplicates", async ({ page, request }) => {
+  await login(page);
+  await request.post(`${fake}/_control/scenario`, { data: { name: "relinked" } });
+  await page.getByRole("button", { name: "Sync now" }).click();
+  const banner = page.getByRole("button", { name: /1 account needs review/ });
+  await expect(banner).toBeVisible();
+  await expect(page.getByTestId("account-row").filter({ hasText: "Venture Card (5555)" })).toBeVisible();
+  await expect(page.getByTestId("account-row").filter({ hasText: "360 Performance Savings" }).getByText("Disconnected")).toBeVisible();
+  await expect(page.getByTestId("account-row").filter({ hasText: "360 Checking (1111)" }).getByText("Disconnected")).toHaveCount(0);
+  await shot(page, "12-accounts-review-banner");
+
+  await banner.click();
+  await expect(page.getByTestId("review-row")).toHaveCount(1);
+  await shot(page, "13-accounts-review-dialog");
+  await page.getByRole("button", { name: "Link to existing" }).click();
+  await expect(page.getByText("All accounts are reviewed.")).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).first().click();
+  await expect(banner).toBeHidden();
+});
+
+test("account sheet renames and hides", async ({ page }) => {
+  await login(page);
+  await page.getByTestId("account-row").filter({ hasText: "Venture Card (5555)" }).click();
+  const sheet = page.getByRole("dialog");
+  await sheet.getByLabel("Name").fill("Travel card");
+  await sheet.getByRole("button", { name: "Save changes" }).click();
+  await expect(sheet.getByRole("heading", { name: "Travel card" })).toBeVisible();
+  await shot(page, "14-account-sheet");
+  await sheet.getByRole("switch", { name: "Hide from lists" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("account-row").filter({ hasText: "Travel card" })).toHaveCount(0);
+  await page.getByRole("button", { name: /Show 1 hidden/ }).click();
+  await expect(page.getByTestId("account-row").filter({ hasText: "Travel card" })).toBeVisible();
+});
+
+test("mobile accounts layout", async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(admin.email);
+  await page.getByLabel("Password").fill(admin.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+  await page.goto("/accounts");
+  await expect(page.getByText("Net worth").first()).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(overflow).toBe(false);
+  await shot(page, "15-accounts-mobile");
+  await ctx.close();
+});

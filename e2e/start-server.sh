@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Starts a throwaway Viceroy instance with an empty data dir for the smoke suite.
+# Starts a throwaway Viceroy instance with an empty data dir for the smoke suite,
+# plus a fake SimpleFIN Bridge on FAKE_SF_PORT (default 18430).
 set -euo pipefail
-bin="$(cd "$(dirname "$0")/.." && pwd)/bin/viceroy"
+root="$(cd "$(dirname "$0")/.." && pwd)"
 dir=$(mktemp -d)
-trap 'rm -rf "$dir"' EXIT
+"$root/bin/fakesimplefin" -listen "127.0.0.1:${FAKE_SF_PORT:-18430}" &
+fake=$!
+trap 'kill $fake 2>/dev/null; rm -rf "$dir"' EXIT
 cd "$dir"
-"$bin" init >/dev/null
+"$root/bin/viceroy" init >/dev/null
 sed -i "s/127.0.0.1:8420/127.0.0.1:${PORT:-18421}/" viceroy.toml
-"$bin" serve
+"$root/bin/viceroy" serve

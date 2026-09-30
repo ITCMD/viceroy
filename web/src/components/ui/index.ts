@@ -5,3 +5,8 @@ export { Field } from "./Field";
 export { FormError } from "./FormError";
 export { MoneyText } from "./MoneyText";
 export { PageHeader } from "./PageHeader";
+export { Badge } from "./Badge";
+export { Dialog, Sheet } from "./Dialog";
+export { Select } from "./Select";
+export { Switch } from "./Switch";
+export { Tabs } from "./Tabs";

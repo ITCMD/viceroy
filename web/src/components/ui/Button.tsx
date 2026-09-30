@@ -1,13 +1,14 @@
 import clsx from "clsx";
 import type { ButtonHTMLAttributes } from "react";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "danger-ghost";
 
 const variants: Record<Variant, string> = {
   primary: "bg-accent text-accent-fg hover:brightness-95",
   secondary: "bg-surface text-text border border-border hover:bg-surface-2",
   ghost: "text-text hover:bg-surface-2",
   danger: "bg-negative text-white hover:brightness-95",
+  "danger-ghost": "text-negative hover:bg-negative/10",
 };
 
 export function Button({

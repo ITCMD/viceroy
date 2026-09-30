@@ -4,6 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { navItems } from "@/components/nav";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { SetupPage } from "@/features/auth/SetupPage";
+import { AccountsPage } from "@/features/accounts/AccountsPage";
 import { ComingSoon } from "@/features/placeholders/ComingSoon";
 import { loadSession } from "@/lib/session";
 
@@ -47,11 +48,15 @@ const phases: Record<string, number> = {
   "/": 6, "/accounts": 2, "/transactions": 3, "/budget": 5, "/reports": 6, "/goals": 5, "/settings": 7,
 };
 
+const pages: Record<string, () => React.ReactNode> = {
+  "/accounts": AccountsPage,
+};
+
 const pageRoutes = navItems.map((item) =>
   createRoute({
     getParentRoute: () => appRoute,
     path: item.to,
-    component: () => <ComingSoon item={item} phase={phases[item.to]} />,
+    component: pages[item.to] ?? (() => <ComingSoon item={item} phase={phases[item.to]} />),
   }),
 );
 
