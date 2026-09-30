@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link2, Mail, Unlink } from "lucide-react";
+import { Landmark, Link2, Mail, PencilLine, Unlink, Upload, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, CategoryPicker, Field, FormError, MoneyText, Select, Sheet, Switch, TagInput, TextArea } from "@/components/ui";
 import { goalsQuery } from "@/features/goals/api";
@@ -22,6 +22,34 @@ import {
 } from "./api";
 
 /** Transaction details: merchant, statement, category, tags, notes, review/hide, links, history. */
+const sourceChips: Record<string, { icon: LucideIcon; label: string }> = {
+  simplefin: { icon: Landmark, label: "SimpleFIN" },
+  email: { icon: Mail, label: "Email alert" },
+  manual: { icon: PencilLine, label: "Manual" },
+  import: { icon: Upload, label: "Imported" },
+};
+
+/** Where this transaction came from: its own source plus any linked pending/email entry. */
+function SourceChips({ t, linked }: { t: Transaction; linked: Transaction[] }) {
+  const sources = [t.source, ...(t.provisional ? [] : linked.filter((l) => l.provisional).map((l) => l.source))];
+  // A manual pending entry isn't a data source worth showing once the bank confirmed it.
+  const shown = [...new Set(sources)].filter((s) => !(s === "manual" && t.source !== "manual") && !(s === "manual" && t.provisional));
+  return (
+    <span className="flex items-center gap-1" data-testid="txn-sources">
+      {shown.map((s) => {
+        const c = sourceChips[s];
+        if (!c) return null;
+        const Icon = c.icon;
+        return (
+          <span key={s} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-xs text-muted" title={`From ${c.label}`}>
+            <Icon size={12} /> {c.label}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 export function TransactionSheet({ id, onClose, onSelect }: { id: number | null; onClose: () => void; onSelect: (id: number) => void }) {
   const { data } = useQuery({ ...transactionQuery(id ?? 0), enabled: id !== null });
   const t = data?.transaction;
@@ -72,10 +100,8 @@ function Details({
           <span>{shortDate(t.date)}</span>
           <span>·</span>
           <span>{accountLabel({ name: t.account_name, mask: t.account_mask })}</span>
-          {t.pending && <Badge>{pendingLabel(t)}</Badge>}
-          {t.source === "manual" && !t.provisional && <Badge>Manual</Badge>}
-          {t.source === "email" && !t.pending && <Badge>Email alert</Badge>}
-          {t.source === "import" && <Badge>Imported</Badge>}
+          {t.pending && <Badge>{t.source === "email" ? "Pending" : pendingLabel(t)}</Badge>}
+          <SourceChips t={t} linked={linked} />
           {t.hidden && <Badge>Hidden</Badge>}
         </div>
       </div>

@@ -90,7 +90,8 @@ DELETE FROM rules WHERE id = ? AND household_id = ?;
 SELECT t.*, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
-    EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked
+    EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
+    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id
@@ -114,7 +115,8 @@ LIMIT sqlc.arg(lim);
 SELECT t.*, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
-    EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked
+    EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
+    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id

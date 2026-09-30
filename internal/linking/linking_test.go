@@ -91,8 +91,8 @@ func TestLinkUnlinkBlacklist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Wrong amount, and outside the date window: no link.
-	if id, _ := LinkPosted(f.ctx, f.q, f.posted("CHIPOTLE 2231", "2026-09-12", -1900), f.now); id != 0 {
+	// Posted for less than the entry (not a tip), and outside the date window: no link.
+	if id, _ := LinkPosted(f.ctx, f.q, f.posted("CHIPOTLE 2231", "2026-09-12", -1800), f.now); id != 0 {
 		t.Fatal("linked despite amount mismatch")
 	}
 	if id, _ := LinkPosted(f.ctx, f.q, f.posted("CHIPOTLE 2231", "2026-09-25", -1875), f.now); id != 0 {
@@ -145,5 +145,54 @@ func TestDuplicates(t *testing.T) {
 	d, err := Duplicates(f.ctx, f.q, f.acct, -1875, "2026-09-11")
 	if err != nil || len(d) != 1 {
 		t.Fatalf("Duplicates = %v, %v", d, err)
+	}
+}
+
+func TestTipTolerance(t *testing.T) {
+	f := setup(t)
+	// An alert for $50.00 that posts as $60.00 with a tip links when the merchant agrees.
+	dinner := f.pending("Bistro Nord", "2026-09-10", -5000, "")
+	if id, _ := LinkPosted(f.ctx, f.q, f.posted("BISTRO NORD", "2026-09-11", -6000), f.now); id != dinner {
+		t.Fatalf("tip: linked %d, want %d", id, dinner)
+	}
+	// More than 30% over: no link.
+	f.pending("Bistro Nord", "2026-09-12", -5000, "")
+	if id, _ := LinkPosted(f.ctx, f.q, f.posted("BISTRO NORD", "2026-09-12", -6600), f.now); id != 0 {
+		t.Fatal("linked a posting 32% over the alert")
+	}
+	// A weak description match needs the exact amount.
+	f.pending("Coffee", "2026-09-14", -400, "")
+	if id, _ := LinkPosted(f.ctx, f.q, f.posted("SQ *BLUE BOTTLE", "2026-09-14", -450), f.now); id != 0 {
+		t.Fatal("linked a different amount on a weak match")
+	}
+	// Money in never stretches.
+	f.pending("Refund Acme", "2026-09-15", 1000, "")
+	if id, _ := LinkPosted(f.ctx, f.q, f.posted("REFUND ACME", "2026-09-15", 1200), f.now); id != 0 {
+		t.Fatal("linked a larger refund")
+	}
+	// An exact amount beats a closer-matching tip candidate.
+	exact := f.pending("Gas station", "2026-09-20", -4000, "")
+	f.pending("Shell Oil", "2026-09-20", -3500, "")
+	if id, _ := LinkPosted(f.ctx, f.q, f.posted("SHELL OIL GAS STATION", "2026-09-20", -4000), f.now); id != exact {
+		t.Fatalf("exact vs tip: linked %d, want %d", id, exact)
+	}
+	// The reverse direction (alert arrives after the posting) uses the same range.
+	p := f.posted("PIZZA PLACE", "2026-09-22", -2600)
+	id, err := LinkProvisional(f.ctx, f.q, Provisional{ID: f.pending("Pizza Place", "2026-09-22", -2200, ""), AccountID: f.acct, Date: "2026-09-22", AmountCents: -2200, Description: "Pizza Place"}, f.now)
+	if err != nil || id != p.ID {
+		t.Fatalf("reverse tip link = %d, %v; want %d", id, err, p.ID)
+	}
+}
+
+func TestRanges(t *testing.T) {
+	for _, amt := range []int64{-5000, -1875, -1, -7, -123457} {
+		lo, hi := postedRange(amt)
+		// Every posted amount in the range must map back to a provisional range containing amt.
+		for _, posted := range []int64{lo, hi, (lo + hi) / 2} {
+			plo, phi := provisionalRange(posted)
+			if amt < plo || amt > phi {
+				t.Errorf("prov %d → posted %d → prov range [%d, %d] excludes it", amt, posted, plo, phi)
+			}
+		}
 	}
 }

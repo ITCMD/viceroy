@@ -386,7 +386,8 @@ const getTransactionView = `-- name: GetTransactionView :one
 SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
-    EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked
+    EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
+    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id
@@ -430,6 +431,7 @@ type GetTransactionViewRow struct {
 	CategoryName   string         `json:"category_name"`
 	CategoryIcon   string         `json:"category_icon"`
 	HasLinked      bool           `json:"has_linked"`
+	LinkedSource   string         `json:"linked_source"`
 }
 
 func (q *Queries) GetTransactionView(ctx context.Context, arg GetTransactionViewParams) (GetTransactionViewRow, error) {
@@ -466,6 +468,7 @@ func (q *Queries) GetTransactionView(ctx context.Context, arg GetTransactionView
 		&i.CategoryName,
 		&i.CategoryIcon,
 		&i.HasLinked,
+		&i.LinkedSource,
 	)
 	return i, err
 }
@@ -1103,7 +1106,8 @@ const listTransactions = `-- name: ListTransactions :many
 SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
-    EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked
+    EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
+    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id
@@ -1168,6 +1172,7 @@ type ListTransactionsRow struct {
 	CategoryName   string         `json:"category_name"`
 	CategoryIcon   string         `json:"category_icon"`
 	HasLinked      bool           `json:"has_linked"`
+	LinkedSource   string         `json:"linked_source"`
 }
 
 // ---- transactions (user side) ----
@@ -1222,6 +1227,7 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 			&i.CategoryName,
 			&i.CategoryIcon,
 			&i.HasLinked,
+			&i.LinkedSource,
 		); err != nil {
 			return nil, err
 		}

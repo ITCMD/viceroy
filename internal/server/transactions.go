@@ -66,6 +66,7 @@ type txnDTO struct {
 	Provisional    bool     `json:"provisional"`
 	Source         string   `json:"source"`
 	HasLinked      bool     `json:"has_linked"`
+	LinkedSource   string   `json:"linked_source"` // source of the pending/email entry linked to this row
 	LinkedTxnID    *int64   `json:"linked_txn_id"`
 	GoalID         *int64   `json:"goal_id"`
 	Tags           []tagDTO `json:"tags"`
@@ -82,7 +83,7 @@ func toTxnDTO(t db.ListTransactionsRow) txnDTO {
 		MerchantID: ptr(t.MerchantID), CategoryID: ptr(t.CategoryID), CategoryName: t.CategoryName,
 		CategoryIcon: t.CategoryIcon, CategorySource: t.CategorySource, Notes: t.Notes,
 		Hidden: t.Hidden == 1, NeedsReview: t.NeedsReview == 1, Pending: t.Pending == 1,
-		Provisional: t.Provisional == 1, Source: t.Source, HasLinked: t.HasLinked,
+		Provisional: t.Provisional == 1, Source: t.Source, HasLinked: t.HasLinked, LinkedSource: t.LinkedSource,
 		LinkedTxnID: ptr(t.LinkedTxnID), GoalID: ptr(t.GoalID), Tags: []tagDTO{},
 	}
 }
@@ -207,9 +208,19 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 		linked = append(linked, v)
 	}
 	// The alert email an email transaction came from (bodies are shown via /email/messages/{id}).
+	// On a posted row confirmed by SimpleFIN, the email of the alert it was linked to.
 	var alert any
+	alertTxn := int64(0)
 	if t.Source == "email" {
-		if m, err := q.GetEmailMessageForTransaction(ctx, sql.NullInt64{Int64: t.ID, Valid: true}); err == nil {
+		alertTxn = t.ID
+	}
+	for _, p := range provs {
+		if p.Source == "email" && alertTxn == 0 {
+			alertTxn = p.ID
+		}
+	}
+	if alertTxn != 0 {
+		if m, err := q.GetEmailMessageForTransaction(ctx, sql.NullInt64{Int64: alertTxn, Valid: true}); err == nil {
 			alert = m
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			s.internalError(w, err)

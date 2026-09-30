@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ArrowLeftRight, ChevronDown, EyeOff, Link2, Plus, Search } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, EyeOff, Link2, Mail, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader, Segmented } from "@/components/ui";
 import { accountLabel, accountsQuery, canAddTo } from "@/features/accounts/api";
@@ -159,7 +159,8 @@ export function TransactionRow({ txn: t, onClick }: { txn: Transaction; onClick:
         <span className="flex items-center gap-1.5">
           <span className={clsx("truncate text-sm font-medium", t.hidden && "text-muted")}>{t.merchant}</span>
           {t.needs_review && <span className="size-1.5 shrink-0 rounded-full bg-accent" title="Needs review" aria-label="Needs review" />}
-          {t.has_linked && <Link2 size={13} className="shrink-0 text-muted" aria-label="Linked to a pending entry" />}
+          {t.source === "email" && <Mail size={13} className="shrink-0 text-muted" aria-label="From an email alert" />}
+          {t.has_linked && t.linked_source !== "email" && <Link2 size={13} className="shrink-0 text-muted" aria-label="Linked to a pending entry" />}
           {t.hidden && <EyeOff size={13} className="shrink-0 text-muted" aria-label="Hidden" />}
         </span>
         <span className="block truncate text-xs text-muted">

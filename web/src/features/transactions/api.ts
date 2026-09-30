@@ -24,6 +24,8 @@ export type Transaction = {
   provisional: boolean;
   source: "manual" | "simplefin" | "email" | "import";
   has_linked: boolean;
+  /** Source of the pending entry linked to this row ("email" when an alert arrived first). */
+  linked_source: "" | "manual" | "email";
   linked_txn_id: number | null;
   goal_id: number | null;
   tags: Tag[];

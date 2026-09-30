@@ -19,7 +19,55 @@ const (
 	DaysAfter  = 10
 	// Minimum description similarity for an automatic link.
 	MinScore = 0.5
+	// A card charge can post higher than its alert or pending entry (a tip, a gas
+	// pre-authorization settling). Money out may grow by up to TipPct percent when the
+	// descriptions agree at least TipMinScore. An exact amount always wins.
+	TipPct      = 30
+	TipMinScore = 0.8
 )
+
+// postedRange is the posted amounts a provisional amount may link to.
+func postedRange(prov int64) (lo, hi int64) {
+	if prov >= 0 {
+		return prov, prov
+	}
+	return prov - (-prov)*TipPct/100, prov
+}
+
+// provisionalRange is the provisional amounts a posted amount may link to (the inverse).
+func provisionalRange(posted int64) (lo, hi int64) {
+	if posted >= 0 {
+		return posted, posted
+	}
+	// |prov| * (100+TipPct)/100 >= |posted|, rounded so the ranges agree.
+	minAbs := ((-posted)*100 + 100 + TipPct - 1) / (100 + TipPct)
+	return posted, -minAbs
+}
+
+// qualifies reports whether a candidate is good enough to link automatically.
+func qualifies(exact bool, score float64) bool {
+	if exact {
+		return score >= MinScore
+	}
+	return score >= TipMinScore
+}
+
+type pick struct {
+	id    int64
+	exact bool
+	score float64
+	gap   int
+}
+
+func (p *pick) consider(id int64, exact bool, score float64, gap int) {
+	if !qualifies(exact, score) {
+		return
+	}
+	if p.id == 0 || (exact && !p.exact) ||
+		(exact == p.exact && (score > p.score || (score == p.score && gap < p.gap))) {
+		*p = pick{id, exact, score, gap}
+	}
+}
 
 var (
 	ErrNotProvisional = errors.New("only a pending entry can be linked to a posted transaction")
@@ -45,8 +93,9 @@ func LinkPosted(ctx context.Context, q *db.Queries, p Posted, now time.Time) (in
 	if err != nil {
 		return 0, err
 	}
+	lo, hi := provisionalRange(p.AmountCents)
 	cands, err := q.ListLinkCandidates(ctx, db.ListLinkCandidatesParams{
-		AccountID: p.AccountID, AmountLo: p.AmountCents, AmountHi: p.AmountCents,
+		AccountID: p.AccountID, AmountLo: lo, AmountHi: hi,
 		DateLo: d.AddDate(0, 0, -DaysAfter).Format(time.DateOnly), DateHi: d.AddDate(0, 0, DaysBefore).Format(time.DateOnly),
 		PostedID: p.ID,
 	})
@@ -54,21 +103,14 @@ func LinkPosted(ctx context.Context, q *db.Queries, p Posted, now time.Time) (in
 		return 0, err
 	}
 	postedText := p.Description + " " + p.Payee + " " + p.Merchant
-	best, bestScore, bestGap := int64(0), 0.0, 99
+	var best pick
 	for _, c := range cands {
-		s := Score(c.Description+" "+c.Payee+" "+c.MerchantName, postedText)
-		if s < MinScore {
-			continue
-		}
-		gap := dayGap(c.Date, p.Date)
-		if s > bestScore || (s == bestScore && gap < bestGap) {
-			best, bestScore, bestGap = c.ID, s, gap
-		}
+		best.consider(c.ID, c.AmountCents == p.AmountCents, Score(c.Description+" "+c.Payee+" "+c.MerchantName, postedText), dayGap(c.Date, p.Date))
 	}
-	if best == 0 {
+	if best.id == 0 {
 		return 0, nil
 	}
-	return best, apply(ctx, q, best, p.ID, now)
+	return best.id, apply(ctx, q, best.id, p.ID, now)
 }
 
 // Link links provisional entry provID to posted transaction postedID by hand.
@@ -248,8 +290,9 @@ func LinkProvisional(ctx context.Context, q *db.Queries, p Provisional, now time
 	if err != nil {
 		return 0, err
 	}
+	lo, hi := postedRange(p.AmountCents)
 	cands, err := q.ListLinkTargets(ctx, db.ListLinkTargetsParams{
-		AccountID: p.AccountID, AmountLo: p.AmountCents, AmountHi: p.AmountCents,
+		AccountID: p.AccountID, AmountLo: lo, AmountHi: hi,
 		DateLo: d.AddDate(0, 0, -DaysBefore).Format(time.DateOnly), DateHi: d.AddDate(0, 0, DaysAfter).Format(time.DateOnly),
 		ProvisionalID: p.ID,
 	})
@@ -257,19 +300,12 @@ func LinkProvisional(ctx context.Context, q *db.Queries, p Provisional, now time
 		return 0, err
 	}
 	provText := p.Description + " " + p.Merchant
-	best, bestScore, bestGap := int64(0), 0.0, 99
+	var best pick
 	for _, c := range cands {
-		s := Score(provText, c.Description+" "+c.Payee+" "+c.MerchantName)
-		if s < MinScore {
-			continue
-		}
-		gap := dayGap(p.Date, c.Date)
-		if s > bestScore || (s == bestScore && gap < bestGap) {
-			best, bestScore, bestGap = c.ID, s, gap
-		}
+		best.consider(c.ID, c.AmountCents == p.AmountCents, Score(provText, c.Description+" "+c.Payee+" "+c.MerchantName), dayGap(p.Date, c.Date))
 	}
-	if best == 0 {
+	if best.id == 0 {
 		return 0, nil
 	}
-	return best, apply(ctx, q, p.ID, best, now)
+	return best.id, apply(ctx, q, p.ID, best.id, now)
 }
