@@ -8,6 +8,7 @@ web:
 build: web
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/viceroy ./cmd/viceroy
 	CGO_ENABLED=0 go build -o bin/fakesimplefin ./cmd/fakesimplefin
+	CGO_ENABLED=0 go build -o bin/fakeimap ./cmd/fakeimap
 
 test:
 	go vet ./...

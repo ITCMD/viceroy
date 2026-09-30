@@ -5,17 +5,22 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"viceroy/internal/config"
 	"viceroy/internal/db"
+	"viceroy/internal/email"
+	"viceroy/internal/email/fakeimap"
 	"viceroy/internal/secrets"
 	"viceroy/internal/syncer"
 )
@@ -39,7 +44,10 @@ func newTestServer(t *testing.T) *client {
 	}
 	box, _ := secrets.New(make([]byte, 32))
 	web := fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}}
-	srv := httptest.NewServer(New(cfg, conn, web, slog.New(slog.DiscardHandler), syncer.New(conn, box, slog.New(slog.DiscardHandler))).Handler())
+	mail := email.New(conn, box, slog.New(slog.DiscardHandler))
+	mail.Poll = 100 * time.Millisecond
+	go mail.Run(t.Context())
+	srv := httptest.NewServer(New(cfg, conn, web, slog.New(slog.DiscardHandler), syncer.New(conn, box, slog.New(slog.DiscardHandler)), mail).Handler())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
 	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}}
@@ -330,5 +338,82 @@ func TestPaperCash(t *testing.T) {
 	}
 	if _, out := c.do("PATCH", "/api/settings", `{"paper_cash_enabled":true}`, true); out["paper_cash_enabled"] != true {
 		t.Fatalf("enable = %v", out)
+	}
+}
+
+func TestEmailAPI(t *testing.T) {
+	c := newTestServer(t)
+	c.do("POST", "/api/setup", `{"name":"A","email":"a@example.com","password":"correct horse battery"}`, true)
+	_, acct := c.do("POST", "/api/accounts", `{"name":"CU Checking","type":"checking","balance":"100"}`, true)
+	acctID := strconv.FormatInt(int64(acct["id"].(float64)), 10)
+
+	srv, err := fakeimap.Start("127.0.0.1:0", "me@example.com", "app-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	for _, f := range []string{"labeled.eml", "unknown.eml"} {
+		raw, _ := os.ReadFile("../email/testdata/" + f)
+		srv.Deliver(raw)
+	}
+	host, port, _ := net.SplitHostPort(srv.Addr)
+	mbox := `{"host":"` + host + `","port":` + port + `,"security":"none","username":"me@example.com","password":"%s"}`
+	if code, out := c.do("POST", "/api/email/mailboxes", fmt.Sprintf(mbox, "wrong"), true); code != 400 {
+		t.Fatalf("bad password = %d %v", code, out)
+	}
+	code, mb := c.do("POST", "/api/email/mailboxes", fmt.Sprintf(mbox, "app-pass"), true)
+	if code != 201 || mb["password_enc"] != nil || mb["folder"] != "INBOX" {
+		t.Fatalf("create mailbox = %d %v", code, mb)
+	}
+	var open []any
+	for deadline := time.Now().Add(5 * time.Second); len(open) < 2 && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		_, out := c.do("GET", "/api/email/messages?status=open", "", false)
+		open = out["messages"].([]any)
+	}
+	if len(open) != 2 {
+		t.Fatalf("open messages = %v", open)
+	}
+	var cuMsg string
+	for _, m := range open {
+		if m := m.(map[string]any); m["from_addr"] == "alerts@mycu.org" {
+			cuMsg = strconv.FormatInt(int64(m["id"].(float64)), 10)
+		}
+	}
+	_, detail := c.do("GET", "/api/email/messages/"+cuMsg, "", false)
+	if !strings.Contains(detail["body_text"].(string), "SHELL OIL") {
+		t.Fatalf("detail = %v", detail)
+	}
+
+	// Build a custom parser against the sample.
+	draft := `{"sender":"mycu.org","account_id":` + acctID + `,"parser":"custom"` +
+		`,"custom_parser":{"amount":{"before":"Amount:"},"merchant":{"before":"Merchant:"}}}`
+	_, pv := c.do("POST", "/api/email/filters/preview", strings.Replace(draft, "{", `{"message_id":`+cuMsg+`,`, 1), true)
+	if ms := pv["matches"].([]any); len(ms) != 1 || pv["sample"].(map[string]any)["parsed"].(map[string]any)["merchant"] != "SHELL OIL 57442" {
+		t.Fatalf("preview = %v", pv)
+	}
+	if code, _ := c.do("POST", "/api/email/filters", `{"account_id":`+acctID+`}`, true); code != 400 {
+		t.Fatalf("empty filter = %d", code)
+	}
+	code, res := c.do("POST", "/api/email/filters", draft, true)
+	if code != 201 || res["routed"].(float64) != 1 {
+		t.Fatalf("create filter = %d %v", code, res)
+	}
+	_, detail = c.do("GET", "/api/email/messages/"+cuMsg, "", false)
+	txn := strconv.FormatInt(int64(detail["transaction_id"].(float64)), 10)
+	_, td := c.do("GET", "/api/transactions/"+txn, "", false)
+	if tx := td["transaction"].(map[string]any); tx["source"] != "email" || tx["amount_cents"].(float64) != -4810 || td["email"].(map[string]any)["subject"] != "Debit card purchase alert" {
+		t.Fatalf("transaction = %v", td)
+	}
+	_, out := c.do("GET", "/api/email/messages?status=open", "", false)
+	news := out["messages"].([]any)[0].(map[string]any)
+	if len(out["messages"].([]any)) != 1 || out["counts"].(map[string]any)["unrouted"].(float64) != 1 {
+		t.Fatalf("after filter = %v", out)
+	}
+	newsID := strconv.FormatInt(int64(news["id"].(float64)), 10)
+	if code, _ := c.do("POST", "/api/email/messages/"+newsID+"/ignore", "", true); code != 204 {
+		t.Fatalf("ignore = %d", code)
+	}
+	if code, _ := c.do("POST", "/api/email/messages/"+cuMsg+"/ignore", "", true); code != 409 {
+		t.Fatalf("ignore parsed = %d", code)
 	}
 }

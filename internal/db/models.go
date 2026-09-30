@@ -74,6 +74,60 @@ type Connection struct {
 	CreatedAt     int64         `json:"created_at"`
 }
 
+type EmailFilter struct {
+	ID           int64  `json:"id"`
+	HouseholdID  int64  `json:"household_id"`
+	Name         string `json:"name"`
+	Priority     int64  `json:"priority"`
+	Enabled      int64  `json:"enabled"`
+	Sender       string `json:"sender"`
+	SubjectMatch string `json:"subject_match"`
+	BodyMatch    string `json:"body_match"`
+	UseRegex     int64  `json:"use_regex"`
+	AccountID    int64  `json:"account_id"`
+	Parser       string `json:"parser"`
+	CustomParser string `json:"custom_parser"`
+	Sign         string `json:"sign"`
+	CreatedAt    int64  `json:"created_at"`
+}
+
+type EmailMailbox struct {
+	ID            int64         `json:"id"`
+	HouseholdID   int64         `json:"household_id"`
+	Name          string        `json:"name"`
+	Host          string        `json:"host"`
+	Port          int64         `json:"port"`
+	Security      string        `json:"security"`
+	Username      string        `json:"username"`
+	PasswordEnc   []byte        `json:"password_enc"`
+	Folder        string        `json:"folder"`
+	Enabled       int64         `json:"enabled"`
+	UidValidity   int64         `json:"uid_validity"`
+	LastUid       int64         `json:"last_uid"`
+	Status        string        `json:"status"`
+	LastError     string        `json:"last_error"`
+	LastCheckedAt sql.NullInt64 `json:"last_checked_at"`
+	CreatedAt     int64         `json:"created_at"`
+}
+
+type EmailMessage struct {
+	ID            int64         `json:"id"`
+	HouseholdID   int64         `json:"household_id"`
+	MailboxID     sql.NullInt64 `json:"mailbox_id"`
+	MessageID     string        `json:"message_id"`
+	Uid           int64         `json:"uid"`
+	FromAddr      string        `json:"from_addr"`
+	FromName      string        `json:"from_name"`
+	Subject       string        `json:"subject"`
+	ReceivedAt    int64         `json:"received_at"`
+	BodyText      string        `json:"body_text"`
+	Status        string        `json:"status"`
+	FilterID      sql.NullInt64 `json:"filter_id"`
+	TransactionID sql.NullInt64 `json:"transaction_id"`
+	Error         string        `json:"error"`
+	CreatedAt     int64         `json:"created_at"`
+}
+
 type Household struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`

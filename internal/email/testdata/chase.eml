@@ -1,0 +1,20 @@
+From: Chase <no.reply.alerts@chase.com>
+To: user@example.com
+Subject: Your $12.34 transaction with STARBUCKS STORE 123
+Date: Tue, 29 Sep 2026 09:15:00 -0500
+Message-ID: <chase-1@alerts.chase.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b1"
+
+--b1
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+<html><head><style>td{color:red}</style></head><body>
+<table><tr><td>Account</td><td>Sapphire (...1234)</td></tr>
+<tr><td>Date</td><td>Sep 29, 2026 at 9:15 AM ET</td></tr>
+<tr><td>Merchant</td><td>STARBUCKS STORE 123</td></tr>
+<tr><td>Amount</td><td>$12.34</td></tr></table>
+<p>You are receiving this alert because you chose to. &copy; 2026</p>
+</body></html>
+--b1--

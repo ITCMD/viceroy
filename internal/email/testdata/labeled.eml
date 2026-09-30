@@ -1,0 +1,11 @@
+From: Credit Union Alerts <alerts@mycu.org>
+To: user@example.com
+Subject: Debit card purchase alert
+Date: Wed, 30 Sep 2026 12:00:00 +0000
+Message-ID: <cu-42@mycu.org>
+Content-Type: text/plain
+
+A purchase was made with your debit card ending in 4321.
+Merchant: SHELL OIL 57442
+Amount: $48.10
+Date: 09/30/2026

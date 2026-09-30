@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"viceroy/internal/accounts"
 	"viceroy/internal/categorize"
 	"viceroy/internal/db"
 	"viceroy/internal/linking"
@@ -204,7 +205,17 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 		}
 		linked = append(linked, v)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"transaction": t, "linked": linked})
+	// The alert email an email transaction came from (bodies are shown via /email/messages/{id}).
+	var alert any
+	if t.Source == "email" {
+		if m, err := q.GetEmailMessageForTransaction(ctx, sql.NullInt64{Int64: t.ID, Valid: true}); err == nil {
+			alert = m
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			s.internalError(w, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"transaction": t, "linked": linked, "email": alert})
 }
 
 type createTxnIn struct {
@@ -305,7 +316,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		s.internalError(w, err)
 		return
 	}
-	if err := adjustManualBalance(ctx, q, in.AccountID, amt); err != nil {
+	if err := accounts.AdjustManualBalance(ctx, q, in.AccountID, amt); err != nil {
 		s.internalError(w, err)
 		return
 	}
@@ -319,24 +330,6 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusCreated, t)
-}
-
-// adjustManualBalance moves a manual account's balance by delta cents (a manual transaction
-// was added, changed or deleted) and records today's snapshot. Synced accounts are left alone:
-// their balance comes from the bank.
-func adjustManualBalance(ctx context.Context, q *db.Queries, accountID, delta int64) error {
-	if delta == 0 {
-		return nil
-	}
-	now := time.Now()
-	bal, err := q.AdjustManualBalance(ctx, db.AdjustManualBalanceParams{Delta: delta, Now: sql.NullInt64{Int64: now.Unix(), Valid: true}, ID: accountID})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return q.UpsertBalanceSnapshot(ctx, db.UpsertBalanceSnapshotParams{AccountID: accountID, Date: now.Format(time.DateOnly), BalanceCents: bal})
 }
 
 // setTags replaces a transaction's tags with names (creating missing tags). keep leaves
@@ -483,7 +476,7 @@ func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request)
 		s.internalError(w, err)
 		return
 	}
-	if err := adjustManualBalance(ctx, q, t.AccountID, t.AmountCents-oldAmount); err != nil {
+	if err := accounts.AdjustManualBalance(ctx, q, t.AccountID, t.AmountCents-oldAmount); err != nil {
 		s.internalError(w, err)
 		return
 	}
@@ -521,7 +514,7 @@ func (s *Server) handleDeleteTransaction(w http.ResponseWriter, r *http.Request)
 		s.internalError(w, err)
 		return
 	}
-	if err := adjustManualBalance(ctx, q, t.AccountID, -t.AmountCents); err != nil {
+	if err := accounts.AdjustManualBalance(ctx, q, t.AccountID, -t.AmountCents); err != nil {
 		s.internalError(w, err)
 		return
 	}

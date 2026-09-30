@@ -20,6 +20,7 @@ import (
 	"viceroy/internal/categorize"
 	"viceroy/internal/config"
 	"viceroy/internal/db"
+	"viceroy/internal/email"
 	"viceroy/internal/secrets"
 	"viceroy/internal/server"
 	"viceroy/internal/syncer"
@@ -99,6 +100,7 @@ func runServe(path string) error {
 		return err
 	}
 	sync := syncer.New(conn, box, log)
+	mail := email.New(conn, box, log)
 
 	webFS, err := web.Dist()
 	if err != nil {
@@ -106,7 +108,7 @@ func runServe(path string) error {
 	}
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           server.New(cfg, conn, webFS, log, sync).Handler(),
+		Handler:           server.New(cfg, conn, webFS, log, sync, mail).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -114,6 +116,7 @@ func runServe(path string) error {
 	defer stop()
 	go pruneSessions(ctx, auth.New(conn), log)
 	go sync.Run(ctx)
+	go mail.Run(ctx)
 
 	errc := make(chan error, 1)
 	go func() {

@@ -18,6 +18,7 @@ import (
 	"viceroy/internal/auth"
 	"viceroy/internal/config"
 	"viceroy/internal/db"
+	"viceroy/internal/email"
 	"viceroy/internal/syncer"
 )
 
@@ -31,12 +32,13 @@ type Server struct {
 	limiter *loginLimiter
 	log     *slog.Logger
 	sync    *syncer.Service
+	mail    *email.Service
 }
 
-func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger, sync *syncer.Service) *Server {
+func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger, sync *syncer.Service, mail *email.Service) *Server {
 	return &Server{
 		cfg: cfg, db: conn, auth: auth.New(conn), web: web,
-		limiter: newLoginLimiter(10, 15*time.Minute), log: log, sync: sync,
+		limiter: newLoginLimiter(10, 15*time.Minute), log: log, sync: sync, mail: mail,
 	}
 }
 
@@ -62,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 			s.accountRoutes(r)
 			s.transactionRoutes(r)
 			s.settingsRoutes(r)
+			s.emailRoutes(r)
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")

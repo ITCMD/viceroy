@@ -229,3 +229,47 @@ func Duplicates(ctx context.Context, q *db.Queries, accountID, amountCents int64
 		DateLo: d.AddDate(0, 0, -1).Format(time.DateOnly), DateHi: d.AddDate(0, 0, 1).Format(time.DateOnly),
 	})
 }
+
+// Provisional is a new stand-in entry (an email alert) that may arrive after the bank already
+// posted the purchase.
+type Provisional struct {
+	ID          int64
+	AccountID   int64
+	Date        string
+	AmountCents int64
+	Description string
+	Merchant    string
+}
+
+// LinkProvisional links a new provisional entry to an already-posted transaction, using the
+// same window and score as LinkPosted. It returns the posted id, or 0 when nothing matched.
+func LinkProvisional(ctx context.Context, q *db.Queries, p Provisional, now time.Time) (int64, error) {
+	d, err := time.Parse(time.DateOnly, p.Date)
+	if err != nil {
+		return 0, err
+	}
+	cands, err := q.ListLinkTargets(ctx, db.ListLinkTargetsParams{
+		AccountID: p.AccountID, AmountLo: p.AmountCents, AmountHi: p.AmountCents,
+		DateLo: d.AddDate(0, 0, -DaysBefore).Format(time.DateOnly), DateHi: d.AddDate(0, 0, DaysAfter).Format(time.DateOnly),
+		ProvisionalID: p.ID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	provText := p.Description + " " + p.Merchant
+	best, bestScore, bestGap := int64(0), 0.0, 99
+	for _, c := range cands {
+		s := Score(provText, c.Description+" "+c.Payee+" "+c.MerchantName)
+		if s < MinScore {
+			continue
+		}
+		gap := dayGap(p.Date, c.Date)
+		if s > bestScore || (s == bestScore && gap < bestGap) {
+			best, bestScore, bestGap = c.ID, s, gap
+		}
+	}
+	if best == 0 {
+		return 0, nil
+	}
+	return best, apply(ctx, q, p.ID, best, now)
+}
