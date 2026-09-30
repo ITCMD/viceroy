@@ -189,3 +189,12 @@ RETURNING *;
 UPDATE accounts SET balance_cents = balance_cents + sqlc.arg(delta), balance_at = sqlc.arg(now), updated_at = sqlc.arg(now)
 WHERE id = sqlc.arg(id) AND is_manual = 1
 RETURNING balance_cents;
+
+-- Per-account daily sums of settled transactions, used to rebuild balances before the first
+-- snapshot. Provisional rows (manual pending entries, email alerts on synced accounts) are left
+-- out: the bank balance doesn't include them yet.
+-- name: DailyAccountTotals :many
+SELECT t.account_id, t.date, CAST(SUM(t.amount_cents) AS INTEGER) AS total
+FROM transactions t
+WHERE t.household_id = ? AND t.provisional = 0
+GROUP BY t.account_id, t.date;

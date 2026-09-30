@@ -235,6 +235,45 @@ func (q *Queries) CreateConnection(ctx context.Context, arg CreateConnectionPara
 	return i, err
 }
 
+const dailyAccountTotals = `-- name: DailyAccountTotals :many
+SELECT t.account_id, t.date, CAST(SUM(t.amount_cents) AS INTEGER) AS total
+FROM transactions t
+WHERE t.household_id = ? AND t.provisional = 0
+GROUP BY t.account_id, t.date
+`
+
+type DailyAccountTotalsRow struct {
+	AccountID int64  `json:"account_id"`
+	Date      string `json:"date"`
+	Total     int64  `json:"total"`
+}
+
+// Per-account daily sums of settled transactions, used to rebuild balances before the first
+// snapshot. Provisional rows (manual pending entries, email alerts on synced accounts) are left
+// out: the bank balance doesn't include them yet.
+func (q *Queries) DailyAccountTotals(ctx context.Context, householdID int64) ([]DailyAccountTotalsRow, error) {
+	rows, err := q.db.QueryContext(ctx, dailyAccountTotals, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DailyAccountTotalsRow
+	for rows.Next() {
+		var i DailyAccountTotalsRow
+		if err := rows.Scan(&i.AccountID, &i.Date, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteAccount = `-- name: DeleteAccount :exec
 DELETE FROM accounts WHERE id = ? AND household_id = ?
 `

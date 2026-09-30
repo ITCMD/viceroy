@@ -530,52 +530,65 @@ func (s *Server) netWorthHistory(ctx context.Context, hh int64, days int) ([]net
 	if err != nil {
 		return nil, err
 	}
-	counted := map[int64]bool{}
-	group := map[int64]string{}
-	for _, a := range accts {
-		counted[a.ID] = a.IncludeInNetWorth == 1 && a.Status != "ignored" && a.Status != "review"
-		group[a.ID] = accounts.Group(a.Type)
-	}
-	end := time.Now()
-	start := end.AddDate(0, 0, -(days - 1))
-	startStr := start.Format(time.DateOnly)
-	seed, err := q.ListAccountSnapshotsBefore(ctx, db.ListAccountSnapshotsBeforeParams{HouseholdID: hh, Date: startStr})
+	snaps, err := q.ListHouseholdSnapshots(ctx, db.ListHouseholdSnapshotsParams{HouseholdID: hh, Date: ""})
 	if err != nil {
 		return nil, err
 	}
-	snaps, err := q.ListHouseholdSnapshots(ctx, db.ListHouseholdSnapshotsParams{HouseholdID: hh, Date: startStr})
+	totals, err := q.DailyAccountTotals(ctx, hh)
 	if err != nil {
 		return nil, err
 	}
-	cur := map[int64]int64{}
-	for _, sn := range seed {
-		cur[sn.AccountID] = sn.BalanceCents
+	txns := map[int64]map[string]int64{}
+	for _, t := range totals {
+		if txns[t.AccountID] == nil {
+			txns[t.AccountID] = map[string]int64{}
+		}
+		txns[t.AccountID][t.Date] = t.Total
 	}
-	byDate := map[string][]db.BalanceSnapshot{}
+	bySnap := map[int64][]db.BalanceSnapshot{}
 	for _, sn := range snaps {
-		byDate[sn.Date] = append(byDate[sn.Date], sn)
+		bySnap[sn.AccountID] = append(bySnap[sn.AccountID], sn)
 	}
+
+	end := time.Now()
+	today := end.Format(time.DateOnly)
+	start := end.AddDate(0, 0, -(days - 1)).Format(time.DateOnly)
+	var series []accountHistory
+	earliest := ""
+	for _, a := range accts {
+		if a.IncludeInNetWorth != 1 || a.Status == "ignored" || a.Status == "review" {
+			continue
+		}
+		h := accountHistory{group: accounts.Group(a.Type), snaps: bySnap[a.ID]}
+		anchorDate, anchorBal := today, a.BalanceCents // no snapshot yet: today's balance
+		if len(h.snaps) > 0 {
+			anchorDate, anchorBal = h.snaps[0].Date, h.snaps[0].BalanceCents
+		}
+		h.before = backfill(anchorDate, anchorBal, txns[a.ID])
+		known := anchorDate
+		for d := range txns[a.ID] {
+			known = min(known, d)
+		}
+		if len(h.snaps) == 0 && len(txns[a.ID]) == 0 && a.BalanceCents == 0 {
+			continue // nothing known about it
+		}
+		if earliest == "" || known < earliest {
+			earliest = known
+		}
+		h.anchor = anchorDate
+		series = append(series, h)
+	}
+	if earliest == "" {
+		return []netWorthPoint{}, nil // no history yet; don't draw a fake zero line
+	}
+	from, _ := time.Parse(time.DateOnly, max(start, earliest))
 	out := make([]netWorthPoint, 0, days)
-	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+	for d := from; !d.After(end); d = d.AddDate(0, 0, 1) {
 		ds := d.Format(time.DateOnly)
-		for _, sn := range byDate[ds] {
-			cur[sn.AccountID] = sn.BalanceCents
-		}
-		if len(cur) == 0 {
-			continue // no history yet; don't draw a fake zero line
-		}
 		p := netWorthPoint{Date: ds, Groups: map[string]int64{}}
-		ids := make([]int64, 0, len(cur))
-		for id := range cur {
-			ids = append(ids, id)
-		}
-		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-		for _, id := range ids {
-			if !counted[id] {
-				continue
-			}
-			b := cur[id]
-			p.Groups[group[id]] += b
+		for i := range series {
+			b := series[i].at(ds)
+			p.Groups[series[i].group] += b
 			if b >= 0 {
 				p.Assets += b
 			} else {
@@ -586,4 +599,51 @@ func (s *Server) netWorthHistory(ctx context.Context, hh int64, days int) ([]net
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// accountHistory yields one account's balance on any day: the latest snapshot on or before
+// it, or before the first snapshot a balance rebuilt from transactions.
+type accountHistory struct {
+	group  string
+	snaps  []db.BalanceSnapshot // ascending by date
+	anchor string               // first snapshot date (or today)
+	before func(date string) int64
+	next   int   // index of the next snapshot not yet applied (days are visited in order)
+	cur    int64 // balance from the latest applied snapshot
+}
+
+func (h *accountHistory) at(date string) int64 {
+	if date < h.anchor || len(h.snaps) == 0 {
+		return h.before(date)
+	}
+	for h.next < len(h.snaps) && h.snaps[h.next].Date <= date {
+		h.cur = h.snaps[h.next].BalanceCents
+		h.next++
+	}
+	return h.cur
+}
+
+// backfill returns the balance on a day before anchorDate: the anchor balance minus every
+// transaction dated after that day, up to and including anchorDate. Before the account's first
+// transaction it stays flat.
+func backfill(anchorDate string, anchorBal int64, daily map[string]int64) func(string) int64 {
+	dates := make([]string, 0, len(daily))
+	for d := range daily {
+		if d <= anchorDate {
+			dates = append(dates, d)
+		}
+	}
+	sort.Strings(dates)
+	// suffix[i] = sum of daily[dates[i:]]
+	suffix := make([]int64, len(dates)+1)
+	for i := len(dates) - 1; i >= 0; i-- {
+		suffix[i] = suffix[i+1] + daily[dates[i]]
+	}
+	return func(date string) int64 {
+		i := sort.SearchStrings(dates, date)
+		if i < len(dates) && dates[i] == date {
+			i++ // that day's transactions are already in the balance
+		}
+		return anchorBal - suffix[i]
+	}
 }
