@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"viceroy/internal/auth"
+	"viceroy/internal/categorize"
 	"viceroy/internal/config"
 	"viceroy/internal/db"
 	"viceroy/internal/secrets"
@@ -85,6 +86,9 @@ func runServe(path string) error {
 		return err
 	}
 	defer conn.Close()
+	if err := categorize.SeedAll(context.Background(), db.New(conn)); err != nil {
+		return fmt.Errorf("seeding categories: %w", err)
+	}
 
 	box, err := secrets.LoadOrCreate(filepath.Join(cfg.DataDir, "secret.key"))
 	if err != nil {

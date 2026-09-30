@@ -219,3 +219,40 @@ func TestTokenReuseAndDailyCap(t *testing.T) {
 }
 
 var _ = sql.ErrNoRows
+
+func TestSyncCategorizesAndLinksPending(t *testing.T) {
+	e := newEnv(t)
+	c, err := e.svc.Connect(e.ctx, e.hh, fake.Token(e.url, "a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := db.New(e.svc.DB)
+	chk := e.accounts()["360 Checking (1111)"]
+	g, _ := q.CreateCategoryGroup(e.ctx, db.CreateCategoryGroupParams{HouseholdID: e.hh, Name: "Flexible", Kind: "flexible"})
+	cat, _ := q.CreateCategory(e.ctx, db.CreateCategoryParams{HouseholdID: e.hh, GroupID: g.ID, Name: "Restaurants"})
+	prov, err := q.InsertManualTransaction(e.ctx, db.InsertManualTransactionParams{
+		HouseholdID: e.hh, AccountID: chk.ID, Date: time.Now().Format(time.DateOnly), AmountCents: -1875,
+		Description: "Chipotle", Pending: 1, Provisional: 1,
+		CategoryID: sql.NullInt64{Int64: cat.ID, Valid: true}, CategorySource: "user",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e.fake.SetScenario("posted")
+	if err := e.svc.Sync(e.ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	p, err := q.GetTransactionByID(e.ctx, prov)
+	if err != nil || !p.LinkedTxnID.Valid {
+		t.Fatalf("pending entry not linked: %+v %v", p, err)
+	}
+	posted, _ := q.GetTransactionByID(e.ctx, p.LinkedTxnID.Int64)
+	if posted.Description != "CHIPOTLE 2231 AUSTIN TX" || posted.CategoryID.Int64 != cat.ID || posted.CategorySource != "linked" || !posted.MerchantID.Valid {
+		t.Fatalf("posted row = %+v", posted)
+	}
+	m, _ := q.GetMerchant(e.ctx, db.GetMerchantParams{ID: posted.MerchantID.Int64, HouseholdID: e.hh})
+	if m.Name != "Chipotle" {
+		t.Fatalf("merchant = %q", m.Name)
+	}
+}

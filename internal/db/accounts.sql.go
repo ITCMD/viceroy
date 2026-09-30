@@ -392,11 +392,11 @@ func (q *Queries) InsertSyncEvent(ctx context.Context, arg InsertSyncEventParams
 	return err
 }
 
-const insertSyncedTransaction = `-- name: InsertSyncedTransaction :exec
+const insertSyncedTransaction = `-- name: InsertSyncedTransaction :one
 INSERT INTO transactions (
     household_id, account_id, external_id, source, date, amount_cents, description, payee, memo,
     pending, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
 `
 
 type InsertSyncedTransactionParams struct {
@@ -414,8 +414,8 @@ type InsertSyncedTransactionParams struct {
 	UpdatedAt   int64          `json:"updated_at"`
 }
 
-func (q *Queries) InsertSyncedTransaction(ctx context.Context, arg InsertSyncedTransactionParams) error {
-	_, err := q.db.ExecContext(ctx, insertSyncedTransaction,
+func (q *Queries) InsertSyncedTransaction(ctx context.Context, arg InsertSyncedTransactionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertSyncedTransaction,
 		arg.HouseholdID,
 		arg.AccountID,
 		arg.ExternalID,
@@ -429,7 +429,9 @@ func (q *Queries) InsertSyncedTransaction(ctx context.Context, arg InsertSyncedT
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	return err
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const listAccountSnapshotsBefore = `-- name: ListAccountSnapshotsBefore :many

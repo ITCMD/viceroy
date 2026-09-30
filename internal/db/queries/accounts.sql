@@ -132,11 +132,11 @@ SELECT sqlc.arg(into_id), src.date, src.balance_cents FROM balance_snapshots src
 -- name: GetTransactionByExternal :one
 SELECT id, pending FROM transactions WHERE account_id = ? AND external_id = ?;
 
--- name: InsertSyncedTransaction :exec
+-- name: InsertSyncedTransaction :one
 INSERT INTO transactions (
     household_id, account_id, external_id, source, date, amount_cents, description, payee, memo,
     pending, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;
 
 -- name: UpdateSyncedTransaction :exec
 UPDATE transactions

@@ -39,6 +39,24 @@ type BalanceSnapshot struct {
 	BalanceCents int64  `json:"balance_cents"`
 }
 
+type Category struct {
+	ID          int64  `json:"id"`
+	HouseholdID int64  `json:"household_id"`
+	GroupID     int64  `json:"group_id"`
+	Name        string `json:"name"`
+	Icon        string `json:"icon"`
+	Sort        int64  `json:"sort"`
+	Archived    int64  `json:"archived"`
+}
+
+type CategoryGroup struct {
+	ID          int64  `json:"id"`
+	HouseholdID int64  `json:"household_id"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	Sort        int64  `json:"sort"`
+}
+
 type Connection struct {
 	ID            int64         `json:"id"`
 	HouseholdID   int64         `json:"household_id"`
@@ -77,6 +95,35 @@ type Institution struct {
 	LastError    string `json:"last_error"`
 }
 
+type LinkBlacklist struct {
+	ProvisionalID int64 `json:"provisional_id"`
+	PostedID      int64 `json:"posted_id"`
+}
+
+type Merchant struct {
+	ID          int64  `json:"id"`
+	HouseholdID int64  `json:"household_id"`
+	Name        string `json:"name"`
+	Normalized  string `json:"normalized"`
+}
+
+type Rule struct {
+	ID            int64         `json:"id"`
+	HouseholdID   int64         `json:"household_id"`
+	Priority      int64         `json:"priority"`
+	MatchField    string        `json:"match_field"`
+	MatchOp       string        `json:"match_op"`
+	MatchValue    string        `json:"match_value"`
+	AccountID     sql.NullInt64 `json:"account_id"`
+	AmountMin     sql.NullInt64 `json:"amount_min"`
+	AmountMax     sql.NullInt64 `json:"amount_max"`
+	SetCategoryID sql.NullInt64 `json:"set_category_id"`
+	SetMerchant   string        `json:"set_merchant"`
+	AddTagID      sql.NullInt64 `json:"add_tag_id"`
+	SetHidden     int64         `json:"set_hidden"`
+	CreatedAt     int64         `json:"created_at"`
+}
+
 type Session struct {
 	TokenHash  []byte `json:"token_hash"`
 	UserID     int64  `json:"user_id"`
@@ -101,20 +148,43 @@ type SyncEvent struct {
 	Message      string        `json:"message"`
 }
 
+type Tag struct {
+	ID          int64  `json:"id"`
+	HouseholdID int64  `json:"household_id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+}
+
 type Transaction struct {
-	ID          int64          `json:"id"`
-	HouseholdID int64          `json:"household_id"`
-	AccountID   int64          `json:"account_id"`
-	ExternalID  sql.NullString `json:"external_id"`
-	Source      string         `json:"source"`
-	Date        string         `json:"date"`
-	AmountCents int64          `json:"amount_cents"`
-	Description string         `json:"description"`
-	Payee       string         `json:"payee"`
-	Memo        string         `json:"memo"`
-	Pending     int64          `json:"pending"`
-	CreatedAt   int64          `json:"created_at"`
-	UpdatedAt   int64          `json:"updated_at"`
+	ID             int64          `json:"id"`
+	HouseholdID    int64          `json:"household_id"`
+	AccountID      int64          `json:"account_id"`
+	ExternalID     sql.NullString `json:"external_id"`
+	Source         string         `json:"source"`
+	Date           string         `json:"date"`
+	AmountCents    int64          `json:"amount_cents"`
+	Description    string         `json:"description"`
+	Payee          string         `json:"payee"`
+	Memo           string         `json:"memo"`
+	Pending        int64          `json:"pending"`
+	CreatedAt      int64          `json:"created_at"`
+	UpdatedAt      int64          `json:"updated_at"`
+	MerchantID     sql.NullInt64  `json:"merchant_id"`
+	CategoryID     sql.NullInt64  `json:"category_id"`
+	CategorySource string         `json:"category_source"`
+	Notes          string         `json:"notes"`
+	Hidden         int64          `json:"hidden"`
+	NeedsReview    int64          `json:"needs_review"`
+	Provisional    int64          `json:"provisional"`
+	LinkedTxnID    sql.NullInt64  `json:"linked_txn_id"`
+	LinkedAt       sql.NullInt64  `json:"linked_at"`
+	GoalID         sql.NullInt64  `json:"goal_id"`
+	OwnerUserID    sql.NullInt64  `json:"owner_user_id"`
+}
+
+type TransactionTag struct {
+	TransactionID int64 `json:"transaction_id"`
+	TagID         int64 `json:"tag_id"`
 }
 
 type User struct {

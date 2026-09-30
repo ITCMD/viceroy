@@ -25,7 +25,8 @@ const (
 //   - relinked: Capital One re-authorized with a new conn_id and new account ids, and only
 //     some accounts shared: checking, card, one Savor card, plus a new Venture card.
 //   - reauth: Capital One login broken (con.auth); its accounts are absent.
-var Scenarios = []string{"initial", "relinked", "reauth"}
+//   - posted: initial plus a new Chipotle charge on checking today, for pending-entry linking.
+var Scenarios = []string{"initial", "relinked", "reauth", "posted"}
 
 type Server struct {
 	mu       sync.Mutex
@@ -160,10 +161,14 @@ func build(scenario string, now time.Time) simplefin.AccountSet {
 	ally := acct{"ACT-ally-sav", "CON-ally", "Online Savings (4444)", "15230.55", []txn{{5, "12.31", "INTEREST PAID", false}}}
 	allyConn := simplefin.Connection{ConnID: "CON-ally", Name: "Ally Bank", OrgID: "ally", OrgURL: "https://ally.com"}
 	switch scenario {
-	case "initial":
+	case "initial", "posted":
+		chk := groceries
+		if scenario == "posted" {
+			chk = append(groceries[:len(groceries):len(groceries)], txn{0, "-18.75", "CHIPOTLE 2231 AUSTIN TX", false})
+		}
 		conns = []simplefin.Connection{{ConnID: "CON-c1", Name: "Capital One", OrgID: "capone", OrgURL: "https://capitalone.com"}, allyConn}
 		accts = []acct{
-			{"ACT-c1-chk", "CON-c1", "360 Checking (1111)", "3120.44", groceries},
+			{"ACT-c1-chk", "CON-c1", "360 Checking (1111)", "3120.44", chk},
 			{"ACT-c1-sav", "CON-c1", "360 Performance Savings (2222)", "8800.00", nil},
 			{"ACT-c1-qs", "CON-c1", "Quicksilver Card (3333)", "-742.18", []txn{{1, "-23.45", "UBER *TRIP", true}, {4, "-118.20", "AMAZON.COM*2K4", false}}},
 			{"ACT-c1-sv1", "CON-c1", "Savor Card", "-120.00", nil},

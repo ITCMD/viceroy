@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"viceroy/internal/accounts"
+	"viceroy/internal/categorize"
 	"viceroy/internal/db"
+	"viceroy/internal/linking"
 	"viceroy/internal/money"
 	"viceroy/internal/providers/simplefin"
 	"viceroy/internal/secrets"
@@ -193,6 +195,7 @@ type run struct {
 	household   []db.Account
 	claimed     map[int64]bool // accounts already matched in this run
 	fetched     map[string]bool
+	cat         *categorize.Categorizer
 }
 
 func (r *run) event(ctx context.Context, kind string, accountID int64, msg string) {
@@ -466,11 +469,15 @@ func (r *run) transactions(ctx context.Context, acct db.Account, txns []simplefi
 			}
 			continue
 		}
-		if err := r.q.InsertSyncedTransaction(ctx, db.InsertSyncedTransactionParams{
+		id, err = r.q.InsertSyncedTransaction(ctx, db.InsertSyncedTransactionParams{
 			HouseholdID: acct.HouseholdID, AccountID: acct.ID, ExternalID: nullStr(t.ID), Source: source,
 			Date: date, AmountCents: amt, Description: t.Description, Payee: t.Payee, Memo: t.Memo,
 			Pending: pending, CreatedAt: nowUnix, UpdatedAt: nowUnix,
-		}); err != nil {
+		})
+		if err != nil {
+			return err
+		}
+		if err := r.classify(ctx, acct, id, date, amt, t); err != nil {
 			return err
 		}
 	}
@@ -488,6 +495,28 @@ func (r *run) transactions(ctx context.Context, acct db.Account, txns []simplefi
 		}
 	}
 	return nil
+}
+
+// classify runs the categorization pipeline on a new transaction, then links it to a matching
+// pending entry, whose category (if any) takes precedence.
+func (r *run) classify(ctx context.Context, acct db.Account, id int64, date string, amt int64, t simplefin.Transaction) error {
+	if r.cat == nil {
+		c, err := categorize.New(ctx, r.q, acct.HouseholdID)
+		if err != nil {
+			return err
+		}
+		r.cat = c
+	}
+	res, err := r.cat.Apply(ctx, categorize.Txn{
+		ID: id, HouseholdID: acct.HouseholdID, AccountID: acct.ID, AmountCents: amt, Description: t.Description, Payee: t.Payee,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = linking.LinkPosted(ctx, r.q, linking.Posted{
+		ID: id, AccountID: acct.ID, Date: date, AmountCents: amt, Description: t.Description, Payee: t.Payee, Merchant: res.Merchant,
+	}, r.now)
+	return err
 }
 
 // adoptable picks the pool row a new transaction replaces, or -1.

@@ -14,6 +14,7 @@ import (
 
 	"github.com/alexedwards/argon2id"
 
+	"viceroy/internal/categorize"
 	"viceroy/internal/db"
 )
 
@@ -95,6 +96,9 @@ func (s *Service) Setup(ctx context.Context, in SetupInput) (db.User, error) {
 		return db.User{}, err
 	}
 	if err := q.AddHouseholdMember(ctx, db.AddHouseholdMemberParams{HouseholdID: h.ID, UserID: u.ID, Role: "owner"}); err != nil {
+		return db.User{}, err
+	}
+	if err := categorize.SeedDefaults(ctx, q, h.ID); err != nil {
 		return db.User{}, err
 	}
 	return u, tx.Commit()
