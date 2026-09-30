@@ -41,7 +41,7 @@ INSERT INTO accounts (
     name, mask, type, currency, balance_cents, available_cents, balance_at, status,
     review_candidate_id, is_manual, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at
+RETURNING id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin
 `
 
 type CreateAccountParams struct {
@@ -110,6 +110,62 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.IsManual,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Builtin,
+	)
+	return i, err
+}
+
+const createBuiltinAccount = `-- name: CreateBuiltinAccount :one
+INSERT INTO accounts (household_id, name, type, currency, balance_cents, balance_at, status, is_manual, builtin, created_at, updated_at)
+VALUES (?, ?, ?, 'USD', 0, ?, 'active', 1, ?, ?, ?)
+RETURNING id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin
+`
+
+type CreateBuiltinAccountParams struct {
+	HouseholdID int64         `json:"household_id"`
+	Name        string        `json:"name"`
+	Type        string        `json:"type"`
+	BalanceAt   sql.NullInt64 `json:"balance_at"`
+	Builtin     string        `json:"builtin"`
+	CreatedAt   int64         `json:"created_at"`
+	UpdatedAt   int64         `json:"updated_at"`
+}
+
+func (q *Queries) CreateBuiltinAccount(ctx context.Context, arg CreateBuiltinAccountParams) (Account, error) {
+	row := q.db.QueryRowContext(ctx, createBuiltinAccount,
+		arg.HouseholdID,
+		arg.Name,
+		arg.Type,
+		arg.BalanceAt,
+		arg.Builtin,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.ConnectionID,
+		&i.InstitutionID,
+		&i.ExternalID,
+		&i.InstitutionName,
+		&i.ProviderName,
+		&i.Name,
+		&i.Mask,
+		&i.Type,
+		&i.Currency,
+		&i.BalanceCents,
+		&i.AvailableCents,
+		&i.BalanceAt,
+		&i.Status,
+		&i.ReviewCandidateID,
+		&i.IncludeInNetWorth,
+		&i.Hidden,
+		&i.OwnerUserID,
+		&i.IsManual,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Builtin,
 	)
 	return i, err
 }
@@ -212,7 +268,7 @@ func (q *Queries) DisconnectConnectionAccounts(ctx context.Context, arg Disconne
 }
 
 const getAccount = `-- name: GetAccount :one
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at FROM accounts WHERE id = ? AND household_id = ?
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin FROM accounts WHERE id = ? AND household_id = ?
 `
 
 type GetAccountParams struct {
@@ -246,12 +302,13 @@ func (q *Queries) GetAccount(ctx context.Context, arg GetAccountParams) (Account
 		&i.IsManual,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Builtin,
 	)
 	return i, err
 }
 
 const getAccountByExternal = `-- name: GetAccountByExternal :one
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at FROM accounts WHERE connection_id = ? AND external_id = ?
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin FROM accounts WHERE connection_id = ? AND external_id = ?
 `
 
 type GetAccountByExternalParams struct {
@@ -285,6 +342,49 @@ func (q *Queries) GetAccountByExternal(ctx context.Context, arg GetAccountByExte
 		&i.IsManual,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Builtin,
+	)
+	return i, err
+}
+
+const getBuiltinAccount = `-- name: GetBuiltinAccount :one
+
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin FROM accounts WHERE household_id = ? AND builtin = ?
+`
+
+type GetBuiltinAccountParams struct {
+	HouseholdID int64  `json:"household_id"`
+	Builtin     string `json:"builtin"`
+}
+
+// ---- built-in accounts ----
+func (q *Queries) GetBuiltinAccount(ctx context.Context, arg GetBuiltinAccountParams) (Account, error) {
+	row := q.db.QueryRowContext(ctx, getBuiltinAccount, arg.HouseholdID, arg.Builtin)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.ConnectionID,
+		&i.InstitutionID,
+		&i.ExternalID,
+		&i.InstitutionName,
+		&i.ProviderName,
+		&i.Name,
+		&i.Mask,
+		&i.Type,
+		&i.Currency,
+		&i.BalanceCents,
+		&i.AvailableCents,
+		&i.BalanceAt,
+		&i.Status,
+		&i.ReviewCandidateID,
+		&i.IncludeInNetWorth,
+		&i.Hidden,
+		&i.OwnerUserID,
+		&i.IsManual,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Builtin,
 	)
 	return i, err
 }
@@ -514,7 +614,7 @@ func (q *Queries) ListAccountTransactionKeys(ctx context.Context, accountID int6
 
 const listAccounts = `-- name: ListAccounts :many
 
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at FROM accounts WHERE household_id = ? ORDER BY type, name, id
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin FROM accounts WHERE household_id = ? ORDER BY type, name, id
 `
 
 // ---- accounts ----
@@ -550,6 +650,7 @@ func (q *Queries) ListAccounts(ctx context.Context, householdID int64) ([]Accoun
 			&i.IsManual,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Builtin,
 		); err != nil {
 			return nil, err
 		}
@@ -565,7 +666,7 @@ func (q *Queries) ListAccounts(ctx context.Context, householdID int64) ([]Accoun
 }
 
 const listConnectionAccounts = `-- name: ListConnectionAccounts :many
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at FROM accounts WHERE connection_id = ?
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin FROM accounts WHERE connection_id = ?
 `
 
 func (q *Queries) ListConnectionAccounts(ctx context.Context, connectionID sql.NullInt64) ([]Account, error) {
@@ -600,6 +701,7 @@ func (q *Queries) ListConnectionAccounts(ctx context.Context, connectionID sql.N
 			&i.IsManual,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Builtin,
 		); err != nil {
 			return nil, err
 		}

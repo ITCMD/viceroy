@@ -22,6 +22,8 @@ export type Account = {
   include_in_net_worth: boolean;
   hidden: boolean;
   is_manual: boolean;
+  /** "paper_cash" for the built-in cash wallet. */
+  builtin: "" | "paper_cash";
   connection_id: number | null;
   last_synced_at: number | null;
 };
@@ -93,11 +95,16 @@ export function useAccountsMutation<TVars, TRes = unknown>(fn: (v: TVars) => Pro
 
 /** An account's display line under its name, e.g. "Capital One · ••1111". */
 export function accountSubtitle(a: Account) {
-  const parts = [a.is_manual ? "Manual" : a.institution_name || "Linked", a.mask && `••${a.mask}`];
+  const parts = [a.builtin ? "Cash on hand" : a.is_manual ? "Manual" : a.institution_name || "Linked", a.mask && `••${a.mask}`];
   return parts.filter(Boolean).join(" · ");
 }
 
 /** Name plus "••1234" unless the name already shows the last four digits. */
 export function accountLabel(a: { name: string; mask: string }) {
   return a.mask && !a.name.includes(a.mask) ? `${a.name} ••${a.mask}` : a.name;
+}
+
+/** Accounts a new transaction can be added to. */
+export function canAddTo(a: Account) {
+  return a.status === "active" || a.status === "disconnected";
 }

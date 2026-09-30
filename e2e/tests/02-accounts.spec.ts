@@ -20,7 +20,8 @@ async function login(page: Page) {
 test("manual account and SimpleFIN connect", async ({ page, request }) => {
   await request.post(`${fake}/_control/scenario`, { data: { name: "initial" } });
   await login(page);
-  await expect(page.getByText("No accounts yet")).toBeVisible();
+  await expect(page.getByText("No bank accounts yet")).toBeVisible();
+  await expect(page.getByTestId("account-row").filter({ hasText: "Paper Cash" })).toBeVisible();
 
   await page.getByRole("button", { name: "Add account" }).first().click();
   await page.getByRole("button", { name: /Add a manual account/ }).click();
@@ -37,7 +38,7 @@ test("manual account and SimpleFIN connect", async ({ page, request }) => {
   await page.getByLabel("Setup token").fill(token);
   await page.getByRole("button", { name: "Connect" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
-  await expect(page.getByTestId("account-row")).toHaveCount(7);
+  await expect(page.getByTestId("account-row")).toHaveCount(8);
   await expect(page.getByText("360 Checking (1111)")).toBeVisible();
   await expect(page.getByText("Online Savings (4444)")).toBeVisible();
   await shot(page, "10-accounts-networth");

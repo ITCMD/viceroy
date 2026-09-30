@@ -173,3 +173,13 @@ UPDATE transactions SET external_id = ? WHERE id = ?;
 -- name: DisconnectConnectionAccounts :exec
 UPDATE accounts SET status = 'disconnected', updated_at = ?
 WHERE connection_id = ? AND status IN ('active', 'review');
+
+-- ---- built-in accounts ----
+
+-- name: GetBuiltinAccount :one
+SELECT * FROM accounts WHERE household_id = ? AND builtin = ?;
+
+-- name: CreateBuiltinAccount :one
+INSERT INTO accounts (household_id, name, type, currency, balance_cents, balance_at, status, is_manual, builtin, created_at, updated_at)
+VALUES (?, ?, ?, 'USD', 0, ?, 'active', 1, ?, ?, ?)
+RETURNING *;

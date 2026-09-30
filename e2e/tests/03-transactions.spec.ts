@@ -131,6 +131,35 @@ test("rules page creates and applies a rule", async ({ page }) => {
   await expect(page.getByTestId("txn-row").filter({ hasText: "Uber" })).toContainText("Taxi & Ride Shares");
 });
 
+test("paper cash: standalone entries default to it, and it can be turned off", async ({ page }) => {
+  await login(page);
+  await openTransactions(page);
+  await page.getByRole("button", { name: /Add/ }).first().click();
+  const dlg = page.getByRole("dialog");
+  await dlg.getByRole("button", { name: "Standalone" }).click();
+  await expect(dlg.getByLabel("Account")).toHaveValue(await dlg.getByLabel("Account").locator("option", { hasText: "Paper Cash" }).getAttribute("value") ?? "");
+  await dlg.getByLabel("Merchant").fill("Farmers Market");
+  await dlg.getByLabel("Amount").fill("9");
+  await dlg.getByRole("button", { name: "Add transaction" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("txn-row").filter({ hasText: "Farmers Market" })).toContainText("Paper Cash");
+
+  await page.getByRole("link", { name: "Settings" }).first().click();
+  const toggle = page.getByRole("switch", { name: "Paper Cash account" });
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await shot(page, "27-settings-paper-cash");
+  await page.getByRole("link", { name: "Accounts" }).first().click();
+  await expect(page.getByTestId("account-row").filter({ hasText: "Paper Cash" })).toHaveCount(0);
+  await openTransactions(page);
+  await expect(page.getByTestId("txn-row").filter({ hasText: "Farmers Market" })).toBeVisible(); // history kept
+
+  await page.getByRole("link", { name: "Settings" }).first().click();
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+});
+
 test("mobile transactions layout", async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();

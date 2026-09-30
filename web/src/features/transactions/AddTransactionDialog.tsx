@@ -35,10 +35,18 @@ export function AddTransactionDialog({
   const { data: cats } = useQuery(categoriesQuery);
   const { data: tagData } = useQuery(tagsQuery);
 
+  const paperCash = accounts.find((a) => a.builtin === "paper_cash");
+  const bankDefault = defaultAccount ?? accounts.find((a) => !a.builtin)?.id ?? accounts[0]?.id;
+  const chooseKind = (k: Kind) => {
+    setKind(k);
+    // Standalone entries are usually cash; pending entries are waiting on a bank.
+    if (!defaultAccount) setAccountId(String((k === "standalone" ? paperCash?.id : undefined) ?? bankDefault ?? ""));
+  };
+
   useEffect(() => {
     if (!open) return;
     setKind("pending");
-    setAccountId(String(defaultAccount ?? accounts[0]?.id ?? ""));
+    setAccountId(String(bankDefault ?? ""));
     setDate(todayISO());
     setDescription("");
     setAmount("");
@@ -47,7 +55,7 @@ export function AddTransactionDialog({
     setNotes("");
     setTags([]);
     setDuplicates(null);
-  }, [open, defaultAccount, accounts]);
+  }, [open]);
 
   const create = useTxnMutation(
     async (force: boolean) => {
@@ -138,7 +146,7 @@ export function AddTransactionDialog({
           <Segmented
             label="Kind"
             value={kind}
-            onChange={setKind}
+            onChange={chooseKind}
             items={[
               { value: "pending", label: "Pending entry" },
               { value: "standalone", label: "Standalone" },
@@ -147,7 +155,9 @@ export function AddTransactionDialog({
           <p className="-mt-1 text-xs text-muted">
             {kind === "pending"
               ? "Counts toward your budget now, then links to the bank's transaction when it arrives."
-              : "For cash or anything that will never come from the bank."}
+              : paperCash
+                ? "For cash (Paper Cash) or anything that will never come from the bank."
+                : "For anything that will never come from the bank."}
           </p>
           <Select
             label="Account"

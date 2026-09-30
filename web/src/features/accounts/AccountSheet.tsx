@@ -56,7 +56,7 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
           }}
         >
           <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
-          <Select label="Type" value={type} onChange={(e) => setType(e.target.value)} options={typeOptions} />
+          {!account.builtin && <Select label="Type" value={type} onChange={(e) => setType(e.target.value)} options={typeOptions} />}
           {account.is_manual && (
             <Field
               label={account.is_liability ? "Amount owed" : "Balance"}
@@ -80,15 +80,19 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
             onCheckedChange={(v) => patch.mutate({ include_in_net_worth: v })}
           />
           <Switch label="Hide from lists" checked={account.hidden} onCheckedChange={(v) => patch.mutate({ hidden: v })} />
-          <Switch
-            label="Account is closed"
-            hint="Keeps its history but stops showing it as active."
-            checked={account.status === "closed"}
-            onCheckedChange={(v) => patch.mutate({ closed: v })}
-          />
+          {account.builtin ? (
+            <p className="text-xs text-muted">Paper Cash is built in. Turn it off in Settings if you don't track cash.</p>
+          ) : (
+            <Switch
+              label="Account is closed"
+              hint="Keeps its history but stops showing it as active."
+              checked={account.status === "closed"}
+              onCheckedChange={(v) => patch.mutate({ closed: v })}
+            />
+          )}
         </div>
 
-        {others.length > 0 && (
+        {!account.builtin && others.length > 0 && (
           <div className="flex flex-col gap-2 border-t border-border pt-5">
             <Select
               label="Merge into another account"
@@ -108,7 +112,7 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
           </div>
         )}
 
-        <div className="flex flex-col gap-2 border-t border-border pt-5">
+        {!account.builtin && <div className="flex flex-col gap-2 border-t border-border pt-5">
           <FormError error={del.error} />
           {confirmDelete ? (
             <div className="flex items-center gap-2">
@@ -127,7 +131,7 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
               </Button>
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </Sheet>
   );

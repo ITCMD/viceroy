@@ -260,3 +260,46 @@ func TestTransactionsAPI(t *testing.T) {
 		t.Fatalf("delete manual = %d", code)
 	}
 }
+
+func TestPaperCash(t *testing.T) {
+	c := newTestServer(t)
+	c.do("POST", "/api/setup", `{"name":"A","email":"a@example.com","password":"correct horse battery"}`, true)
+	_, out := c.do("GET", "/api/accounts", "", false)
+	var id string
+	for _, a := range out["accounts"].([]any) {
+		if m := a.(map[string]any); m["builtin"] == "paper_cash" {
+			id = strconv.FormatInt(int64(m["id"].(float64)), 10)
+			if m["name"] != "Paper Cash" || m["type"] != "cash" || m["status"] != "active" {
+				t.Fatalf("paper cash = %v", m)
+			}
+		}
+	}
+	if id == "" {
+		t.Fatal("no Paper Cash account after setup")
+	}
+	if code, _ := c.do("DELETE", "/api/accounts/"+id, "", true); code != 400 {
+		t.Fatalf("delete = %d", code)
+	}
+	if code, _ := c.do("PATCH", "/api/accounts/"+id, `{"type":"checking"}`, true); code != 400 {
+		t.Fatalf("retype = %d", code)
+	}
+	if code, out := c.do("POST", "/api/transactions", `{"account_id":`+id+`,"date":"2026-09-10","amount":"-3","description":"Farmers market"}`, true); code != 201 {
+		t.Fatalf("cash txn = %d %v", code, out)
+	}
+
+	if code, out := c.do("PATCH", "/api/settings", `{"paper_cash_enabled":false}`, true); code != 200 || out["paper_cash_enabled"] != false {
+		t.Fatalf("disable = %d %v", code, out)
+	}
+	_, out = c.do("GET", "/api/accounts", "", false)
+	for _, a := range out["accounts"].([]any) {
+		if m := a.(map[string]any); m["builtin"] == "paper_cash" && (m["status"] != "closed" || m["hidden"] != true) {
+			t.Fatalf("disabled paper cash = %v", m)
+		}
+	}
+	if _, list := c.do("GET", "/api/transactions?q=farmers", "", false); len(list["transactions"].([]any)) != 1 {
+		t.Fatal("history lost when disabling")
+	}
+	if _, out := c.do("PATCH", "/api/settings", `{"paper_cash_enabled":true}`, true); out["paper_cash_enabled"] != true {
+		t.Fatalf("enable = %v", out)
+	}
+}

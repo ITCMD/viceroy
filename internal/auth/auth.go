@@ -14,6 +14,7 @@ import (
 
 	"github.com/alexedwards/argon2id"
 
+	"viceroy/internal/accounts"
 	"viceroy/internal/categorize"
 	"viceroy/internal/db"
 )
@@ -99,6 +100,9 @@ func (s *Service) Setup(ctx context.Context, in SetupInput) (db.User, error) {
 		return db.User{}, err
 	}
 	if err := categorize.SeedDefaults(ctx, q, h.ID); err != nil {
+		return db.User{}, err
+	}
+	if err := accounts.EnsurePaperCash(ctx, q, h.ID); err != nil {
 		return db.User{}, err
 	}
 	return u, tx.Commit()

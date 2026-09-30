@@ -31,6 +31,7 @@ type Account struct {
 	IsManual          int64          `json:"is_manual"`
 	CreatedAt         int64          `json:"created_at"`
 	UpdatedAt         int64          `json:"updated_at"`
+	Builtin           string         `json:"builtin"`
 }
 
 type BalanceSnapshot struct {

@@ -51,6 +51,7 @@ type accountDTO struct {
 	IncludeInNetWorth bool   `json:"include_in_net_worth"`
 	Hidden            bool   `json:"hidden"`
 	IsManual          bool   `json:"is_manual"`
+	Builtin           string `json:"builtin"` // "" or accounts.PaperCash
 	ConnectionID      *int64 `json:"connection_id"`
 	LastSyncedAt      *int64 `json:"last_synced_at"`
 }
@@ -92,6 +93,7 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 			BalanceCents: a.BalanceCents, AvailableCents: ptr(a.AvailableCents), BalanceAt: ptr(a.BalanceAt),
 			Status: a.Status, ReviewCandidateID: ptr(a.ReviewCandidateID), IncludeInNetWorth: a.IncludeInNetWorth == 1,
 			Hidden: a.Hidden == 1, IsManual: a.IsManual == 1, ConnectionID: ptr(a.ConnectionID), InstitutionStatus: "ok",
+			Builtin: a.Builtin,
 		}
 		if a.InstitutionID.Valid {
 			if st, ok := instStatus[a.InstitutionID.Int64]; ok {
@@ -219,7 +221,11 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if in.Type != nil {
+	if in.Type != nil && *in.Type != a.Type {
+		if a.Builtin != "" {
+			writeError(w, http.StatusBadRequest, "Paper Cash is always a cash account.")
+			return
+		}
 		if !accounts.ValidType(*in.Type) {
 			writeError(w, http.StatusBadRequest, "Unknown account type.")
 			return
@@ -278,6 +284,10 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if a.Builtin != "" {
+		writeError(w, http.StatusBadRequest, "Paper Cash can't be deleted; turn it off in Settings instead.")
+		return
+	}
 	if err := db.New(s.db).DeleteAccount(r.Context(), db.DeleteAccountParams{ID: a.ID, HouseholdID: a.HouseholdID}); err != nil {
 		s.internalError(w, err)
 		return
@@ -320,6 +330,10 @@ func (s *Server) handleMergeAccounts(w http.ResponseWriter, r *http.Request) {
 		Into int64 `json:"into"`
 	}
 	if !readJSON(w, r, &in) {
+		return
+	}
+	if from, err := db.New(s.db).GetAccount(r.Context(), db.GetAccountParams{ID: in.From, HouseholdID: HouseholdID(r)}); err == nil && from.Builtin != "" {
+		writeError(w, http.StatusBadRequest, "Paper Cash can't be merged away; merge other accounts into it instead.")
 		return
 	}
 	s.mergeResult(w, s.sync.Merge(r.Context(), HouseholdID(r), in.From, in.Into))

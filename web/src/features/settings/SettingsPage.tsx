@@ -1,18 +1,47 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListFilter, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader } from "@/components/ui";
-import { accountsQuery } from "@/features/accounts/api";
+import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader, Switch } from "@/components/ui";
+import { accountsQuery, useAccountsMutation } from "@/features/accounts/api";
 import { categoriesQuery, tagsQuery, useTxnMutation } from "@/features/transactions/api";
 import { api } from "@/lib/api";
 import { RuleDialog } from "./RuleDialog";
 import { fieldLabels, opLabels, rulesQuery, type Rule } from "./rules";
+
+type Settings = { paper_cash_enabled: boolean };
+
+const settingsQuery = { queryKey: ["settings"], queryFn: () => api.get<Settings>("/settings") };
+
+function AccountsCard() {
+  const qc = useQueryClient();
+  const { data } = useQuery(settingsQuery);
+  const save = useAccountsMutation(
+    (body: Partial<Settings>) => api.patch<Settings>("/settings", body),
+    (s) => {
+      qc.setQueryData(["settings"], s);
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+    },
+  );
+  return (
+    <Card title="Accounts">
+      <Switch
+        label="Paper Cash account"
+        hint="A built-in account for cash spending. Turning it off hides it and keeps its history."
+        checked={data?.paper_cash_enabled ?? true}
+        disabled={!data || save.isPending}
+        onCheckedChange={(v) => save.mutate({ paper_cash_enabled: v })}
+      />
+      <FormError error={save.error} />
+    </Card>
+  );
+}
 
 export function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" />
       <div className="mx-auto flex max-w-4xl flex-col gap-4 p-4 md:p-6">
+        <AccountsCard />
         <RulesCard />
         <p className="text-[13px] text-muted">Notification, household and AI settings arrive in a later phase.</p>
       </div>

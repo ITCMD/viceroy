@@ -3,7 +3,7 @@ import clsx from "clsx";
 import { ArrowLeftRight, ChevronDown, EyeOff, Link2, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader, Segmented } from "@/components/ui";
-import { accountLabel, accountsQuery } from "@/features/accounts/api";
+import { accountLabel, accountsQuery, canAddTo } from "@/features/accounts/api";
 import { AddTransactionDialog } from "./AddTransactionDialog";
 import { TransactionSheet } from "./TransactionSheet";
 import { dayLabel, transactionsQuery, type Transaction, type TxnFilters } from "./api";
@@ -29,7 +29,8 @@ export function TransactionsPage() {
   }, [search]);
 
   const { data: acctData } = useQuery(accountsQuery);
-  const accounts = (acctData?.accounts ?? []).filter((a) => a.status !== "ignored");
+  const accounts = (acctData?.accounts ?? []).filter((a) => a.status !== "ignored" && !(a.builtin && a.hidden && a.status === "closed"));
+  const addable = accounts.filter(canAddTo);
   const filters: TxnFilters = { account: account || undefined, q: q || undefined, view, hidden };
   const list = useInfiniteQuery(transactionsQuery(filters));
   const txns = useMemo(() => list.data?.pages.flatMap((p) => p.transactions) ?? [], [list.data]);
@@ -48,7 +49,7 @@ export function TransactionsPage() {
       <PageHeader
         title="Transactions"
         actions={
-          <Button size="sm" onClick={() => setAdding(true)} disabled={accounts.length === 0}>
+          <Button size="sm" onClick={() => setAdding(true)} disabled={addable.length === 0}>
             <Plus size={15} />
             <span className="hidden sm:inline">Add transaction</span>
             <span className="sm:hidden">Add</span>
@@ -119,7 +120,11 @@ export function TransactionsPage() {
         )}
       </div>
 
-      <AddTransactionDialog open={adding} onOpenChange={setAdding} accounts={accounts} defaultAccount={account || undefined} onCreated={setSelected} />
+      <AddTransactionDialog
+        open={adding}
+        onOpenChange={setAdding}
+        accounts={addable}
+        defaultAccount={addable.some((a) => a.id === account) ? account : undefined} onCreated={setSelected} />
       <TransactionSheet id={selected} onClose={() => setSelected(null)} onSelect={setSelected} />
     </>
   );

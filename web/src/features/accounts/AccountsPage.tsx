@@ -93,9 +93,9 @@ export function AccountsPage() {
 
         <Tabs value={tab} onChange={setTab} items={tabs} />
 
-        {accounts.length === 0 && data ? (
+        {data && !accounts.some((a) => !a.builtin) && (
           <Card>
-            <EmptyState icon={Landmark} title="No accounts yet">
+            <EmptyState icon={Landmark} title="No bank accounts yet">
               Connect your banks with SimpleFIN or add a manual account to start tracking your net worth.
               <div className="mt-4">
                 <Button size="sm" onClick={() => setAdding(true)}>
@@ -105,7 +105,8 @@ export function AccountsPage() {
               </div>
             </EmptyState>
           </Card>
-        ) : (
+        )}
+        {accounts.length > 0 && (
           <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
             <div className="flex min-w-0 flex-col gap-4">
               {tab === "networth" ? <NetWorthCard /> : <GroupSummary accounts={shown} label={groupLabels[tab]} />}

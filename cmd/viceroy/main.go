@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"viceroy/internal/accounts"
 	"viceroy/internal/auth"
 	"viceroy/internal/categorize"
 	"viceroy/internal/config"
@@ -88,6 +89,9 @@ func runServe(path string) error {
 	defer conn.Close()
 	if err := categorize.SeedAll(context.Background(), db.New(conn)); err != nil {
 		return fmt.Errorf("seeding categories: %w", err)
+	}
+	if err := accounts.EnsurePaperCashAll(context.Background(), db.New(conn)); err != nil {
+		return fmt.Errorf("creating Paper Cash accounts: %w", err)
 	}
 
 	box, err := secrets.LoadOrCreate(filepath.Join(cfg.DataDir, "secret.key"))
