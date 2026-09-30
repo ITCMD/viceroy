@@ -6,12 +6,11 @@ import { accountsQuery, useAccountsMutation } from "@/features/accounts/api";
 import { categoriesQuery, tagsQuery, useTxnMutation } from "@/features/transactions/api";
 import { EmailSettings } from "@/features/email/EmailSettings";
 import { api } from "@/lib/api";
+import { BudgetSettingsCard } from "./BudgetSettingsCard";
 import { RuleDialog } from "./RuleDialog";
+import { settingsQuery, type Settings } from "./settings";
 import { fieldLabels, opLabels, rulesQuery, type Rule } from "./rules";
 
-type Settings = { paper_cash_enabled: boolean };
-
-const settingsQuery = { queryKey: ["settings"], queryFn: () => api.get<Settings>("/settings") };
 
 function AccountsCard() {
   const qc = useQueryClient();
@@ -43,6 +42,7 @@ export function SettingsPage() {
       <PageHeader title="Settings" />
       <div className="mx-auto flex max-w-4xl flex-col gap-4 p-4 md:p-6">
         <AccountsCard />
+        <BudgetSettingsCard />
         <RulesCard />
         <EmailSettings />
         <p className="text-[13px] text-muted">Notification, household and AI settings arrive in a later phase.</p>

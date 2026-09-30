@@ -25,6 +25,7 @@ export type Transaction = {
   source: "manual" | "simplefin" | "email";
   has_linked: boolean;
   linked_txn_id: number | null;
+  goal_id: number | null;
   tags: Tag[];
 };
 
@@ -113,7 +114,7 @@ export function useTxnMutation<TVars, TRes = unknown>(fn: (v: TVars) => Promise<
     mutationFn: fn,
     onSuccess,
     onSettled: () =>
-      Promise.all([qc.invalidateQueries({ queryKey: ["transactions"] }), qc.invalidateQueries({ queryKey: ["tags"] })]),
+      Promise.all(["transactions", "tags", "budget", "goals"].map((k) => qc.invalidateQueries({ queryKey: [k] }))),
   });
 }
 

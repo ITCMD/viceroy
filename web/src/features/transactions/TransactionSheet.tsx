@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link2, Mail, Unlink } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Badge, Button, CategoryPicker, Field, FormError, MoneyText, Sheet, Switch, TagInput, TextArea } from "@/components/ui";
+import { Badge, Button, CategoryPicker, Field, FormError, MoneyText, Select, Sheet, Switch, TagInput, TextArea } from "@/components/ui";
+import { goalsQuery } from "@/features/goals/api";
 import { accountLabel } from "@/features/accounts/api";
 import { EmailViewer } from "@/features/email/EmailSettings";
 import { api } from "@/lib/api";
@@ -50,6 +51,8 @@ function Details({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const { data: cats } = useQuery(categoriesQuery);
   const { data: tagData } = useQuery(tagsQuery);
+  const { data: goalData } = useQuery(goalsQuery);
+  const goals = (goalData?.goals ?? []).filter((g) => !g.archived || g.id === t.goal_id);
   useEffect(() => {
     setMerchant(t.merchant);
     setNotes(t.notes);
@@ -113,6 +116,14 @@ function Details({
           onChange={(tags) => patch.mutate({ tags })}
           suggestions={(tagData?.tags ?? []).map((x) => x.name)}
         />
+        {goals.length > 0 && (
+          <Select
+            label="Contribute to goal"
+            value={String(t.goal_id ?? "")}
+            onChange={(e) => patch.mutate({ goal_id: e.target.value ? Number(e.target.value) : null })}
+            options={[{ value: "", label: "None" }, ...goals.map((g) => ({ value: String(g.id), label: `${g.icon} ${g.name}` }))]}
+          />
+        )}
         <TextArea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== t.notes && patch.mutate({ notes })} rows={2} />
         <FormError error={patch.error} />
       </div>
