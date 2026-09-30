@@ -4,6 +4,57 @@
 
 package db
 
+import (
+	"database/sql"
+)
+
+type Account struct {
+	ID                int64          `json:"id"`
+	HouseholdID       int64          `json:"household_id"`
+	ConnectionID      sql.NullInt64  `json:"connection_id"`
+	InstitutionID     sql.NullInt64  `json:"institution_id"`
+	ExternalID        sql.NullString `json:"external_id"`
+	InstitutionName   string         `json:"institution_name"`
+	ProviderName      string         `json:"provider_name"`
+	Name              string         `json:"name"`
+	Mask              string         `json:"mask"`
+	Type              string         `json:"type"`
+	Currency          string         `json:"currency"`
+	BalanceCents      int64          `json:"balance_cents"`
+	AvailableCents    sql.NullInt64  `json:"available_cents"`
+	BalanceAt         sql.NullInt64  `json:"balance_at"`
+	Status            string         `json:"status"`
+	ReviewCandidateID sql.NullInt64  `json:"review_candidate_id"`
+	IncludeInNetWorth int64          `json:"include_in_net_worth"`
+	Hidden            int64          `json:"hidden"`
+	OwnerUserID       sql.NullInt64  `json:"owner_user_id"`
+	IsManual          int64          `json:"is_manual"`
+	CreatedAt         int64          `json:"created_at"`
+	UpdatedAt         int64          `json:"updated_at"`
+}
+
+type BalanceSnapshot struct {
+	AccountID    int64  `json:"account_id"`
+	Date         string `json:"date"`
+	BalanceCents int64  `json:"balance_cents"`
+}
+
+type Connection struct {
+	ID            int64         `json:"id"`
+	HouseholdID   int64         `json:"household_id"`
+	Provider      string        `json:"provider"`
+	Name          string        `json:"name"`
+	SecretEnc     []byte        `json:"secret_enc"`
+	Status        string        `json:"status"`
+	LastError     string        `json:"last_error"`
+	LastSyncAt    sql.NullInt64 `json:"last_sync_at"`
+	SyncedThrough sql.NullInt64 `json:"synced_through"`
+	NextSyncAt    sql.NullInt64 `json:"next_sync_at"`
+	RequestsDay   string        `json:"requests_day"`
+	RequestsCount int64         `json:"requests_count"`
+	CreatedAt     int64         `json:"created_at"`
+}
+
 type Household struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
@@ -14,6 +65,16 @@ type HouseholdMember struct {
 	HouseholdID int64  `json:"household_id"`
 	UserID      int64  `json:"user_id"`
 	Role        string `json:"role"`
+}
+
+type Institution struct {
+	ID           int64  `json:"id"`
+	ConnectionID int64  `json:"connection_id"`
+	ExternalID   string `json:"external_id"`
+	Name         string `json:"name"`
+	Url          string `json:"url"`
+	Status       string `json:"status"`
+	LastError    string `json:"last_error"`
 }
 
 type Session struct {
@@ -29,6 +90,31 @@ type Session struct {
 type Setting struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
+}
+
+type SyncEvent struct {
+	ID           int64         `json:"id"`
+	ConnectionID int64         `json:"connection_id"`
+	At           int64         `json:"at"`
+	Kind         string        `json:"kind"`
+	AccountID    sql.NullInt64 `json:"account_id"`
+	Message      string        `json:"message"`
+}
+
+type Transaction struct {
+	ID          int64          `json:"id"`
+	HouseholdID int64          `json:"household_id"`
+	AccountID   int64          `json:"account_id"`
+	ExternalID  sql.NullString `json:"external_id"`
+	Source      string         `json:"source"`
+	Date        string         `json:"date"`
+	AmountCents int64          `json:"amount_cents"`
+	Description string         `json:"description"`
+	Payee       string         `json:"payee"`
+	Memo        string         `json:"memo"`
+	Pending     int64          `json:"pending"`
+	CreatedAt   int64          `json:"created_at"`
+	UpdatedAt   int64          `json:"updated_at"`
 }
 
 type User struct {
