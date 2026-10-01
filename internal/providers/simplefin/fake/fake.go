@@ -27,7 +27,8 @@ const (
 //   - reauth: Capital One login broken (con.auth); its accounts are absent.
 //
 // Appending "+posted" to a scenario (e.g. "relinked+posted") adds a Chipotle charge on
-// checking dated today, for pending-entry linking.
+// checking dated today, for pending-entry linking; "+dinner" adds a $60.00 Luna Trattoria charge
+// (an email alert for $50 plus a tip). Extras combine: "relinked+posted+dinner".
 var Scenarios = []string{"initial", "relinked", "reauth"}
 
 type Server struct {
@@ -82,9 +83,16 @@ func (s *Server) setScenario(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad body", http.StatusBadRequest)
 		return
 	}
-	base, extra, _ := strings.Cut(in.Name, "+")
+	parts := strings.Split(in.Name, "+")
+	for _, e := range parts[1:] {
+		if e != "posted" && e != "dinner" {
+			http.Error(w, "unknown scenario extra", http.StatusBadRequest)
+			return
+		}
+	}
+	base := parts[0]
 	for _, n := range Scenarios {
-		if n == base && (extra == "" || extra == "posted") {
+		if n == base {
 			s.SetScenario(in.Name)
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -161,7 +169,8 @@ func build(scenario string, now time.Time) simplefin.AccountSet {
 	var accts []acct
 	var conns []simplefin.Connection
 	var errs []simplefin.Error
-	scenario, extra, _ := strings.Cut(scenario, "+")
+	parts := strings.Split(scenario, "+")
+	scenario, extras := parts[0], parts[1:]
 	ally := acct{"ACT-ally-sav", "CON-ally", "Online Savings (4444)", "15230.55", []txn{{5, "12.31", "INTEREST PAID", false}}}
 	allyConn := simplefin.Connection{ConnID: "CON-ally", Name: "Ally Bank", OrgID: "ally", OrgURL: "https://ally.com"}
 	switch scenario {
@@ -191,10 +200,11 @@ func build(scenario string, now time.Time) simplefin.AccountSet {
 		errs = []simplefin.Error{{Code: "con.auth", Msg: "Capital One needs you to sign in again.", ConnID: "CON-c1"}}
 		accts = []acct{ally}
 	}
-	if extra == "posted" {
+	for _, e := range extras {
+		add := map[string]txn{"posted": {0, "-18.75", "CHIPOTLE 2231 AUSTIN TX", false}, "dinner": {0, "-60.00", "LUNA TRATTORIA 22 BROOKLYN NY", false}}[e]
 		for i := range accts {
 			if strings.HasSuffix(accts[i].id, "-chk") {
-				accts[i].txns = append(accts[i].txns[:len(accts[i].txns):len(accts[i].txns)], txn{0, "-18.75", "CHIPOTLE 2231 AUSTIN TX", false})
+				accts[i].txns = append(accts[i].txns[:len(accts[i].txns):len(accts[i].txns)], add)
 			}
 		}
 	}

@@ -22,7 +22,7 @@ export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
   const { data: info } = useQuery({ ...chatInfoQuery, enabled: open });
   const [threadId, setThreadId] = useState<number | null>(null);
   const onThread = useCallback((t: ChatThread) => setThreadId(t.id), []);
-  const { send, stop, pending, error, clearError } = useChatStream(onThread);
+  const { send, stop, settle, pending, error, clearError } = useChatStream(onThread);
   const { data: thread } = useQuery({ ...chatThreadQuery(threadId ?? 0), enabled: open && !!threadId });
   const [draft, setDraft] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
@@ -31,6 +31,11 @@ export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
   // While streaming, the server copy of the new question may already be loaded; show it once.
   const shown =
     pending && messages.at(-1)?.role === "user" && messages.at(-1)?.content === pending.user ? messages.slice(0, -1) : messages;
+  // A finished answer stays local until the saved conversation has it (the refetch can lag).
+  const saved = !!pending?.done && messages.at(-1)?.role === "assistant" && messages.at(-1)?.content === pending.text;
+  useEffect(() => {
+    if (pending?.done && (saved || error || !pending.text)) settle();
+  }, [pending?.done, pending?.text, saved, error, settle]);
 
   useEffect(() => {
     const el = scroller.current;
@@ -39,20 +44,21 @@ export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
 
   const submit = (text: string) => {
     const t = text.trim();
-    if (!t || pending) return;
+    if (!t || (pending && !pending.done)) return;
     setDraft("");
     send(threadId, t);
   };
   const newChat = () => {
-    if (pending) return;
+    if (pending && !pending.done) return;
+    settle();
     setThreadId(null);
     clearError();
   };
 
   const actions = info?.configured && (
     <>
-      <ThreadPicker current={threadId} threads={info.threads} onPick={(id) => !pending && (setThreadId(id), clearError())} onDeleted={(id) => id === threadId && newChat()} />
-      <button className={headerButton} aria-label="New chat" title="New chat" onClick={newChat} disabled={!!pending}>
+      <ThreadPicker current={threadId} threads={info.threads} onPick={(id) => !(pending && !pending.done) && (settle(), setThreadId(id), clearError())} onDeleted={(id) => id === threadId && newChat()} />
+      <button className={headerButton} aria-label="New chat" title="New chat" onClick={newChat} disabled={!!pending && !pending.done}>
         <MessageSquarePlus size={16} />
       </button>
     </>
@@ -127,7 +133,7 @@ export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
               placeholder="Ask about your budget…"
               className="max-h-40 min-h-9 flex-1 resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none transition [field-sizing:content] placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
-            {pending ? (
+            {pending && !pending.done ? (
               <button type="button" onClick={stop} aria-label="Stop" className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-text hover:brightness-95">
                 <Square size={14} fill="currentColor" />
               </button>

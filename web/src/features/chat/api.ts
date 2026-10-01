@@ -33,8 +33,9 @@ type StreamEvent =
   | { type: "done" }
   | { type: "error"; error: string };
 
-/** The answer being streamed: text so far and the tools used. */
-export type Pending = { user: string; text: string; tools: string[] };
+/** The answer being streamed: text so far and the tools used. `done` = the stream ended; it stays
+ * on screen until the saved copy of the conversation includes it. */
+export type Pending = { user: string; text: string; tools: string[]; done?: boolean };
 
 /**
  * Sends a message and streams the reply over SSE. `onThread` fires as soon as the server
@@ -101,14 +102,16 @@ export function useChatStream(onThread: (t: ChatThread) => void) {
         if (!ctl.signal.aborted) setError(err instanceof Error ? err.message : String(err));
       } finally {
         abort.current = null;
+        // A stopped answer isn't saved, so there's nothing to wait for.
+        setPending((p) => (ctl.signal.aborted ? null : p && { ...p, done: true }));
         if (thread) await qc.invalidateQueries({ queryKey: ["chat", "thread", thread] });
         await qc.invalidateQueries({ queryKey: ["chat"], exact: true });
-        setPending(null);
       }
     },
     [qc, onThread],
   );
 
   const stop = useCallback(() => abort.current?.abort(), []);
-  return { send, stop, pending, error, clearError: () => setError(null) };
+  const settle = useCallback(() => setPending(null), []);
+  return { send, stop, settle, pending, error, clearError: () => setError(null) };
 }
