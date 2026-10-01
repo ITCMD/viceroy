@@ -1,51 +1,188 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, CircleSlash, Mail, Plus } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { Badge, Button, Card } from "@/components/ui";
-import { chatInfoQuery } from "@/features/chat/api";
-import { mailboxesQuery, type EmailAIInfo, type Mailbox } from "@/features/email/api";
+import { useEffect, useState, type ReactNode } from "react";
+import { Badge, Button, Card, Field, FormError } from "@/components/ui";
+import { mailboxesQuery, type Mailbox } from "@/features/email/api";
 import { MailboxDialog } from "@/features/email/MailboxDialog";
 import { api } from "@/lib/api";
 
-/** Where AI is set up: the key and models come from viceroy.toml; email reading is per mailbox. */
+type AISettings = {
+  can_edit: boolean;
+  key_set: boolean;
+  key_hint: string;
+  key_source: "settings" | "config" | "";
+  chat_model: string;
+  email_model: string;
+  email_base_url: string;
+  config_chat_model: string;
+  chat_ready: boolean;
+  email_ready: boolean;
+};
+type Patch = Partial<{ openrouter_key: string; chat_model: string; email_model: string; email_base_url: string }>;
+type TestResult = { ok: boolean; model?: string; error?: string };
+
+const aiSettingsQuery = { queryKey: ["settings", "ai"], queryFn: () => api.get<AISettings>("/settings/ai") };
+
+/** OpenRouter key and models (admins edit; saved settings win over viceroy.toml), plus which mailboxes the AI reads. */
 export function AISettingsCard() {
-  const { data: chat } = useQuery(chatInfoQuery);
-  const { data: emailAI } = useQuery({ queryKey: ["email", "ai"], queryFn: () => api.get<EmailAIInfo>("/email/ai") });
+  const qc = useQueryClient();
+  const { data: s } = useQuery(aiSettingsQuery);
   const { data: mailboxes } = useQuery(mailboxesQuery);
   const [editing, setEditing] = useState<Mailbox | null>(null);
   const [open, setOpen] = useState(false);
+  const [replacing, setReplacing] = useState(false);
+  const [key, setKey] = useState("");
+  const [chatModel, setChatModel] = useState("");
+  const [emailModel, setEmailModel] = useState("");
+  const [baseURL, setBaseURL] = useState("");
+  useEffect(() => {
+    if (!s) return;
+    setChatModel(s.chat_model);
+    setEmailModel(s.email_model);
+    setBaseURL(s.email_base_url);
+  }, [s]);
+
+  const save = useMutation({
+    mutationFn: (p: Patch) => api.patch<AISettings>("/settings/ai", p),
+    onSuccess: (next) => {
+      qc.setQueryData(aiSettingsQuery.queryKey, next);
+      qc.invalidateQueries({ queryKey: ["chat"] });
+      qc.invalidateQueries({ queryKey: ["email", "ai"] });
+      setKey("");
+      setReplacing(false);
+      test.reset();
+    },
+  });
+  const test = useMutation({ mutationFn: (target: "chat" | "email") => api.post<TestResult>("/settings/ai/test", { target }) });
   const edit = (m: Mailbox | null) => {
     setEditing(m);
     setOpen(true);
   };
-  const configured = chat?.configured || emailAI?.configured;
+  const canEdit = !!s?.can_edit;
+  const dirty = !!s && (chatModel !== s.chat_model || emailModel !== s.email_model || baseURL !== s.email_base_url);
+  const showKeyInput = !!s && (!s.key_set || replacing);
 
   return (
     <Card title="AI">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <Status ok={chat?.configured} label="Chat with your budget" detail={chat?.configured ? chat.model : "Not set up"} />
+          <Status ok={s?.chat_ready} label="Chat with your budget" detail={s?.chat_ready ? s.chat_model : "Needs an API key"} />
           <Status
-            ok={emailAI?.configured}
+            ok={s?.email_ready}
             label="Reading bank emails"
-            detail={emailAI?.configured ? `${emailAI.model}${emailAI.local ? " (self-hosted)" : " via OpenRouter"}` : "Not set up"}
+            detail={s?.email_ready ? `${s.email_model || s.chat_model}${s.email_base_url ? " (self-hosted)" : " via OpenRouter"}` : "Needs an API key"}
           />
         </div>
 
-        {chat && emailAI && !configured && (
-          <div className="flex flex-col gap-2 rounded-lg bg-surface-2 px-3 py-2.5 text-[13px]">
-            <p>
-              AI is set up in <code className="font-mono">viceroy.toml</code> (next to the database), then restart Viceroy. Get a key at openrouter.ai/keys.
-            </p>
-            <pre className="overflow-x-auto rounded-md bg-surface px-3 py-2 font-mono text-xs" data-testid="ai-config-snippet">
-              {`[ai]
-openrouter_key = "sk-or-..."
-chat_model = "anthropic/claude-sonnet-5.5"
-# a cheap model for reading bank emails; empty = chat_model
-email_model = ""`}
-            </pre>
+        <div className="flex flex-col gap-3 border-t border-border pt-4">
+          {s && !canEdit && <p className="text-[13px] text-muted">Only an admin can change these.</p>}
+          {s?.key_set && !replacing && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[13px]">
+                <div className="font-medium">OpenRouter API key</div>
+                <div className="text-muted" data-testid="ai-key-status">
+                  Saved key ending in {s.key_hint || "…"}
+                  {s.key_source === "config" && " (from viceroy.toml)"}
+                </div>
+              </div>
+              {canEdit && (
+                <div className="flex gap-1">
+                  <Button size="sm" variant="secondary" onClick={() => setReplacing(true)}>
+                    Replace
+                  </Button>
+                  {s.key_source === "settings" && (
+                    <Button size="sm" variant="danger-ghost" loading={save.isPending && save.variables?.openrouter_key === ""} onClick={() => save.mutate({ openrouter_key: "" })}>
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {showKeyInput && (
+            <form
+              className="flex flex-wrap items-end gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (key.trim()) save.mutate({ openrouter_key: key });
+              }}
+            >
+              <Field
+                label="OpenRouter API key"
+                type="password"
+                autoComplete="off"
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                placeholder="sk-or-v1-…"
+                hint="Create one at openrouter.ai/keys. It's stored encrypted and never shown again."
+                disabled={!canEdit}
+                className="min-w-60 flex-1"
+              />
+              <Button type="submit" className="mb-5" disabled={!canEdit || !key.trim()} loading={save.isPending && !!save.variables?.openrouter_key}>
+                Save key
+              </Button>
+              {replacing && (
+                <Button type="button" variant="ghost" className="mb-5" onClick={() => setReplacing(false)}>
+                  Cancel
+                </Button>
+              )}
+            </form>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="Chat model"
+              value={chatModel}
+              onChange={(e) => setChatModel(e.target.value)}
+              placeholder={s?.config_chat_model}
+              hint="Any OpenRouter model id with tool calling."
+              disabled={!canEdit}
+            />
+            <Field
+              label="Email reading model"
+              value={emailModel}
+              onChange={(e) => setEmailModel(e.target.value)}
+              placeholder="Same as chat model"
+              hint="A cheap, fast model is plenty (e.g. a DeepSeek flash model)."
+              disabled={!canEdit}
+            />
           </div>
-        )}
+          <details className="text-[13px]" open={!!s?.email_base_url}>
+            <summary className="cursor-pointer text-muted">Read emails with a self-hosted model instead</summary>
+            <Field
+              label="Self-hosted endpoint (OpenAI-compatible)"
+              value={baseURL}
+              onChange={(e) => setBaseURL(e.target.value)}
+              placeholder="http://127.0.0.1:11434/v1"
+              hint="For example Ollama. Emails then never leave your server; set the email reading model to a model it serves."
+              disabled={!canEdit}
+              className="mt-2"
+            />
+          </details>
+          <div className="flex flex-wrap items-center gap-2">
+            {dirty && (
+              <Button size="sm" loading={save.isPending && !save.variables?.openrouter_key} onClick={() => save.mutate({ chat_model: chatModel, email_model: emailModel, email_base_url: baseURL })}>
+                Save
+              </Button>
+            )}
+            {canEdit && (
+              <>
+                <Button size="sm" variant="secondary" disabled={!s?.chat_ready || dirty} loading={test.isPending && test.variables === "chat"} onClick={() => test.mutate("chat")}>
+                  Test chat
+                </Button>
+                <Button size="sm" variant="secondary" disabled={!s?.email_ready || dirty} loading={test.isPending && test.variables === "email"} onClick={() => test.mutate("email")}>
+                  Test email reading
+                </Button>
+              </>
+            )}
+            {test.data && (
+              <span className={test.data.ok ? "text-[13px] text-positive" : "text-[13px] text-negative"} role="status">
+                {test.data.ok ? `Works (${test.data.model}).` : test.data.error}
+              </span>
+            )}
+          </div>
+          <FormError error={save.error ?? test.error} />
+        </div>
 
         <div className="flex flex-col gap-2 border-t border-border pt-4">
           <div>

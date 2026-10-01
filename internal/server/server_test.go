@@ -47,9 +47,10 @@ func newTestServer(t *testing.T) *client {
 	web := fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}}
 	mail := email.New(conn, box, slog.New(slog.DiscardHandler))
 	mail.Poll = 100 * time.Millisecond
-	mail.AI = email.LLMReader{Client: testAI(t)}
+	aiset := testAI(t, conn, box)
+	mail.AI = email.LLMReader{Client: aiset.EmailClient}
 	go mail.Run(t.Context())
-	s := New(cfg, conn, web, slog.New(slog.DiscardHandler), syncer.New(conn, box, slog.New(slog.DiscardHandler)), mail, testNotifier(conn), testAI(t))
+	s := New(cfg, conn, web, slog.New(slog.DiscardHandler), syncer.New(conn, box, slog.New(slog.DiscardHandler)), mail, testNotifier(conn), aiset)
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)

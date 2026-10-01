@@ -35,7 +35,7 @@ type TLSConfig struct {
 type AIConfig struct {
 	OpenRouterKey    string `toml:"openrouter_key"`
 	ChatModel        string `toml:"chat_model"`
-	BaseURL          string `toml:"base_url"` // OpenAI-compatible API root; default OpenRouter
+	BaseURL          string `toml:"base_url"`       // OpenAI-compatible API root; default OpenRouter
 	EmailModel       string `toml:"email_model"`    // model that reads unmatched bank emails; "" = chat_model
 	EmailBaseURL     string `toml:"email_base_url"` // e.g. a local Ollama; "" = base_url with openrouter_key
 	LocalCategorizer bool   `toml:"local_categorizer"`
@@ -149,6 +149,7 @@ cert = ""
 key = ""
 
 [ai]
+# The easiest place for these is Settings → AI in the app (saved there, it wins over this file).
 # OpenRouter API key (https://openrouter.ai/keys) for "Chat with your budget". Empty = chat off.
 openrouter_key = ""
 # Any OpenRouter model id that supports tool calling.

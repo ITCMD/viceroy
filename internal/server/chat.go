@@ -50,9 +50,14 @@ func (s *Server) handleChatInfo(w http.ResponseWriter, r *http.Request) {
 	for i, t := range rows {
 		threads[i] = chatThreadDTO{t.ID, t.Title, t.UpdatedAt}
 	}
-	out := map[string]any{"configured": s.ai.Configured(), "threads": threads}
-	if s.ai.Configured() {
-		out["model"] = s.ai.Model
+	client, err := s.ai.ChatClient(r.Context(), HouseholdID(r))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	out := map[string]any{"configured": client.Configured(), "threads": threads}
+	if client.Configured() {
+		out["model"] = client.Model
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -138,14 +143,18 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Write a message (up to 8,000 characters).")
 		return
 	}
-	if !s.ai.Configured() {
-		writeError(w, http.StatusServiceUnavailable, ai.ErrNotConfigured.Error())
+	client, err := s.ai.ChatClient(r.Context(), HouseholdID(r))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if !client.Configured() {
+		writeError(w, http.StatusServiceUnavailable, "Chat isn't set up yet: add an OpenRouter key in Settings → AI.")
 		return
 	}
 	ctx, u, q := r.Context(), CurrentUser(r), db.New(s.db)
 	now := time.Now().Unix()
 	var thread db.ChatThread
-	var err error
 	if in.ThreadID != 0 {
 		thread, err = q.GetChatThread(ctx, db.GetChatThreadParams{ID: in.ThreadID, UserID: u.ID})
 		if errors.Is(err, sql.ErrNoRows) {
@@ -199,7 +208,7 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	send(map[string]any{"type": "thread", "thread": chatThreadDTO{thread.ID, thread.Title, now}})
-	err = s.ai.Run(ctx, history, s.chatTools(HouseholdID(r)), func(e ai.Event) { send(e) }, save)
+	err = client.Run(ctx, history, s.chatTools(HouseholdID(r)), func(e ai.Event) { send(e) }, save)
 	if err != nil {
 		if ctx.Err() == nil {
 			s.log.Warn("chat failed", "err", err)

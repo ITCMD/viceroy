@@ -140,7 +140,7 @@ export function MailboxDialog({ open, onOpenChange, mailbox }: { open: boolean; 
             hint={
               aiInfo?.configured
                 ? `Bank emails no filter caught (payment reminders, scheduled payments, security alerts) are read by ${aiInfo.model}${aiInfo.local ? " on your own server" : " through OpenRouter"}. Leave off if this is your everyday inbox and you'd rather not send it.`
-                : "Needs an OpenRouter key (or email_base_url for a local model) under [ai] in viceroy.toml."
+                : "Needs an OpenRouter API key: add one in Settings → AI."
             }
             checked={aiRead}
             disabled={!aiInfo?.configured && !aiRead}

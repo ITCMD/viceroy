@@ -96,8 +96,8 @@ func (s *Server) saveMailboxAI(ctx context.Context, q *db.Queries, hh int64, cur
 		}
 		senders = strings.Join(lines, "\n")
 	}
-	if on && !s.mail.AIEnabled() {
-		return "AI email reading isn't set up: add an OpenRouter key (or email_base_url) under [ai] in viceroy.toml.", nil
+	if on && !s.mail.AIEnabled(ctx, hh) {
+		return "AI email reading isn't set up yet: add an OpenRouter key in Settings → AI.", nil
 	}
 	if err := q.SetMailboxAI(ctx, db.SetMailboxAIParams{AiRead: b2i(on), AiSenders: senders, ID: cur.ID, HouseholdID: hh}); err != nil {
 		return "", err
@@ -112,7 +112,7 @@ func (s *Server) saveMailboxAI(ctx context.Context, q *db.Queries, hh int64, cur
 
 // GET /email/ai: whether AI email reading is available and with which model.
 func (s *Server) handleEmailAIInfo(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.mail.AIInfo())
+	writeJSON(w, http.StatusOK, s.mail.AIInfo(r.Context(), HouseholdID(r)))
 }
 
 func (in *mailboxIn) normalize() error {

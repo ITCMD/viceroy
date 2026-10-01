@@ -76,7 +76,7 @@ func TestAIReading(t *testing.T) {
 	defer fake.Close()
 	client := ai.New(fake.URL, "", "local-model")
 	client.Local = true
-	svc.AI = LLMReader{Client: client}
+	svc.AI = LLMReader{Client: StaticClient(client)}
 	var notices []Notice
 	svc.Notice = func(_ context.Context, _ int64, n Notice) { notices = append(notices, n) }
 

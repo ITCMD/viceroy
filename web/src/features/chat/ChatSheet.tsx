@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { ArrowUp, Check, History, MessageSquarePlus, Sparkles, Square, Trash2 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { Popover } from "radix-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState, Markdown, Sheet } from "@/components/ui";
@@ -68,8 +69,11 @@ export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
     <Sheet open={open} onOpenChange={onOpenChange} title="Chat with your budget" actions={actions} className="!max-w-xl" bodyClassName="!p-0 flex flex-col">
       {info && !info.configured ? (
         <EmptyState icon={Sparkles} title="Chat isn't set up">
-          Add an OpenRouter API key to <code className="rounded bg-surface-2 px-1">viceroy.toml</code> under <code className="rounded bg-surface-2 px-1">[ai] openrouter_key</code>, then restart
-          Viceroy.
+          Add an OpenRouter API key in{" "}
+          <Link to={"/settings" as string} hash="ai" className="font-medium text-accent hover:underline" onClick={() => onOpenChange(false)}>
+            Settings → AI
+          </Link>
+          .
         </EmptyState>
       ) : (
         <>

@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"viceroy/internal/ai"
+	"viceroy/internal/aisettings"
+	"viceroy/internal/config"
+	"viceroy/internal/secrets"
 	"viceroy/internal/ai/fakeai"
 	"viceroy/internal/db"
 	"viceroy/internal/notify"
@@ -20,10 +22,11 @@ func testNotifier(conn *sql.DB) *notify.Service {
 	return n
 }
 
-func testAI(t *testing.T) *ai.Client {
+// testAI points AI settings at the fake OpenRouter, with the key coming from "viceroy.toml".
+func testAI(t *testing.T, conn *sql.DB, box *secrets.Box) *aisettings.Store {
 	srv := httptest.NewServer(&fakeai.Server{})
 	t.Cleanup(srv.Close)
-	return ai.New(srv.URL, "test-key", "test/model")
+	return &aisettings.Store{DB: conn, Box: box, Config: config.AIConfig{BaseURL: srv.URL, OpenRouterKey: "test-key", ChatModel: "test/model"}}
 }
 
 func TestNotificationsAPI(t *testing.T) {

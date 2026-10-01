@@ -44,7 +44,7 @@ test("AI reads unmatched bank emails: payment due, security alert, purchase hint
   const aiCard = page.locator("section", { has: page.getByRole("heading", { name: "AI", exact: true }) });
   await expect(aiCard).toContainText("Chat with your budget");
   await expect(aiCard).toContainText("Reading bank emails");
-  await expect(aiCard.getByTestId("ai-config-snippet")).toHaveCount(0);
+  await expect(aiCard.getByTestId("ai-key-status")).toContainText("(from viceroy.toml)");
   await aiCard.getByTestId("ai-mailbox-row").first().getByRole("button", { name: "Turn on" }).click();
   const dialog = page.getByRole("dialog");
   const toggle = dialog.getByRole("switch", { name: /Read unmatched emails with AI/ });

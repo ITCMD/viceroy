@@ -32,8 +32,8 @@ func TestMailboxAISettings(t *testing.T) {
 		t.Fatalf("turn off = %d %v", code, mb)
 	}
 
-	// Without a configured model, turning it on is refused with a hint.
-	c.server.mail.AI = nil
+	// Without a key, turning it on is refused with a hint.
+	c.server.ai.Config.OpenRouterKey = ""
 	code, out := c.do("PATCH", fmt.Sprint("/api/email/mailboxes/", mb["id"]), fmt.Sprintf(mbox, `,"ai_read":true`), true)
 	if code != 400 || out["error"] == nil {
 		t.Fatalf("no AI = %d %v", code, out)
