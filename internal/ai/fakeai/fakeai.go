@@ -7,15 +7,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"viceroy/internal/ai"
 )
 
 type Request struct {
-	Model    string       `json:"model"`
+	Model          string `json:"model"`
+	Stream         bool   `json:"stream"`
+	ResponseFormat *struct {
+		Type string `json:"type"`
+	} `json:"response_format"`
 	Messages []ai.Message `json:"messages"`
 	Tools    []struct {
 		Function struct {
@@ -46,7 +52,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if r.Header.Get("Authorization") != "Bearer test-key" {
+	// "test-key", or no key at all like a local Ollama; a wrong key is rejected.
+	if auth := r.Header.Get("Authorization"); auth != "" && auth != "Bearer test-key" {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":{"message":"No auth credentials found","code":401}}`))
 		return
@@ -60,6 +67,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.Requests = append(s.Requests, req)
 	s.mu.Unlock()
 
+	if req.ResponseFormat != nil && !req.Stream {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{
+			"role": "assistant", "content": classify(req.Messages[len(req.Messages)-1].Content)}}}})
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	fl, _ := w.(http.Flusher)
 	send := func(v any) {
@@ -139,4 +152,58 @@ func reply(msgs []ai.Message) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+var (
+	moneyRe = regexp.MustCompile(`\$\s?([\d,]+\.\d{2})`)
+	last4Re = regexp.MustCompile(`(?i)ending in (\d{4})`)
+	dateRe  = regexp.MustCompile(`(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}`)
+)
+
+// classify is a keyword stand-in for the email-reading prompt (email.LLMReader): it answers
+// with the same JSON shape a model would.
+func classify(text string) string {
+	low := strings.ToLower(text)
+	kind := "ignore"
+	switch {
+	case strings.Contains(low, "suspicious") || strings.Contains(low, "unusual activity"):
+		kind = "security_alert"
+	case strings.Contains(low, "scheduled"):
+		kind = "payment_scheduled"
+	case strings.Contains(low, "payment received") || strings.Contains(low, "thank you for your payment"):
+		kind = "payment_received"
+	case strings.Contains(low, "payment due") || strings.Contains(low, "minimum payment"):
+		kind = "payment_due"
+	case strings.Contains(low, "statement is ready"):
+		kind = "statement_ready"
+	case strings.Contains(low, "purchase") || strings.Contains(low, "transaction"):
+		kind = "transaction_alert"
+	}
+	out := map[string]any{"kind": kind, "summary": nil, "account_last4": nil, "amount": nil, "minimum_due": nil, "date": nil}
+	amounts := moneyRe.FindAllStringSubmatch(text, -1)
+	if len(amounts) > 0 {
+		out["amount"] = strings.ReplaceAll(amounts[0][1], ",", "")
+	}
+	if kind == "payment_due" && len(amounts) > 1 {
+		out["minimum_due"] = strings.ReplaceAll(amounts[1][1], ",", "")
+	}
+	if m := last4Re.FindStringSubmatch(text); m != nil {
+		out["account_last4"] = m[1]
+	}
+	if m := dateRe.FindString(text); m != "" {
+		if d, err := time.Parse("January 2, 2006", m); err == nil {
+			out["date"] = d.Format(time.DateOnly)
+		}
+	}
+	summary := map[string]string{
+		"security_alert": "Unusual activity was reported on your account.", "payment_scheduled": "A payment was scheduled.",
+		"payment_received": "Your payment was received.", "payment_due": "A payment is due.", "statement_ready": "A new statement is ready.",
+		"transaction_alert": "A purchase was made.", "ignore": "Marketing email.",
+	}[kind]
+	if a, ok := out["amount"].(string); ok {
+		summary += " Amount $" + a + "."
+	}
+	out["summary"] = summary
+	b, _ := json.Marshal(out)
+	return "```json\n" + string(b) + "\n```" // models often fence JSON; the reader must cope
 }

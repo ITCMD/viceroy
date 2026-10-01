@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Bell, BellRing, Gauge, Receipt, TriangleAlert, Unplug, type LucideIcon } from "lucide-react";
+import { Bell, BellRing, CalendarClock, Gauge, Landmark, Receipt, TriangleAlert, Unplug, type LucideIcon } from "lucide-react";
 import { Popover } from "radix-ui";
 import { useState } from "react";
+import { Segmented } from "@/components/ui";
 import { timeAgo } from "@/lib/format";
 import { notificationsQuery, useMarkRead, type NotificationItem } from "./api";
 
@@ -12,6 +13,8 @@ const kindIcon: Record<NotificationItem["kind"], { icon: LucideIcon; tone: strin
   pacing: { icon: Gauge, tone: "bg-accent-soft text-accent" },
   large_txn: { icon: Receipt, tone: "bg-accent-soft text-accent" },
   disconnected: { icon: Unplug, tone: "bg-negative/10 text-negative" },
+  payment_due: { icon: CalendarClock, tone: "bg-negative/10 text-negative" },
+  bank_notice: { icon: Landmark, tone: "bg-accent-soft text-accent" },
   test: { icon: BellRing, tone: "bg-surface-2 text-muted" },
 };
 
@@ -21,8 +24,13 @@ export function NotificationBell({ className }: { className?: string }) {
   const markRead = useMarkRead();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"alerts" | "bank">("alerts");
   const unread = data?.unread ?? 0;
-  const items = data?.notifications ?? [];
+  const all = data?.notifications ?? [];
+  // Messages the AI read from bank emails get their own tab, apart from Viceroy's own alerts.
+  const bank = all.filter((n) => n.kind === "bank_notice");
+  const items = tab === "bank" ? bank : all.filter((n) => n.kind !== "bank_notice");
+  const unreadIn = (list: NotificationItem[]) => list.filter((n) => !n.read).length;
 
   const onOpenChange = (v: boolean) => {
     setOpen(v);
@@ -61,9 +69,24 @@ export function NotificationBell({ className }: { className?: string }) {
               Settings
             </button>
           </header>
+          {bank.length > 0 && (
+            <div className="border-b border-border px-4 py-2">
+              <Segmented
+                label="Notification type"
+                value={tab}
+                onChange={setTab}
+                items={[
+                  { value: "alerts", label: `Alerts${unreadIn(all) - unreadIn(bank) ? ` (${unreadIn(all) - unreadIn(bank)})` : ""}` },
+                  { value: "bank", label: `From your bank${unreadIn(bank) ? ` (${unreadIn(bank)})` : ""}` },
+                ]}
+              />
+            </div>
+          )}
           {items.length === 0 ? (
             <p className="px-4 py-10 text-center text-sm text-muted">
-              No alerts yet. Over-budget, pacing, large transaction and sync alerts show up here.
+              {tab === "bank"
+                ? "Nothing from your bank yet."
+                : "No alerts yet. Over-budget, pacing, large transaction, payment and sync alerts show up here."}
             </p>
           ) : (
             <ul className="divide-y divide-border overflow-y-auto" data-testid="notification-list">

@@ -36,6 +36,8 @@ type AIConfig struct {
 	OpenRouterKey    string `toml:"openrouter_key"`
 	ChatModel        string `toml:"chat_model"`
 	BaseURL          string `toml:"base_url"` // OpenAI-compatible API root; default OpenRouter
+	EmailModel       string `toml:"email_model"`    // model that reads unmatched bank emails; "" = chat_model
+	EmailBaseURL     string `toml:"email_base_url"` // e.g. a local Ollama; "" = base_url with openrouter_key
 	LocalCategorizer bool   `toml:"local_categorizer"`
 }
 
@@ -153,6 +155,12 @@ openrouter_key = ""
 chat_model = "anthropic/claude-sonnet-5.5"
 # Optional: another OpenAI-compatible endpoint instead of OpenRouter.
 base_url = ""
+# Model that reads bank emails no filter caught (turn it on per mailbox in Settings → Email).
+# A cheap, fast model is plenty. Empty = chat_model.
+email_model = ""
+# Optional: read those emails with a self-hosted OpenAI-compatible endpoint instead, so they
+# never leave this machine, e.g. Ollama: "http://127.0.0.1:11434/v1" (no API key is sent).
+email_base_url = ""
 local_categorizer = true
 `
 

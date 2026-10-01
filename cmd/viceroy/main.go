@@ -117,6 +117,16 @@ func runServe(path string) error {
 	mail.Changed = notifier.Changed
 	chat := ai.New(cfg.AI.BaseURL, cfg.AI.OpenRouterKey, cfg.AI.ChatModel)
 	chat.Referer = cfg.PublicURL
+	if reader := emailReader(cfg); reader.Configured() {
+		mail.AI = email.LLMReader{Client: reader}
+		mail.Notice = func(ctx context.Context, hh int64, n email.Notice) {
+			a := notify.Alert{Kind: n.Kind, Key: n.Key, Title: n.Title, Body: n.Body, URL: n.URL}
+			if err := notifier.NotifyHousehold(ctx, hh, a, func(p notify.Prefs) bool { return p.BankNotices }); err != nil {
+				log.Warn("bank notice", "err", err)
+			}
+			notifier.Changed(hh) // a new bill may need a "payment due" reminder
+		}
+	}
 
 	webFS, err := web.Dist()
 	if err != nil {
@@ -134,6 +144,7 @@ func runServe(path string) error {
 	go sync.Run(ctx)
 	go mail.Run(ctx)
 	go notifier.Run(ctx)
+	go mail.RunAI(ctx)
 
 	errc := make(chan error, 1)
 	go func() {
@@ -157,6 +168,23 @@ func runServe(path string) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// emailReader is the model that reads unmatched bank emails: a self-hosted endpoint when
+// email_base_url is set, else OpenRouter. email_model defaults to chat_model.
+func emailReader(cfg config.Config) *ai.Client {
+	model := cfg.AI.EmailModel
+	if model == "" {
+		model = cfg.AI.ChatModel
+	}
+	if cfg.AI.EmailBaseURL != "" {
+		c := ai.New(cfg.AI.EmailBaseURL, "", model)
+		c.Local = true
+		return c
+	}
+	c := ai.New(cfg.AI.BaseURL, cfg.AI.OpenRouterKey, model)
+	c.Referer = cfg.PublicURL
+	return c
 }
 
 func pruneSessions(ctx context.Context, a *auth.Service, log *slog.Logger) {

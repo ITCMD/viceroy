@@ -35,10 +35,15 @@ type Service struct {
 	Poll time.Duration
 	// Changed, when set, is called after routing may have created transactions.
 	Changed func(householdID int64)
+	// AI, when set, reads unrouted emails from mailboxes that allow it (see airead.go), and
+	// Notice receives what it found.
+	AI     AIReader
+	Notice func(ctx context.Context, householdID int64, n Notice)
 
 	mu       sync.Mutex
 	watchers map[int64]*watcher
 	refreshC chan int64
+	aiC      chan struct{}
 }
 
 func New(conn *sql.DB, box *secrets.Box, log *slog.Logger) *Service {
@@ -95,6 +100,7 @@ func (s *Service) commit(tx *sql.Tx, householdID int64) error {
 	if s.Changed != nil {
 		s.Changed(householdID)
 	}
+	s.wakeAI()
 	return nil
 }
 
@@ -183,7 +189,10 @@ func (s *Service) route(ctx context.Context, q *db.Queries, row db.EmailMessage,
 	m := FromRow(row)
 	f, ok := Match(filters, m)
 	if !ok {
-		return q.SetEmailMessageResult(ctx, db.SetEmailMessageResultParams{Status: StatusUnrouted, ID: row.ID})
+		if err := q.SetEmailMessageResult(ctx, db.SetEmailMessageResultParams{Status: StatusUnrouted, ID: row.ID}); err != nil {
+			return err
+		}
+		return s.queueAI(ctx, q, row)
 	}
 	filterID := sql.NullInt64{Int64: f.ID, Valid: true}
 	p, err := Parse(f.Parser, f.CustomParser, m)

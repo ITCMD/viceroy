@@ -13,6 +13,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"viceroy/internal/accounts"
+	"viceroy/internal/bills"
+	"viceroy/internal/budgetview"
 	"viceroy/internal/db"
 	"viceroy/internal/money"
 	"viceroy/internal/providers/simplefin"
@@ -34,26 +36,59 @@ func (s *Server) accountRoutes(r chi.Router) {
 }
 
 type accountDTO struct {
-	ID                int64  `json:"id"`
-	Name              string `json:"name"`
-	Type              string `json:"type"`
-	Group             string `json:"group"`
-	IsLiability       bool   `json:"is_liability"`
-	InstitutionName   string `json:"institution_name"`
-	InstitutionStatus string `json:"institution_status"`
-	ProviderName      string `json:"provider_name"`
-	Mask              string `json:"mask"`
-	BalanceCents      int64  `json:"balance_cents"`
-	AvailableCents    *int64 `json:"available_cents"`
-	BalanceAt         *int64 `json:"balance_at"`
-	Status            string `json:"status"`
-	ReviewCandidateID *int64 `json:"review_candidate_id"`
-	IncludeInNetWorth bool   `json:"include_in_net_worth"`
-	Hidden            bool   `json:"hidden"`
-	IsManual          bool   `json:"is_manual"`
-	Builtin           string `json:"builtin"` // "" or accounts.PaperCash
-	ConnectionID      *int64 `json:"connection_id"`
-	LastSyncedAt      *int64 `json:"last_synced_at"`
+	ID                int64    `json:"id"`
+	Name              string   `json:"name"`
+	Type              string   `json:"type"`
+	Group             string   `json:"group"`
+	IsLiability       bool     `json:"is_liability"`
+	InstitutionName   string   `json:"institution_name"`
+	InstitutionStatus string   `json:"institution_status"`
+	ProviderName      string   `json:"provider_name"`
+	Mask              string   `json:"mask"`
+	BalanceCents      int64    `json:"balance_cents"`
+	AvailableCents    *int64   `json:"available_cents"`
+	BalanceAt         *int64   `json:"balance_at"`
+	Status            string   `json:"status"`
+	ReviewCandidateID *int64   `json:"review_candidate_id"`
+	IncludeInNetWorth bool     `json:"include_in_net_worth"`
+	Hidden            bool     `json:"hidden"`
+	IsManual          bool     `json:"is_manual"`
+	Builtin           string   `json:"builtin"` // "" or accounts.PaperCash
+	ConnectionID      *int64   `json:"connection_id"`
+	LastSyncedAt      *int64   `json:"last_synced_at"`
+	Bill              *billDTO `json:"bill"` // from bank emails the AI read; nil = nothing known
+}
+
+// billDTO is an account's payment state. Amounts are cents; dates YYYY-MM-DD.
+type billDTO struct {
+	DueDate        *string `json:"due_date"`
+	DueCents       *int64  `json:"due_cents"`
+	MinimumCents   *int64  `json:"minimum_cents"`
+	ScheduledDate  *string `json:"scheduled_date"`
+	ScheduledCents *int64  `json:"scheduled_cents"`
+	PaidDate       *string `json:"paid_date"`
+	PaidCents      *int64  `json:"paid_cents"`
+}
+
+func strPtr(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	return &s.String
+}
+
+func toBillDTO(st bills.Status) *billDTO {
+	b := &billDTO{}
+	if d := st.Due; d != nil {
+		b.DueDate, b.DueCents, b.MinimumCents = strPtr(d.Date), ptr(d.AmountCents), ptr(d.MinimumCents)
+	}
+	if d := st.Scheduled; d != nil {
+		b.ScheduledDate, b.ScheduledCents = strPtr(d.Date), ptr(d.AmountCents)
+	}
+	if d := st.Paid; d != nil {
+		b.PaidDate, b.PaidCents = strPtr(d.Date), ptr(d.AmountCents)
+	}
+	return b
 }
 
 func ptr(n sql.NullInt64) *int64 {
@@ -85,6 +120,11 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 	for _, i := range insts {
 		instStatus[i.ID] = i.Status
 	}
+	billRows, err := q.ListRecentBills(ctx, db.ListRecentBillsParams{HouseholdID: hh, CreatedAt: time.Now().Add(-bills.Lookback).Unix()})
+	if err != nil {
+		return nil, err
+	}
+	billState := bills.ByAccount(billRows, budgetview.Today().Format(time.DateOnly))
 	out := make([]accountDTO, 0, len(list))
 	for _, a := range list {
 		d := accountDTO{
@@ -102,6 +142,9 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 		}
 		if a.ConnectionID.Valid {
 			d.LastSyncedAt = ptr(lastSync[a.ConnectionID.Int64])
+		}
+		if st, ok := billState[a.ID]; ok {
+			d.Bill = toBillDTO(st)
 		}
 		out = append(out, d)
 	}
@@ -581,9 +624,12 @@ func (s *Server) netWorthHistory(ctx context.Context, hh int64, days int) ([]net
 	if earliest == "" {
 		return []netWorthPoint{}, nil // no history yet; don't draw a fake zero line
 	}
+	// Walk plain dates (UTC midnights) up to today's local date, not the local clock: in the
+	// evening UTC is already tomorrow.
 	from, _ := time.Parse(time.DateOnly, max(start, earliest))
+	last, _ := time.Parse(time.DateOnly, today)
 	out := make([]netWorthPoint, 0, days)
-	for d := from; !d.After(end); d = d.AddDate(0, 0, 1) {
+	for d := from; !d.After(last); d = d.AddDate(0, 0, 1) {
 		ds := d.Format(time.DateOnly)
 		p := netWorthPoint{Date: ds, Groups: map[string]int64{}}
 		for i := range series {

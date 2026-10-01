@@ -16,6 +16,7 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
+	"viceroy/internal/bills"
 	"viceroy/internal/budget"
 	"viceroy/internal/budgetview"
 	"viceroy/internal/db"
@@ -166,10 +167,11 @@ func (s *Service) Evaluate(ctx context.Context, hh int64) error {
 	now := s.Now()
 	today := budget.Date(now.Year(), now.Month(), now.Day())
 	var (
-		view   *budgetview.View
-		large  []db.ListLargeTransactionsRow
-		broken []db.ListBrokenAccountsRow
-		loaded = map[string]bool{}
+		view    *budgetview.View
+		large   []db.ListLargeTransactionsRow
+		broken  []db.ListBrokenAccountsRow
+		dueSoon []Alert
+		loaded  = map[string]bool{}
 	)
 	for _, u := range users {
 		p, err := LoadPrefs(ctx, q, u.ID)
@@ -205,6 +207,15 @@ func (s *Service) Evaluate(ctx context.Context, hh int64) error {
 				}
 			}
 		}
+		if p.PaymentDue {
+			if !loaded["bills"] {
+				loaded["bills"] = true
+				if dueSoon, err = s.dueSoon(ctx, q, hh, budget.FormatDate(today)); err != nil {
+					return err
+				}
+			}
+			alerts = append(alerts, dueSoon...)
+		}
 		if p.Disconnected {
 			if !loaded["broken"] {
 				loaded["broken"] = true
@@ -220,6 +231,54 @@ func (s *Service) Evaluate(ctx context.Context, hh int64) error {
 			if _, _, err := s.Notify(ctx, u, a); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// dueSoon lists reminders for bills due within DueSoonDays with no payment scheduled or made.
+func (s *Service) dueSoon(ctx context.Context, q *db.Queries, hh int64, today string) ([]Alert, error) {
+	rows, err := q.ListRecentBills(ctx, db.ListRecentBillsParams{HouseholdID: hh, CreatedAt: s.Now().Add(-bills.Lookback).Unix()})
+	if err != nil {
+		return nil, err
+	}
+	accts, err := q.ListAccounts(ctx, hh)
+	if err != nil {
+		return nil, err
+	}
+	names := map[int64]string{}
+	for _, a := range accts {
+		names[a.ID] = a.Name
+	}
+	var out []Alert
+	for id, st := range bills.ByAccount(rows, today) {
+		if st.Due == nil || st.Scheduled != nil || !st.Due.Date.Valid {
+			continue
+		}
+		if days, ok := bills.DaysUntil(today, st.Due.Date.String); ok && days >= 0 && days <= DueSoonDays {
+			out = append(out, DueSoonAlert(*st.Due, names[id], days))
+		}
+	}
+	return out, nil
+}
+
+// NotifyHousehold sends an alert to every member whose prefs allow it.
+func (s *Service) NotifyHousehold(ctx context.Context, hh int64, a Alert, allowed func(Prefs) bool) error {
+	q := db.New(s.DB)
+	users, err := q.ListHouseholdUsers(ctx, hh)
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		p, err := LoadPrefs(ctx, q, u.ID)
+		if err != nil {
+			return err
+		}
+		if allowed != nil && !allowed(p) {
+			continue
+		}
+		if _, _, err := s.Notify(ctx, u, a); err != nil {
+			return err
 		}
 	}
 	return nil

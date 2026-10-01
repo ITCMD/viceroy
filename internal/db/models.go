@@ -34,6 +34,19 @@ type Account struct {
 	Builtin           string         `json:"builtin"`
 }
 
+type AccountBill struct {
+	ID             int64          `json:"id"`
+	HouseholdID    int64          `json:"household_id"`
+	AccountID      sql.NullInt64  `json:"account_id"`
+	Kind           string         `json:"kind"`
+	AmountCents    sql.NullInt64  `json:"amount_cents"`
+	MinimumCents   sql.NullInt64  `json:"minimum_cents"`
+	Date           sql.NullString `json:"date"`
+	Summary        string         `json:"summary"`
+	EmailMessageID sql.NullInt64  `json:"email_message_id"`
+	CreatedAt      int64          `json:"created_at"`
+}
+
 type BalanceSnapshot struct {
 	AccountID    int64  `json:"account_id"`
 	Date         string `json:"date"`
@@ -137,6 +150,8 @@ type EmailMailbox struct {
 	LastError     string        `json:"last_error"`
 	LastCheckedAt sql.NullInt64 `json:"last_checked_at"`
 	CreatedAt     int64         `json:"created_at"`
+	AiRead        int64         `json:"ai_read"`
+	AiSenders     string        `json:"ai_senders"`
 }
 
 type EmailMessage struct {
@@ -155,6 +170,9 @@ type EmailMessage struct {
 	TransactionID sql.NullInt64 `json:"transaction_id"`
 	Error         string        `json:"error"`
 	CreatedAt     int64         `json:"created_at"`
+	AiStatus      string        `json:"ai_status"`
+	AiKind        string        `json:"ai_kind"`
+	AiSummary     string        `json:"ai_summary"`
 }
 
 type Goal struct {

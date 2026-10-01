@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Badge, Button, FormError, Field, MoneyText, Select, Sheet, Switch } from "@/components/ui";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
+import { BillBadges } from "./BillBadges";
 import { StatusBadge } from "./StatusBadge";
 import { accountSubtitle, typeLabels, useAccountsMutation, type Account } from "./api";
 
@@ -40,6 +41,7 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-muted">
             <span>{accountSubtitle(account)}</span>
             <StatusBadge account={account} />
+            <BillBadges bill={account.bill} />
             {account.hidden && <Badge>Hidden</Badge>}
           </div>
           {!account.is_manual && <div className="mt-1 text-xs text-muted">Last synced {timeAgo(account.last_synced_at)}</div>}

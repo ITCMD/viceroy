@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ func (s *Server) emailRoutes(r chi.Router) {
 	r.Delete("/email/mailboxes/{id}", s.handleDeleteMailbox)
 	r.Post("/email/mailboxes/{id}/check", s.handleCheckMailbox)
 	r.Get("/email/templates", s.handleListTemplates)
+	r.Get("/email/ai", s.handleEmailAIInfo)
 	r.Get("/email/filters", s.handleListEmailFilters)
 	r.Post("/email/filters", s.handleCreateEmailFilter)
 	r.Post("/email/filters/preview", s.handlePreviewEmailFilter)
@@ -46,12 +48,15 @@ type mailboxDTO struct {
 	Status        string `json:"status"`
 	LastError     string `json:"last_error"`
 	LastCheckedAt *int64 `json:"last_checked_at"`
+	AIRead        bool   `json:"ai_read"`    // read emails no filter caught with AI
+	AISenders     string `json:"ai_senders"` // only from these senders (one per line; empty = any)
 }
 
 func toMailboxDTO(m db.EmailMailbox) mailboxDTO {
 	return mailboxDTO{
 		ID: m.ID, Name: m.Name, Host: m.Host, Port: m.Port, Security: m.Security, Username: m.Username,
 		Folder: m.Folder, Enabled: m.Enabled == 1, Status: m.Status, LastError: m.LastError, LastCheckedAt: ptr(m.LastCheckedAt),
+		AIRead: m.AiRead == 1, AISenders: m.AiSenders,
 	}
 }
 
@@ -64,6 +69,50 @@ type mailboxIn struct {
 	Password string `json:"password"` // empty on update = keep
 	Folder   string `json:"folder"`
 	Enabled  *bool  `json:"enabled"`
+	// AI reading; nil = leave as is.
+	AIRead    *bool   `json:"ai_read"`
+	AISenders *string `json:"ai_senders"`
+}
+
+// saveMailboxAI applies the AI settings of in to mailbox id; turning reading on queues the
+// last week's unmatched emails. msg is a user-facing error.
+func (s *Server) saveMailboxAI(ctx context.Context, q *db.Queries, hh int64, cur db.EmailMailbox, in mailboxIn) (msg string, err error) {
+	if in.AIRead == nil && in.AISenders == nil {
+		return "", nil
+	}
+	on, senders := cur.AiRead == 1, cur.AiSenders
+	if in.AIRead != nil {
+		on = *in.AIRead
+	}
+	if in.AISenders != nil {
+		var lines []string
+		for _, l := range strings.FieldsFunc(*in.AISenders, func(r rune) bool { return r == '\n' || r == ',' }) {
+			if l = strings.ToLower(strings.TrimSpace(l)); l != "" {
+				if strings.ContainsAny(l, " <>") {
+					return "Senders are email addresses or domains, one per line.", nil
+				}
+				lines = append(lines, l)
+			}
+		}
+		senders = strings.Join(lines, "\n")
+	}
+	if on && !s.mail.AIEnabled() {
+		return "AI email reading isn't set up: add an OpenRouter key (or email_base_url) under [ai] in viceroy.toml.", nil
+	}
+	if err := q.SetMailboxAI(ctx, db.SetMailboxAIParams{AiRead: b2i(on), AiSenders: senders, ID: cur.ID, HouseholdID: hh}); err != nil {
+		return "", err
+	}
+	if on && cur.AiRead == 0 {
+		if _, err := s.mail.QueueRecentForAI(ctx, hh); err != nil {
+			return "", err
+		}
+	}
+	return "", nil
+}
+
+// GET /email/ai: whether AI email reading is available and with which model.
+func (s *Server) handleEmailAIInfo(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.mail.AIInfo())
 }
 
 func (in *mailboxIn) normalize() error {
@@ -142,7 +191,18 @@ func (s *Server) handleCreateMailbox(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
+	if msg, err := s.saveMailboxAI(r.Context(), db.New(s.db), HouseholdID(r), m, in); err != nil {
+		s.internalError(w, err)
+		return
+	} else if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
 	s.mail.Refresh(m.ID)
+	if m, err = db.New(s.db).GetMailbox(r.Context(), db.GetMailboxParams{ID: m.ID, HouseholdID: HouseholdID(r)}); err != nil {
+		s.internalError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusCreated, toMailboxDTO(m))
 }
 
@@ -195,6 +255,13 @@ func (s *Server) handleUpdateMailbox(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, err)
 			return
 		}
+	}
+	if msg, err := s.saveMailboxAI(ctx, q, hh, cur, in); err != nil {
+		s.internalError(w, err)
+		return
+	} else if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
 	}
 	s.mail.Refresh(id)
 	m, err := q.GetMailbox(ctx, db.GetMailboxParams{ID: id, HouseholdID: hh})

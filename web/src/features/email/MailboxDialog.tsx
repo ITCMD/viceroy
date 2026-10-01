@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Button, Dialog, Field, FormError, Select, Switch } from "@/components/ui";
+import { useQuery } from "@tanstack/react-query";
+import { Button, Dialog, Field, FormError, Select, Switch, TextArea } from "@/components/ui";
 import { api } from "@/lib/api";
-import { useEmailMutation, type Mailbox, type Security } from "./api";
+import { useEmailMutation, type EmailAIInfo, type Mailbox, type Security } from "./api";
 
 // Common providers; "Other" leaves the fields to the user.
 const presets: Record<string, { host: string; port: number; security: Security; hint: string }> = {
@@ -29,6 +30,9 @@ export function MailboxDialog({ open, onOpenChange, mailbox }: { open: boolean; 
   const [password, setPassword] = useState("");
   const [folder, setFolder] = useState("INBOX");
   const [enabled, setEnabled] = useState(true);
+  const [aiRead, setAIRead] = useState(false);
+  const [aiSenders, setAISenders] = useState("");
+  const { data: aiInfo } = useQuery({ queryKey: ["email", "ai"], queryFn: () => api.get<EmailAIInfo>("/email/ai"), enabled: open });
 
   useEffect(() => {
     if (!open) return;
@@ -41,6 +45,8 @@ export function MailboxDialog({ open, onOpenChange, mailbox }: { open: boolean; 
     setPassword("");
     setFolder(mailbox?.folder ?? "INBOX");
     setEnabled(mailbox?.enabled ?? true);
+    setAIRead(mailbox?.ai_read ?? false);
+    setAISenders(mailbox?.ai_senders ?? "");
   }, [open, mailbox]);
 
   const choosePreset = (p: string) => {
@@ -54,7 +60,7 @@ export function MailboxDialog({ open, onOpenChange, mailbox }: { open: boolean; 
 
   const save = useEmailMutation(
     () => {
-      const body = { name, host, port: Number(port) || 0, security, username, password, folder, enabled };
+      const body = { name, host, port: Number(port) || 0, security, username, password, folder, enabled, ai_read: aiRead, ai_senders: aiSenders };
       return mailbox ? api.patch<Mailbox>(`/email/mailboxes/${mailbox.id}`, body) : api.post<Mailbox>("/email/mailboxes", body);
     },
     () => onOpenChange(false),
@@ -128,6 +134,29 @@ export function MailboxDialog({ open, onOpenChange, mailbox }: { open: boolean; 
         )}
         <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder={username || "Bank alerts"} />
         {mailbox && <Switch label="Watch this mailbox" checked={enabled} onCheckedChange={setEnabled} />}
+        <div className="flex flex-col gap-3 border-t border-border pt-4">
+          <Switch
+            label="Read unmatched emails with AI"
+            hint={
+              aiInfo?.configured
+                ? `Bank emails no filter caught (payment reminders, scheduled payments, security alerts) are read by ${aiInfo.model}${aiInfo.local ? " on your own server" : " through OpenRouter"}. Leave off if this is your everyday inbox and you'd rather not send it.`
+                : "Needs an OpenRouter key (or email_base_url for a local model) under [ai] in viceroy.toml."
+            }
+            checked={aiRead}
+            disabled={!aiInfo?.configured && !aiRead}
+            onCheckedChange={setAIRead}
+          />
+          {aiRead && (
+            <TextArea
+              label="Only from these senders"
+              rows={3}
+              value={aiSenders}
+              onChange={(e) => setAISenders(e.target.value)}
+              placeholder={"chase.com\nalerts@mybank.com"}
+              hint="One address or domain per line (a domain covers its subdomains). Empty = every unmatched email, only for a mailbox that gets nothing but bank email."
+            />
+          )}
+        </div>
         <FormError error={save.error} />
       </form>
     </Dialog>

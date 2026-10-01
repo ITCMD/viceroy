@@ -26,6 +26,18 @@ export type Account = {
   builtin: "" | "paper_cash";
   connection_id: number | null;
   last_synced_at: number | null;
+  bill: Bill | null;
+};
+
+/** Payment state read from bank emails by the AI. Cents; dates YYYY-MM-DD. */
+export type Bill = {
+  due_date: string | null;
+  due_cents: number | null;
+  minimum_cents: number | null;
+  scheduled_date: string | null;
+  scheduled_cents: number | null;
+  paid_date: string | null;
+  paid_cents: number | null;
 };
 
 export type Connection = {

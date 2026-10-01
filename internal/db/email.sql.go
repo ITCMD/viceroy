@@ -89,7 +89,7 @@ func (q *Queries) GetEmailFilter(ctx context.Context, arg GetEmailFilterParams) 
 }
 
 const getEmailMessage = `-- name: GetEmailMessage :one
-SELECT id, household_id, mailbox_id, message_id, uid, from_addr, from_name, subject, received_at, body_text, status, filter_id, transaction_id, error, created_at FROM email_messages WHERE id = ? AND household_id = ?
+SELECT id, household_id, mailbox_id, message_id, uid, from_addr, from_name, subject, received_at, body_text, status, filter_id, transaction_id, error, created_at, ai_status, ai_kind, ai_summary FROM email_messages WHERE id = ? AND household_id = ?
 `
 
 type GetEmailMessageParams struct {
@@ -116,6 +116,9 @@ func (q *Queries) GetEmailMessage(ctx context.Context, arg GetEmailMessageParams
 		&i.TransactionID,
 		&i.Error,
 		&i.CreatedAt,
+		&i.AiStatus,
+		&i.AiKind,
+		&i.AiSummary,
 	)
 	return i, err
 }
@@ -146,7 +149,7 @@ func (q *Queries) GetEmailMessageForTransaction(ctx context.Context, transaction
 }
 
 const getMailbox = `-- name: GetMailbox :one
-SELECT id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at FROM email_mailboxes WHERE id = ? AND household_id = ?
+SELECT id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at, ai_read, ai_senders FROM email_mailboxes WHERE id = ? AND household_id = ?
 `
 
 type GetMailboxParams struct {
@@ -174,12 +177,14 @@ func (q *Queries) GetMailbox(ctx context.Context, arg GetMailboxParams) (EmailMa
 		&i.LastError,
 		&i.LastCheckedAt,
 		&i.CreatedAt,
+		&i.AiRead,
+		&i.AiSenders,
 	)
 	return i, err
 }
 
 const getMailboxByID = `-- name: GetMailboxByID :one
-SELECT id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at FROM email_mailboxes WHERE id = ?
+SELECT id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at, ai_read, ai_senders FROM email_mailboxes WHERE id = ?
 `
 
 func (q *Queries) GetMailboxByID(ctx context.Context, id int64) (EmailMailbox, error) {
@@ -201,6 +206,53 @@ func (q *Queries) GetMailboxByID(ctx context.Context, id int64) (EmailMailbox, e
 		&i.Status,
 		&i.LastError,
 		&i.LastCheckedAt,
+		&i.CreatedAt,
+		&i.AiRead,
+		&i.AiSenders,
+	)
+	return i, err
+}
+
+const insertAccountBill = `-- name: InsertAccountBill :one
+INSERT INTO account_bills (household_id, account_id, kind, amount_cents, minimum_cents, date, summary, email_message_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, household_id, account_id, kind, amount_cents, minimum_cents, date, summary, email_message_id, created_at
+`
+
+type InsertAccountBillParams struct {
+	HouseholdID    int64          `json:"household_id"`
+	AccountID      sql.NullInt64  `json:"account_id"`
+	Kind           string         `json:"kind"`
+	AmountCents    sql.NullInt64  `json:"amount_cents"`
+	MinimumCents   sql.NullInt64  `json:"minimum_cents"`
+	Date           sql.NullString `json:"date"`
+	Summary        string         `json:"summary"`
+	EmailMessageID sql.NullInt64  `json:"email_message_id"`
+	CreatedAt      int64          `json:"created_at"`
+}
+
+func (q *Queries) InsertAccountBill(ctx context.Context, arg InsertAccountBillParams) (AccountBill, error) {
+	row := q.db.QueryRowContext(ctx, insertAccountBill,
+		arg.HouseholdID,
+		arg.AccountID,
+		arg.Kind,
+		arg.AmountCents,
+		arg.MinimumCents,
+		arg.Date,
+		arg.Summary,
+		arg.EmailMessageID,
+		arg.CreatedAt,
+	)
+	var i AccountBill
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.AccountID,
+		&i.Kind,
+		&i.AmountCents,
+		&i.MinimumCents,
+		&i.Date,
+		&i.Summary,
+		&i.EmailMessageID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -343,7 +395,7 @@ func (q *Queries) InsertEmailTransaction(ctx context.Context, arg InsertEmailTra
 
 const insertMailbox = `-- name: InsertMailbox :one
 INSERT INTO email_mailboxes (household_id, name, host, port, security, username, password_enc, folder, enabled, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at, ai_read, ai_senders
 `
 
 type InsertMailboxParams struct {
@@ -390,6 +442,8 @@ func (q *Queries) InsertMailbox(ctx context.Context, arg InsertMailboxParams) (E
 		&i.LastError,
 		&i.LastCheckedAt,
 		&i.CreatedAt,
+		&i.AiRead,
+		&i.AiSenders,
 	)
 	return i, err
 }
@@ -438,7 +492,7 @@ func (q *Queries) ListEmailFilters(ctx context.Context, householdID int64) ([]Em
 
 const listEmailMessages = `-- name: ListEmailMessages :many
 SELECT m.id, m.mailbox_id, m.from_addr, m.from_name, m.subject, m.received_at, m.status, m.filter_id,
-    m.transaction_id, m.error, COALESCE(f.name, '') AS filter_name
+    m.transaction_id, m.error, m.ai_status, m.ai_kind, m.ai_summary, COALESCE(f.name, '') AS filter_name
 FROM email_messages m LEFT JOIN email_filters f ON f.id = m.filter_id
 WHERE m.household_id = ?1 AND (?2 = '' OR m.status = ?2)
 ORDER BY m.received_at DESC, m.id DESC
@@ -462,6 +516,9 @@ type ListEmailMessagesRow struct {
 	FilterID      sql.NullInt64 `json:"filter_id"`
 	TransactionID sql.NullInt64 `json:"transaction_id"`
 	Error         string        `json:"error"`
+	AiStatus      string        `json:"ai_status"`
+	AiKind        string        `json:"ai_kind"`
+	AiSummary     string        `json:"ai_summary"`
 	FilterName    string        `json:"filter_name"`
 }
 
@@ -485,6 +542,9 @@ func (q *Queries) ListEmailMessages(ctx context.Context, arg ListEmailMessagesPa
 			&i.FilterID,
 			&i.TransactionID,
 			&i.Error,
+			&i.AiStatus,
+			&i.AiKind,
+			&i.AiSummary,
 			&i.FilterName,
 		); err != nil {
 			return nil, err
@@ -501,7 +561,7 @@ func (q *Queries) ListEmailMessages(ctx context.Context, arg ListEmailMessagesPa
 }
 
 const listEnabledMailboxes = `-- name: ListEnabledMailboxes :many
-SELECT id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at FROM email_mailboxes WHERE enabled = 1 ORDER BY id
+SELECT id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at, ai_read, ai_senders FROM email_mailboxes WHERE enabled = 1 ORDER BY id
 `
 
 func (q *Queries) ListEnabledMailboxes(ctx context.Context) ([]EmailMailbox, error) {
@@ -530,6 +590,8 @@ func (q *Queries) ListEnabledMailboxes(ctx context.Context) ([]EmailMailbox, err
 			&i.LastError,
 			&i.LastCheckedAt,
 			&i.CreatedAt,
+			&i.AiRead,
+			&i.AiSenders,
 		); err != nil {
 			return nil, err
 		}
@@ -612,7 +674,7 @@ func (q *Queries) ListLinkTargets(ctx context.Context, arg ListLinkTargetsParams
 }
 
 const listMailboxes = `-- name: ListMailboxes :many
-SELECT id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at FROM email_mailboxes WHERE household_id = ? ORDER BY id
+SELECT id, household_id, name, host, port, security, username, password_enc, folder, enabled, uid_validity, last_uid, status, last_error, last_checked_at, created_at, ai_read, ai_senders FROM email_mailboxes WHERE household_id = ? ORDER BY id
 `
 
 func (q *Queries) ListMailboxes(ctx context.Context, householdID int64) ([]EmailMailbox, error) {
@@ -641,6 +703,100 @@ func (q *Queries) ListMailboxes(ctx context.Context, householdID int64) ([]Email
 			&i.LastError,
 			&i.LastCheckedAt,
 			&i.CreatedAt,
+			&i.AiRead,
+			&i.AiSenders,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingAIEmails = `-- name: ListPendingAIEmails :many
+SELECT id, household_id, mailbox_id, message_id, uid, from_addr, from_name, subject, received_at, body_text, status, filter_id, transaction_id, error, created_at, ai_status, ai_kind, ai_summary FROM email_messages WHERE ai_status = 'pending' AND status = 'unrouted'
+ORDER BY received_at, id LIMIT ?
+`
+
+// Unrouted messages waiting for the AI, oldest first.
+func (q *Queries) ListPendingAIEmails(ctx context.Context, limit int64) ([]EmailMessage, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingAIEmails, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EmailMessage
+	for rows.Next() {
+		var i EmailMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.HouseholdID,
+			&i.MailboxID,
+			&i.MessageID,
+			&i.Uid,
+			&i.FromAddr,
+			&i.FromName,
+			&i.Subject,
+			&i.ReceivedAt,
+			&i.BodyText,
+			&i.Status,
+			&i.FilterID,
+			&i.TransactionID,
+			&i.Error,
+			&i.CreatedAt,
+			&i.AiStatus,
+			&i.AiKind,
+			&i.AiSummary,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentBills = `-- name: ListRecentBills :many
+SELECT id, household_id, account_id, kind, amount_cents, minimum_cents, date, summary, email_message_id, created_at FROM account_bills WHERE household_id = ? AND created_at >= ? ORDER BY created_at DESC, id DESC
+`
+
+type ListRecentBillsParams struct {
+	HouseholdID int64 `json:"household_id"`
+	CreatedAt   int64 `json:"created_at"`
+}
+
+// Bill events from the last 75 days, newest first.
+func (q *Queries) ListRecentBills(ctx context.Context, arg ListRecentBillsParams) ([]AccountBill, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentBills, arg.HouseholdID, arg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccountBill
+	for rows.Next() {
+		var i AccountBill
+		if err := rows.Scan(
+			&i.ID,
+			&i.HouseholdID,
+			&i.AccountID,
+			&i.Kind,
+			&i.AmountCents,
+			&i.MinimumCents,
+			&i.Date,
+			&i.Summary,
+			&i.EmailMessageID,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -656,7 +812,7 @@ func (q *Queries) ListMailboxes(ctx context.Context, householdID int64) ([]Email
 }
 
 const listRecentEmailBodies = `-- name: ListRecentEmailBodies :many
-SELECT id, household_id, mailbox_id, message_id, uid, from_addr, from_name, subject, received_at, body_text, status, filter_id, transaction_id, error, created_at FROM email_messages
+SELECT id, household_id, mailbox_id, message_id, uid, from_addr, from_name, subject, received_at, body_text, status, filter_id, transaction_id, error, created_at, ai_status, ai_kind, ai_summary FROM email_messages
 WHERE household_id = ?1 AND body_text != ''
   AND (?2 = 0 OR status IN ('unrouted', 'parse_failed'))
 ORDER BY received_at DESC, id DESC
@@ -695,6 +851,9 @@ func (q *Queries) ListRecentEmailBodies(ctx context.Context, arg ListRecentEmail
 			&i.TransactionID,
 			&i.Error,
 			&i.CreatedAt,
+			&i.AiStatus,
+			&i.AiKind,
+			&i.AiSummary,
 		); err != nil {
 			return nil, err
 		}
@@ -739,6 +898,43 @@ func (q *Queries) ResetMailboxCursor(ctx context.Context, id int64) error {
 	return err
 }
 
+const setEmailAIResult = `-- name: SetEmailAIResult :exec
+UPDATE email_messages SET ai_status = ?, ai_kind = ?, ai_summary = ?, status = ? WHERE id = ?
+`
+
+type SetEmailAIResultParams struct {
+	AiStatus  string `json:"ai_status"`
+	AiKind    string `json:"ai_kind"`
+	AiSummary string `json:"ai_summary"`
+	Status    string `json:"status"`
+	ID        int64  `json:"id"`
+}
+
+func (q *Queries) SetEmailAIResult(ctx context.Context, arg SetEmailAIResultParams) error {
+	_, err := q.db.ExecContext(ctx, setEmailAIResult,
+		arg.AiStatus,
+		arg.AiKind,
+		arg.AiSummary,
+		arg.Status,
+		arg.ID,
+	)
+	return err
+}
+
+const setEmailAIStatus = `-- name: SetEmailAIStatus :exec
+UPDATE email_messages SET ai_status = ? WHERE id = ?
+`
+
+type SetEmailAIStatusParams struct {
+	AiStatus string `json:"ai_status"`
+	ID       int64  `json:"id"`
+}
+
+func (q *Queries) SetEmailAIStatus(ctx context.Context, arg SetEmailAIStatusParams) error {
+	_, err := q.db.ExecContext(ctx, setEmailAIStatus, arg.AiStatus, arg.ID)
+	return err
+}
+
 const setEmailMessageResult = `-- name: SetEmailMessageResult :exec
 UPDATE email_messages SET status = ?, filter_id = ?, transaction_id = ?, error = ? WHERE id = ?
 `
@@ -758,6 +954,29 @@ func (q *Queries) SetEmailMessageResult(ctx context.Context, arg SetEmailMessage
 		arg.TransactionID,
 		arg.Error,
 		arg.ID,
+	)
+	return err
+}
+
+const setMailboxAI = `-- name: SetMailboxAI :exec
+
+UPDATE email_mailboxes SET ai_read = ?, ai_senders = ? WHERE id = ? AND household_id = ?
+`
+
+type SetMailboxAIParams struct {
+	AiRead      int64  `json:"ai_read"`
+	AiSenders   string `json:"ai_senders"`
+	ID          int64  `json:"id"`
+	HouseholdID int64  `json:"household_id"`
+}
+
+// ---- AI reading ----
+func (q *Queries) SetMailboxAI(ctx context.Context, arg SetMailboxAIParams) error {
+	_, err := q.db.ExecContext(ctx, setMailboxAI,
+		arg.AiRead,
+		arg.AiSenders,
+		arg.ID,
+		arg.HouseholdID,
 	)
 	return err
 }

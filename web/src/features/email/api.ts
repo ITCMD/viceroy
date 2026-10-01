@@ -15,7 +15,11 @@ export type Mailbox = {
   status: "new" | "ok" | "error";
   last_error: string;
   last_checked_at: number | null;
+  ai_read: boolean;
+  ai_senders: string;
 };
+
+export type EmailAIInfo = { configured: boolean; model?: string; local?: boolean };
 
 export type FieldSpec = { before?: string; after?: string; regex?: string };
 export type CustomParser = { amount: FieldSpec; merchant: FieldSpec; date: FieldSpec };
@@ -37,7 +41,7 @@ export type EmailFilter = {
 
 export type Template = { name: string; label: string };
 
-export type MessageStatus = "unrouted" | "parsed" | "parse_failed" | "ignored";
+export type MessageStatus = "unrouted" | "parsed" | "parse_failed" | "ignored" | "noticed";
 
 export type EmailMessageRow = {
   id: number;
@@ -50,6 +54,9 @@ export type EmailMessageRow = {
   filter_name: string;
   transaction_id: number | null;
   error: string;
+  ai_status: "" | "pending" | "done" | "failed";
+  ai_kind: string;
+  ai_summary: string;
 };
 
 export type EmailMessage = Omit<EmailMessageRow, "filter_name"> & { body_text: string };
@@ -116,7 +123,23 @@ export const statusLabels: Record<MessageStatus, string> = {
   parsed: "Imported",
   parse_failed: "Couldn't read",
   ignored: "Ignored",
+  noticed: "Read by AI",
 };
+
+/** One line about what the AI made of an unmatched email, or "" when it hasn't been read. */
+export function aiNote(m: Pick<EmailMessageRow, "ai_status" | "ai_kind" | "ai_summary">) {
+  switch (m.ai_status) {
+    case "pending":
+      return "Waiting for AI…";
+    case "failed":
+      return m.ai_summary || "AI couldn't read it.";
+    case "done":
+      if (m.ai_kind === "transaction_alert") return `AI: looks like a purchase alert. Create a filter to import these. ${m.ai_summary}`.trim();
+      if (m.ai_kind === "ignore") return "AI: nothing to act on.";
+      return m.ai_summary ? `AI: ${m.ai_summary}` : "";
+  }
+  return "";
+}
 
 /** A starting filter for an unrouted email: its sender's domain and the subject's lead words. */
 export function draftFromMessage(m: { from_addr: string; subject: string }) {

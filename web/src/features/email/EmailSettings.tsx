@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Inbox, Mail, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Inbox, Mail, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Badge, Button, Card, Dialog, EmptyState, FormError } from "@/components/ui";
 import { accountLabel, accountsQuery } from "@/features/accounts/api";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import {
+  aiNote,
   filtersQuery,
   mailboxesQuery,
   messageQuery,
@@ -186,6 +187,11 @@ function ReviewEmailsCard({ onCreateFilter }: { onCreateFilter: (m: EmailMessage
                   {m.from_name ? `${m.from_name} <${m.from_addr}>` : m.from_addr} · {timeAgo(m.received_at)}
                   {m.status === "parse_failed" && ` · ${m.filter_name}: ${m.error}`}
                 </span>
+                {aiNote(m) && (
+                  <span className="mt-0.5 flex items-center gap-1 text-[13px] text-accent" data-testid="email-ai-note">
+                    <Sparkles size={12} className="shrink-0" /> <span className="truncate">{aiNote(m)}</span>
+                  </span>
+                )}
               </button>
               <div className="flex gap-1">
                 <Button size="sm" variant="secondary" onClick={() => onCreateFilter(m)}>

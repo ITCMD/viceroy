@@ -39,7 +39,7 @@ test("connect a mailbox and list emails to review", async ({ page }) => {
   await dialog.getByLabel("App password").fill("wrong");
   await dialog.getByLabel("IMAP server").fill("127.0.0.1");
   await dialog.getByLabel("Port").fill("28431");
-  await dialog.getByLabel("Security").selectOption("none");
+  await dialog.getByLabel("Security", { exact: true }).selectOption("none");
   await dialog.getByLabel("Folder or label").fill("INBOX");
   await dialog.getByRole("button", { name: "Connect" }).click();
   await expect(dialog.getByText(/Couldn't connect: login failed/)).toBeVisible();

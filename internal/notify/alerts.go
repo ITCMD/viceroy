@@ -19,9 +19,14 @@ type Prefs struct {
 	LargeTxn      bool  `json:"large_txn"`
 	LargeTxnCents int64 `json:"large_txn_cents"`
 	Disconnected  bool  `json:"disconnected"`
+	PaymentDue    bool  `json:"payment_due"`  // a card payment is due within DueSoonDays and none is scheduled
+	BankNotices   bool  `json:"bank_notices"` // messages the AI read from bank emails (security alerts...)
 }
 
-var DefaultPrefs = Prefs{OverBudget: true, Pacing: true, PacingPct: 25, LargeTxn: true, LargeTxnCents: 500_00, Disconnected: true}
+var DefaultPrefs = Prefs{OverBudget: true, Pacing: true, PacingPct: 25, LargeTxn: true, LargeTxnCents: 500_00, Disconnected: true, PaymentDue: true, BankNotices: true}
+
+// DueSoonDays is how early a payment-due reminder fires.
+const DueSoonDays = 3
 
 func (p Prefs) Validate() error {
 	if p.PacingPct < 5 || p.PacingPct > 200 {
@@ -104,6 +109,26 @@ func BrokenAccountAlert(a db.ListBrokenAccountsRow) Alert {
 		Kind: "disconnected", Key: fmt.Sprintf("disc:%d:%d", a.ID, a.Since), URL: "/accounts",
 		Title: a.Name + " stopped syncing", Body: body,
 	}
+}
+
+// DueSoonAlert reminds about a bill due in days days (0 = today) with nothing scheduled.
+func DueSoonAlert(b db.AccountBill, account string, days int) Alert {
+	when := "today"
+	switch {
+	case days == 1:
+		when = "tomorrow"
+	case days > 1:
+		when = fmt.Sprintf("in %d days", days)
+	}
+	body := "Nothing is scheduled yet."
+	if b.AmountCents.Valid {
+		body = "Balance " + Dollars(b.AmountCents.Int64)
+		if b.MinimumCents.Valid {
+			body += ", minimum " + Dollars(b.MinimumCents.Int64)
+		}
+		body += ". Nothing is scheduled yet."
+	}
+	return Alert{Kind: "payment_due", Key: fmt.Sprintf("billdue:%d", b.ID), URL: "/accounts", Title: account + " payment due " + when, Body: body}
 }
 
 // Dollars formats cents as "$1,234.56" (or "-$5.00").

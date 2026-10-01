@@ -53,6 +53,8 @@ type Client struct {
 	HTTP    *http.Client
 	// Referer and Title identify the app to OpenRouter (optional headers).
 	Referer string
+	// Local marks a self-hosted endpoint (Ollama, llama.cpp) that needs no API key.
+	Local bool
 }
 
 func New(baseURL, key, model string) *Client {
@@ -62,7 +64,80 @@ func New(baseURL, key, model string) *Client {
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Key: key, Model: model, HTTP: &http.Client{Timeout: 3 * time.Minute}}
 }
 
-func (c *Client) Configured() bool { return c != nil && c.Key != "" }
+func (c *Client) Configured() bool { return c != nil && c.Model != "" && (c.Key != "" || c.Local) }
+
+func (c *Client) post(ctx context.Context, body map[string]any) (*http.Response, error) {
+	raw, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/chat/completions", bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	if c.Key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Key)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Title", "Viceroy")
+	if c.Referer != "" {
+		req.Header.Set("HTTP-Referer", c.Referer)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		var e struct {
+			Error apiError `json:"error"`
+		}
+		if json.Unmarshal(b, &e) == nil && e.Error.Message != "" {
+			return nil, fmt.Errorf("%s: %s", c.name(), e.Error.Message)
+		}
+		return nil, fmt.Errorf("%s returned %s", c.name(), resp.Status)
+	}
+	return resp, nil
+}
+
+func (c *Client) name() string {
+	if c.Local {
+		return "AI endpoint"
+	}
+	return "OpenRouter"
+}
+
+// CompleteJSON sends one non-streaming request asking for a JSON object and returns the
+// reply text (the caller validates it).
+func (c *Client) CompleteJSON(ctx context.Context, msgs []Message) (string, error) {
+	if !c.Configured() {
+		return "", ErrNotConfigured
+	}
+	resp, err := c.post(ctx, map[string]any{
+		"model": c.Model, "messages": msgs, "temperature": 0,
+		"response_format": map[string]string{"type": "json_object"},
+	})
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error *apiError `json:"error"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return "", fmt.Errorf("%s: unreadable reply: %w", c.name(), err)
+	}
+	if out.Error != nil {
+		return "", fmt.Errorf("%s: %s", c.name(), out.Error.Message)
+	}
+	if len(out.Choices) == 0 {
+		return "", fmt.Errorf("%s: empty reply", c.name())
+	}
+	return out.Choices[0].Message.Content, nil
+}
 
 type toolSpec struct {
 	Type     string `json:"type"`
@@ -112,32 +187,11 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTex
 		}
 		body["tools"] = specs
 	}
-	raw, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/chat/completions", bytes.NewReader(raw))
-	if err != nil {
-		return Message{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.Key)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Title", "Viceroy")
-	if c.Referer != "" {
-		req.Header.Set("HTTP-Referer", c.Referer)
-	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.post(ctx, body)
 	if err != nil {
 		return Message{}, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		var e struct {
-			Error apiError `json:"error"`
-		}
-		if json.Unmarshal(b, &e) == nil && e.Error.Message != "" {
-			return Message{}, fmt.Errorf("OpenRouter: %s", e.Error.Message)
-		}
-		return Message{}, fmt.Errorf("OpenRouter returned %s", resp.Status)
-	}
 
 	out := Message{Role: "assistant"}
 	var text strings.Builder

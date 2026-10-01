@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 
 export type NotificationItem = {
   id: number;
-  kind: "over_budget" | "pacing" | "large_txn" | "disconnected" | "test";
+  kind: "over_budget" | "pacing" | "large_txn" | "disconnected" | "payment_due" | "bank_notice" | "test";
   title: string;
   body: string;
   url: string;
@@ -18,6 +18,8 @@ export type NotifyPrefs = {
   large_txn: boolean;
   large_txn_cents: number;
   disconnected: boolean;
+  payment_due: boolean;
+  bank_notices: boolean;
 };
 
 export type Device = { id: number; endpoint: string; user_agent: string; created_at: number };

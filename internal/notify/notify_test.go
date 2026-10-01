@@ -265,3 +265,38 @@ func TestLoadOrCreateKeys(t *testing.T) {
 		t.Fatalf("reload: %+v %v", k2, err)
 	}
 }
+
+func TestPaymentDueSoon(t *testing.T) {
+	e := newEnv(t)
+	card := e.exec(`INSERT INTO accounts (household_id, name, type, created_at, updated_at) VALUES (?, 'Quicksilver', 'credit_card', 1, 1)`, e.hh)
+	day := func(n int) string { return budget.FormatDate(budgetview.Today().AddDate(0, 0, n)) }
+	add := func(kind, date string, created int64) int64 {
+		return e.exec(`INSERT INTO account_bills (household_id, account_id, kind, amount_cents, minimum_cents, date, created_at) VALUES (?, ?, ?, 24510, 3500, ?, ?)`,
+			e.hh, card, kind, date, created)
+	}
+	add("due", day(6), e.now.Unix()-100)
+	e.svc.Evaluate(e.ctx, e.hh)
+	if got := e.titles(); len(got) != 0 {
+		t.Fatalf("due in 6 days alerted: %v", got)
+	}
+	e.exec(`DELETE FROM account_bills`)
+	add("due", day(2), e.now.Unix()-100)
+	e.svc.Evaluate(e.ctx, e.hh)
+	e.svc.Evaluate(e.ctx, e.hh)
+	if got := strings.Join(e.titles(), " | "); got != "Quicksilver payment due in 2 days" {
+		t.Fatalf("due soon = %q", got)
+	}
+	var body string
+	e.conn.QueryRow(`SELECT body FROM notifications WHERE kind = 'payment_due'`).Scan(&body)
+	if body != "Balance $245.10, minimum $35.00. Nothing is scheduled yet." {
+		t.Errorf("body = %q", body)
+	}
+	// Scheduled: a new due notice next cycle stays quiet.
+	e.exec(`DELETE FROM account_bills`)
+	add("due", day(1), e.now.Unix()-100)
+	add("scheduled", day(1), e.now.Unix()-50)
+	e.svc.Evaluate(e.ctx, e.hh)
+	if got := e.titles(); len(got) != 0 {
+		t.Fatalf("scheduled payment still alerted: %v", got)
+	}
+}

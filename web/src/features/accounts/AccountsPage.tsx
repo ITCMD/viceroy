@@ -9,6 +9,7 @@ import { NetWorthCard } from "./NetWorthCard";
 import { AccountSheet } from "./AccountSheet";
 import { AddAccountDialog } from "./AddAccountDialog";
 import { ReviewDialog } from "./ReviewDialog";
+import { BillBadges } from "./BillBadges";
 import { StatusBadge } from "./StatusBadge";
 import {
   accountsQuery,
@@ -169,6 +170,7 @@ function AccountGroupCard({ label, accounts, onSelect }: { label: string; accoun
                 <span className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">{a.name}</span>
                   <StatusBadge account={a} />
+                  <BillBadges bill={a.bill} />
                 </span>
                 <span className="block truncate text-xs text-muted">{accountSubtitle(a)}</span>
               </span>

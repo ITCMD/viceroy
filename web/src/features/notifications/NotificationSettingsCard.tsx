@@ -68,6 +68,20 @@ export function NotificationSettingsCard() {
             onCheckedChange={(v) => update({ large_txn: v })}
           />
           <Switch
+            label="A card payment is due soon"
+            hint="3 days before a due date read from a bank email, unless a payment is scheduled."
+            checked={prefs?.payment_due ?? true}
+            disabled={!prefs || save.isPending}
+            onCheckedChange={(v) => update({ payment_due: v })}
+          />
+          <Switch
+            label="My bank sends something important"
+            hint="Security alerts and other notices the AI finds in bank emails (turn on AI reading per mailbox under Email alerts)."
+            checked={prefs?.bank_notices ?? true}
+            disabled={!prefs || save.isPending}
+            onCheckedChange={(v) => update({ bank_notices: v })}
+          />
+          <Switch
             label="An account stops syncing"
             checked={prefs?.disconnected ?? true}
             disabled={!prefs || save.isPending}
