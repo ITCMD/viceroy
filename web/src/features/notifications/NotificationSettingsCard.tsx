@@ -76,7 +76,7 @@ export function NotificationSettingsCard() {
           />
           <Switch
             label="My bank sends something important"
-            hint="Security alerts and other notices the AI finds in bank emails (turn on AI reading per mailbox under Email alerts)."
+            hint="Security alerts and other notices the AI finds in bank emails (set up under AI below)."
             checked={prefs?.bank_notices ?? true}
             disabled={!prefs || save.isPending}
             onCheckedChange={(v) => update({ bank_notices: v })}

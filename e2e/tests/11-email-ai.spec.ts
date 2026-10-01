@@ -40,8 +40,12 @@ test("AI reads unmatched bank emails: payment due, security alert, purchase hint
   await login(page);
   await page.goto("/settings");
 
-  // Turn AI reading on for the mailbox from the email spec, limited to one sender.
-  await page.getByTestId("mailbox-row").first().getByRole("button").first().click();
+  // The AI card shows what's set up and turns reading on for the mailbox from the email spec.
+  const aiCard = page.locator("section", { has: page.getByRole("heading", { name: "AI", exact: true }) });
+  await expect(aiCard).toContainText("Chat with your budget");
+  await expect(aiCard).toContainText("Reading bank emails");
+  await expect(aiCard.getByTestId("ai-config-snippet")).toHaveCount(0);
+  await aiCard.getByTestId("ai-mailbox-row").first().getByRole("button", { name: "Turn on" }).click();
   const dialog = page.getByRole("dialog");
   const toggle = dialog.getByRole("switch", { name: /Read unmatched emails with AI/ });
   await expect(toggle).toBeEnabled();
@@ -49,6 +53,8 @@ test("AI reads unmatched bank emails: payment due, security alert, purchase hint
   await dialog.getByLabel("Only from these senders").fill("cardco.example");
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(dialog).toHaveCount(0);
+  await expect(aiCard.getByTestId("ai-mailbox-row").first()).toContainText("From cardco.example");
+  await aiCard.screenshot({ path: `${shots}/11-ai-card.png` });
 
   const req = page.request;
   await req.post(`${fakeImap}/deliver`, {

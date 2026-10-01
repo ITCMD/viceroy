@@ -110,7 +110,8 @@ test("dashboard widgets and recurring", async ({ page }) => {
   await dlg.getByRole("button", { name: /dismissed/ }).click();
   await expect(dlg.getByTestId("recurring-row").filter({ hasText: "Streamflix" })).toContainText("Restore");
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("dashboard-recurring")).not.toContainText("Streamflix");
+  // The card may be empty now (nothing else due soon), so check the page, not the list.
+  await expect(page.locator("main").getByText("Streamflix")).toHaveCount(0);
 });
 
 test("dashboard and reports on mobile", async ({ page }) => {
