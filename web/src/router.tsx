@@ -1,3 +1,4 @@
+import { ApiDocsPage } from "@/features/api/ApiDocsPage";
 import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -72,7 +73,10 @@ const pageRoutes = navItems.map((item) =>
   }),
 );
 
-const routeTree = rootRoute.addChildren([setupRoute, loginRoute, appRoute.addChildren(pageRoutes)]);
+// Pages that aren't in the navigation.
+const extraRoutes = [createRoute({ getParentRoute: () => appRoute, path: "/settings/api-docs", component: ApiDocsPage })];
+
+const routeTree = rootRoute.addChildren([setupRoute, loginRoute, appRoute.addChildren([...pageRoutes, ...extraRoutes])]);
 
 export function makeRouter(queryClient: QueryClient) {
   return createRouter({ routeTree, context: { queryClient }, defaultPreload: "intent" });

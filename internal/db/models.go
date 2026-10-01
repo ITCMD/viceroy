@@ -47,6 +47,19 @@ type AccountBill struct {
 	CreatedAt      int64          `json:"created_at"`
 }
 
+type ApiKey struct {
+	ID          int64         `json:"id"`
+	HouseholdID int64         `json:"household_id"`
+	UserID      int64         `json:"user_id"`
+	Name        string        `json:"name"`
+	Prefix      string        `json:"prefix"`
+	TokenHash   []byte        `json:"token_hash"`
+	Scope       string        `json:"scope"`
+	CreatedAt   int64         `json:"created_at"`
+	LastUsedAt  sql.NullInt64 `json:"last_used_at"`
+	RevokedAt   sql.NullInt64 `json:"revoked_at"`
+}
+
 type BalanceSnapshot struct {
 	AccountID    int64  `json:"account_id"`
 	Date         string `json:"date"`

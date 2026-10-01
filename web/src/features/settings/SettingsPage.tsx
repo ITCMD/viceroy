@@ -10,6 +10,7 @@ import { EmailSettings } from "@/features/email/EmailSettings";
 import { MonarchImportDialog } from "@/features/import/MonarchImportDialog";
 import { NotificationSettingsCard } from "@/features/notifications/NotificationSettingsCard";
 import { api } from "@/lib/api";
+import { ApiSettingsCard } from "@/features/api/ApiSettingsCard";
 import { AISettingsCard } from "./AISettingsCard";
 import { BudgetSettingsCard } from "./BudgetSettingsCard";
 import { RuleDialog } from "./RuleDialog";
@@ -60,6 +61,9 @@ export function SettingsPage() {
         </div>
         <div id="ai" className="scroll-mt-16">
           <AISettingsCard />
+        </div>
+        <div id="api" className="scroll-mt-16">
+          <ApiSettingsCard />
         </div>
         <EmailSettings />
       </div>

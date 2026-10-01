@@ -76,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 			s.chatRoutes(r)
 			s.importRoutes(r)
 			s.aiSettingsRoutes(r)
+			s.apiKeyRoutes(r)
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")
@@ -98,9 +99,14 @@ func securityHeaders(next http.Handler) http.Handler {
 }
 
 // requireCSRFHeader forces unsafe API requests to carry a custom header. Browsers
-// cannot send one cross-origin without a CORS preflight, which we never approve.
+// cannot send one cross-origin without a CORS preflight, which we never approve. Requests
+// with an API key don't use cookies, so they don't need it.
 func requireCSRFHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := bearerToken(r); ok {
+			next.ServeHTTP(w, r)
+			return
+		}
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
@@ -147,6 +153,22 @@ func HouseholdID(r *http.Request) int64 {
 
 func (s *Server) requireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token, ok := bearerToken(r); ok {
+			u, key, status, msg, err := s.authAPIKey(r, token)
+			if err != nil {
+				s.internalError(w, err)
+				return
+			}
+			if status != 0 {
+				writeError(w, status, msg)
+				return
+			}
+			ctx := context.WithValue(r.Context(), userKey{}, u)
+			ctx = context.WithValue(ctx, householdKey{}, key.HouseholdID)
+			ctx = context.WithValue(ctx, apiKeyKey{}, key)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		u, err := s.userFromRequest(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "not signed in")
