@@ -189,8 +189,18 @@ export function AISettingsCard() {
             <div className="text-[13px] font-medium">Which mailboxes the AI reads</div>
             <p className="text-xs text-muted">
               Only emails no filter caught, and only from the senders you list. It turns payment reminders into due dates on your cards and security
-              alerts into notifications.
+              alerts into notifications, and can annotate the purchase an email is about.
             </p>
+            <details className="text-xs text-muted" data-testid="ai-sandbox">
+              <summary className="cursor-pointer font-medium text-text">What the AI can and can't do</summary>
+              <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
+                <li>It reads one email at a time, marked as untrusted text it must not take instructions from.</li>
+                <li>It can look up your categories, rules, schedule (recurring bills, card payments) and transactions within 14 days of the email.</li>
+                <li>It can change at most 3 of those transactions per email: set the category (never one you chose), add a short note (links are removed) and tags.</li>
+                <li>It can't change amounts, dates, accounts or merchants, delete anything, see other emails, or reach your settings or keys.</li>
+                <li>Every change is flagged for review and listed on the transaction with an Undo button.</li>
+              </ul>
+            </details>
           </div>
           {mailboxes && mailboxes.length === 0 ? (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border px-3 py-2.5 text-[13px] text-muted">

@@ -83,7 +83,7 @@ export const transactionsQuery = (f: TxnFilters) =>
 export const transactionQuery = (id: number) =>
   queryOptions({
     queryKey: ["transactions", "detail", id],
-    queryFn: () => api.get<{ transaction: Transaction; linked: Transaction[]; email: TxnEmail | null }>(`/transactions/${id}`),
+    queryFn: () => api.get<{ transaction: Transaction; linked: Transaction[]; email: TxnEmail | null; ai_changes: AIChange[] }>(`/transactions/${id}`),
   });
 
 export const similarQuery = (id: number) =>
@@ -144,6 +144,9 @@ export function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+/** A change the email-reading AI made (it can be undone). */
+export type AIChange = { field: string; description: string; email_id: number | null; email_subject: string; created_at: number };
 
 /** The alert email an email-sourced transaction came from. */
 export type TxnEmail = { id: number; from_addr: string; from_name: string; subject: string; received_at: number };

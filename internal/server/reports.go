@@ -164,33 +164,13 @@ type recurringDTO struct {
 }
 
 func (s *Server) recurringSeries(ctx context.Context, hh int64) ([]recurringDTO, error) {
-	q := db.New(s.db)
-	now := budgetview.Today()
-	rows, err := q.RecurringCandidates(ctx, db.RecurringCandidatesParams{
-		HouseholdID: hh, FromDate: now.AddDate(0, 0, -recurring.HistoryDays).Format(time.DateOnly),
-	})
+	series, dismissed, err := recurring.Load(ctx, db.New(s.db), hh, budgetview.Today())
 	if err != nil {
 		return nil, err
-	}
-	txns := make([]recurring.Txn, len(rows))
-	for i, r := range rows {
-		txns[i] = recurring.Txn{
-			ID: r.ID, Date: r.Date, Amount: r.AmountCents, MerchantID: r.MerchantID.Int64, Merchant: r.Merchant,
-			CategoryID: r.CategoryID.Int64, CategoryName: r.CategoryName, CategoryIcon: r.CategoryIcon,
-			AccountID: r.AccountID, AccountName: r.AccountName,
-		}
-	}
-	dismissed, err := q.ListRecurringDismissed(ctx, hh)
-	if err != nil {
-		return nil, err
-	}
-	isDismissed := map[string]bool{}
-	for _, k := range dismissed {
-		isDismissed[k] = true
 	}
 	out := []recurringDTO{}
-	for _, sr := range recurring.Detect(txns, now) {
-		out = append(out, recurringDTO{sr, isDismissed[sr.Key]})
+	for _, sr := range series {
+		out = append(out, recurringDTO{sr, dismissed[sr.Key]})
 	}
 	return out, nil
 }

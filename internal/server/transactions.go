@@ -30,6 +30,7 @@ func (s *Server) transactionRoutes(r chi.Router) {
 	r.Get("/transactions/{id}/link-candidates", s.handleLinkCandidates)
 	r.Post("/transactions/{id}/link", s.handleLinkTransaction)
 	r.Post("/transactions/{id}/unlink", s.handleUnlinkTransaction)
+	r.Post("/transactions/{id}/ai-undo", s.handleUndoAIChanges)
 	r.Get("/categories", s.handleListCategories)
 	r.Get("/tags", s.handleListTags)
 	r.Get("/rules", s.handleListRules)
@@ -227,7 +228,12 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"transaction": t, "linked": linked, "email": alert})
+	changes, err := s.aiChanges(ctx, hh, t.ID)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"transaction": t, "linked": linked, "email": alert, "ai_changes": changes})
 }
 
 type createTxnIn struct {

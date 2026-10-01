@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Landmark, Link2, Mail, PencilLine, Unlink, Upload, type LucideIcon } from "lucide-react";
+import { Landmark, Link2, Mail, PencilLine, Sparkles, Undo2, Unlink, Upload, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, CategoryPicker, Field, FormError, MoneyText, Select, Sheet, Switch, TagInput, TextArea } from "@/components/ui";
 import { goalsQuery } from "@/features/goals/api";
@@ -16,12 +16,12 @@ import {
   tagsQuery,
   transactionQuery,
   useTxnMutation,
+  type AIChange,
   type Transaction,
   type TxnEmail,
   type TxnSummary,
 } from "./api";
 
-/** Transaction details: merchant, statement, category, tags, notes, review/hide, links, history. */
 const sourceChips: Record<string, { icon: LucideIcon; label: string }> = {
   simplefin: { icon: Landmark, label: "SimpleFIN" },
   email: { icon: Mail, label: "Email alert" },
@@ -50,12 +50,13 @@ function SourceChips({ t, linked }: { t: Transaction; linked: Transaction[] }) {
   );
 }
 
+/** Transaction details: merchant, statement, category, tags, notes, review/hide, links, history. */
 export function TransactionSheet({ id, onClose, onSelect }: { id: number | null; onClose: () => void; onSelect: (id: number) => void }) {
   const { data } = useQuery({ ...transactionQuery(id ?? 0), enabled: id !== null });
   const t = data?.transaction;
   return (
     <Sheet open={id !== null} onOpenChange={(o) => !o && onClose()} title={t?.merchant ?? ""}>
-      {t && t.id === id && <Details t={t} linked={data.linked} alert={data.email} onClose={onClose} onSelect={onSelect} />}
+      {t && t.id === id && <Details t={t} linked={data.linked} alert={data.email} aiChanges={data.ai_changes ?? []} onClose={onClose} onSelect={onSelect} />}
     </Sheet>
   );
 }
@@ -64,12 +65,14 @@ function Details({
   t,
   linked,
   alert,
+  aiChanges,
   onClose,
   onSelect,
 }: {
   t: Transaction;
   linked: Transaction[];
   alert: TxnEmail | null;
+  aiChanges: AIChange[];
   onClose: () => void;
   onSelect: (id: number) => void;
 }) {
@@ -165,6 +168,7 @@ function Details({
         />
       </div>
 
+      {aiChanges.length > 0 && <AIChangesSection t={t} changes={aiChanges} />}
       <LinkSection t={t} linked={linked} unlink={(id) => unlink.mutate(id)} unlinking={unlink.isPending} onSelect={onSelect} />
       <FormError error={unlink.error} />
 
@@ -341,5 +345,30 @@ function Similar({ t, onSelect }: { t: Transaction; onSelect: (id: number) => vo
         </>
       )}
     </Section>
+  );
+}
+
+/** What the email-reading AI changed here, with an undo. */
+function AIChangesSection({ t, changes }: { t: Transaction; changes: AIChange[] }) {
+  const undo = useTxnMutation(() => api.post<Transaction>(`/transactions/${t.id}/ai-undo`));
+  const subject = changes.find((c) => c.email_subject)?.email_subject;
+  return (
+    <section className="flex flex-col gap-2 rounded-lg border border-border p-3" data-testid="ai-changes">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
+          <Sparkles size={14} className="text-accent" /> Changed by AI
+        </h3>
+        <Button size="sm" variant="secondary" loading={undo.isPending} onClick={() => undo.mutate(undefined)}>
+          <Undo2 size={14} /> Undo
+        </Button>
+      </div>
+      {subject && <p className="text-xs text-muted">From the email “{subject}”</p>}
+      <ul className="list-disc space-y-0.5 pl-5 text-[13px]">
+        {changes.map((c, i) => (
+          <li key={i}>{c.description}</li>
+        ))}
+      </ul>
+      <FormError error={undo.error} />
+    </section>
   );
 }

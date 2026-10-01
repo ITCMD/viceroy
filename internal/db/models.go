@@ -47,6 +47,18 @@ type AccountBill struct {
 	CreatedAt      int64          `json:"created_at"`
 }
 
+type AiChange struct {
+	ID             int64         `json:"id"`
+	HouseholdID    int64         `json:"household_id"`
+	TransactionID  int64         `json:"transaction_id"`
+	EmailMessageID sql.NullInt64 `json:"email_message_id"`
+	Field          string        `json:"field"`
+	OldValue       string        `json:"old_value"`
+	NewValue       string        `json:"new_value"`
+	CreatedAt      int64         `json:"created_at"`
+	UndoneAt       sql.NullInt64 `json:"undone_at"`
+}
+
 type ApiKey struct {
 	ID          int64         `json:"id"`
 	HouseholdID int64         `json:"household_id"`

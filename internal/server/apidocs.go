@@ -63,6 +63,7 @@ var apiDocs = []apiDoc{
 	doc("Transactions", "GET", "/transactions/{id}/link-candidates", "Posted transactions a pending entry could be linked to.", ""),
 	doc("Transactions", "POST", "/transactions/{id}/link", "Link a pending entry to a posted transaction.", "posted_id"),
 	doc("Transactions", "POST", "/transactions/{id}/unlink", "Break a link (and stop it from being made again).", ""),
+	doc("Transactions", "POST", "/transactions/{id}/ai-undo", "Undo what the email-reading AI changed (category, notes, tags, review flag).", ""),
 	doc("Transactions", "GET", "/categories", "Category groups and their categories.", ""),
 	doc("Transactions", "GET", "/tags", "Tags.", ""),
 

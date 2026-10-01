@@ -83,6 +83,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	last := req.Messages[len(req.Messages)-1]
+	if offers(req, "update_transaction") {
+		emailAgent(req, send)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		return
+	}
 	if last.Role == "user" && len(req.Tools) > 0 {
 		if tool := pickTool(last.Content); tool != "" {
 			args := `{}`
@@ -206,4 +211,58 @@ func classify(text string) string {
 	out["summary"] = summary
 	b, _ := json.Marshal(out)
 	return "```json\n" + string(b) + "\n```" // models often fence JSON; the reader must cope
+}
+
+var orderRe = regexp.MustCompile(`Order #(\w+)`)
+
+func offers(req Request, tool string) bool {
+	for _, t := range req.Tools {
+		if t.Function.Name == tool {
+			return true
+		}
+	}
+	return false
+}
+
+// emailAgent plays the sandboxed email reader: for an order email it finds the transaction by
+// amount, notes the order number on it, then answers with the classification JSON.
+func emailAgent(req Request, send func(any)) {
+	email := ""
+	for _, m := range req.Messages {
+		if m.Role == "user" {
+			email = m.Content
+		}
+	}
+	call := func(name string, args any) {
+		b, _ := json.Marshal(args)
+		send(delta(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "call_" + name, "type": "function",
+			"function": map[string]any{"name": name, "arguments": string(b)}}}}, ptr("tool_calls")))
+	}
+	answer := func() {
+		send(delta(map[string]any{"content": classify(email)}, nil))
+		send(delta(map[string]any{}, ptr("stop")))
+	}
+	last := req.Messages[len(req.Messages)-1]
+	order := orderRe.FindStringSubmatch(email)
+	amount := moneyRe.FindStringSubmatch(email)
+	switch {
+	case len(req.Tools) == 0 || order == nil || amount == nil:
+		answer()
+	case last.Role == "user":
+		call("search_transactions", map[string]string{"amount": strings.ReplaceAll(amount[1], ",", "")})
+	case last.Role == "tool" && strings.Contains(last.Content, `"transactions"`):
+		var res struct {
+			Transactions []struct {
+				ID int64 `json:"id"`
+			} `json:"transactions"`
+		}
+		json.Unmarshal([]byte(last.Content), &res)
+		if len(res.Transactions) == 0 {
+			answer()
+			return
+		}
+		call("update_transaction", map[string]any{"id": res.Transactions[0].ID, "add_note": "Order #" + order[1] + " https://evil.example/x", "add_tags": []string{"Online order"}})
+	default:
+		answer()
+	}
 }
