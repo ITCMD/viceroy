@@ -157,3 +157,37 @@ func TestHouseholdInvites(t *testing.T) {
 		t.Fatalf("transactions after removal = %v", list)
 	}
 }
+
+func TestChangePassword(t *testing.T) {
+	c := newTestServer(t)
+	c.do("POST", "/api/setup", `{"name":"Lucas","email":"lucas@example.com","password":"correct horse battery"}`, true)
+	other := c.newSession()
+	other.do("POST", "/api/auth/login", `{"email":"lucas@example.com","password":"correct horse battery"}`, true)
+
+	if code, body := c.do("POST", "/api/me/password", `{"current_password":"wrong password!","new_password":"a whole new password"}`, true); code != 400 || body["error"] != "Your current password isn't right." {
+		t.Fatalf("wrong current = %d %v", code, body)
+	}
+	if code, _ := c.do("POST", "/api/me/password", `{"current_password":"correct horse battery","new_password":"short"}`, true); code != 400 {
+		t.Fatalf("short = %d", code)
+	}
+	if code, _ := c.do("POST", "/api/me/password", `{"current_password":"correct horse battery","new_password":"a whole new password"}`, true); code != 204 {
+		t.Fatalf("change = %d", code)
+	}
+	// This session stays, the other one is signed out, and the new password works.
+	if code, _ := c.do("GET", "/api/household", "", false); code != 200 {
+		t.Fatalf("own session after change = %d", code)
+	}
+	if code, _ := other.do("GET", "/api/household", "", false); code != 401 {
+		t.Fatalf("other session after change = %d", code)
+	}
+	if code, _ := c.newSession().do("POST", "/api/auth/login", `{"email":"lucas@example.com","password":"a whole new password"}`, true); code != 200 {
+		t.Fatalf("login with new password = %d", code)
+	}
+
+	if code, body := c.do("PATCH", "/api/me", `{"name":"Lucas E"}`, true); code != 200 || body["user"].(map[string]any)["name"] != "Lucas E" {
+		t.Fatalf("rename = %d %v", code, body)
+	}
+	if _, s := c.do("GET", "/api/session", "", false); s["user"].(map[string]any)["name"] != "Lucas E" {
+		t.Fatalf("session after rename = %v", s)
+	}
+}

@@ -3,6 +3,7 @@ import { Check, Copy, KeyRound, Link2, ShieldCheck, ShieldOff, Trash2, UserMinus
 import { useEffect, useState } from "react";
 import { Badge, Button, Card, Dialog, Field, FormError, Menu } from "@/components/ui";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import { timeAgo, timeUntil } from "@/lib/format";
 import { householdQuery, inviteLink, type HouseholdInfo, type Member, type NewInvite } from "./api";
 
@@ -11,6 +12,7 @@ export function HouseholdSettings() {
   const { data } = useQuery(householdQuery);
   return (
     <>
+      <AccountCard />
       <NameCard data={data} />
       <MembersCard data={data} />
     </>
@@ -29,6 +31,109 @@ function useHouseholdMutation<T, R = unknown>(fn: (v: T) => Promise<R>) {
       qc.invalidateQueries({ queryKey: ["wishlist"] });
     },
   });
+}
+
+/** Your own name and password. */
+function AccountCard() {
+  const qc = useQueryClient();
+  const { data: session } = useSession();
+  const [name, setName] = useState("");
+  const [changing, setChanging] = useState(false);
+  const [changed, setChanged] = useState(false);
+  useEffect(() => setName(session?.user?.name ?? ""), [session?.user?.name]);
+  const rename = useMutation({
+    mutationFn: (n: string) => api.patch("/me", { name: n }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["session"] });
+      qc.invalidateQueries({ queryKey: householdQuery.queryKey });
+    },
+  });
+  const dirty = !!session?.user && name.trim() !== "" && name.trim() !== session.user.name;
+  return (
+    <Card
+      title="Your account"
+      action={
+        <Button size="sm" variant="secondary" onClick={() => setChanging(true)}>
+          <KeyRound size={14} /> Change password
+        </Button>
+      }
+    >
+      <form
+        className="flex items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty) rename.mutate(name.trim());
+        }}
+      >
+        <div className="flex-1">
+          <Field label="Your name" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <Button type="submit" variant="secondary" disabled={!dirty} loading={rename.isPending}>
+          Save
+        </Button>
+      </form>
+      <p className="mt-1 text-xs text-muted">
+        Signed in as {session?.user?.email}.{changed && " Password changed; other devices were signed out."}
+      </p>
+      <FormError error={rename.error} />
+      <PasswordDialog open={changing} onOpenChange={setChanging} onDone={() => setChanged(true)} />
+    </Card>
+  );
+}
+
+function PasswordDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (v: boolean) => void; onDone: () => void }) {
+  const [form, setForm] = useState({ current: "", next: "", confirm: "" });
+  const [localError, setLocalError] = useState<string | null>(null);
+  const change = useMutation({
+    mutationFn: () => api.post("/me/password", { current_password: form.current, new_password: form.next }),
+    onSuccess: () => {
+      onDone();
+      close(false);
+    },
+  });
+  const close = (v: boolean) => {
+    onOpenChange(v);
+    if (!v)
+      setTimeout(() => {
+        setForm({ current: "", next: "", confirm: "" });
+        setLocalError(null);
+        change.reset();
+      }, 200);
+  };
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (form.next !== form.confirm) {
+      setLocalError("New passwords don't match.");
+      return;
+    }
+    setLocalError(null);
+    change.mutate();
+  };
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={close}
+      title="Change password"
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => close(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" form="change-password" loading={change.isPending} disabled={!form.current || !form.next}>
+            Change password
+          </Button>
+        </>
+      }
+    >
+      <form id="change-password" className="flex flex-col gap-3" onSubmit={submit}>
+        <Field label="Current password" type="password" autoComplete="current-password" value={form.current} onChange={set("current")} autoFocus />
+        <Field label="New password" type="password" autoComplete="new-password" minLength={10} hint="At least 10 characters. Other devices will be signed out." value={form.next} onChange={set("next")} />
+        <Field label="Confirm new password" type="password" autoComplete="new-password" value={form.confirm} onChange={set("confirm")} />
+        <FormError error={localError ?? change.error} />
+      </form>
+    </Dialog>
+  );
 }
 
 function NameCard({ data }: { data?: HouseholdInfo }) {

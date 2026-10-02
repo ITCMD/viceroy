@@ -98,3 +98,9 @@ UPDATE household_invites SET revoked_at = ? WHERE id = ? AND household_id = ? AN
 
 -- name: RevokeUserResets :exec
 UPDATE household_invites SET revoked_at = ? WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL;
+
+-- name: SetUserName :exec
+UPDATE users SET name = ? WHERE id = ?;
+
+-- name: DeleteOtherSessions :exec
+DELETE FROM sessions WHERE user_id = ? AND token_hash != ?;

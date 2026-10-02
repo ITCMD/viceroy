@@ -141,6 +141,20 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context, expiresAt int64) er
 	return err
 }
 
+const deleteOtherSessions = `-- name: DeleteOtherSessions :exec
+DELETE FROM sessions WHERE user_id = ? AND token_hash != ?
+`
+
+type DeleteOtherSessionsParams struct {
+	UserID    int64  `json:"user_id"`
+	TokenHash []byte `json:"token_hash"`
+}
+
+func (q *Queries) DeleteOtherSessions(ctx context.Context, arg DeleteOtherSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteOtherSessions, arg.UserID, arg.TokenHash)
+	return err
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions WHERE token_hash = ?
 `
@@ -519,6 +533,20 @@ type SetUserAdminParams struct {
 
 func (q *Queries) SetUserAdmin(ctx context.Context, arg SetUserAdminParams) error {
 	_, err := q.db.ExecContext(ctx, setUserAdmin, arg.IsAdmin, arg.ID)
+	return err
+}
+
+const setUserName = `-- name: SetUserName :exec
+UPDATE users SET name = ? WHERE id = ?
+`
+
+type SetUserNameParams struct {
+	Name string `json:"name"`
+	ID   int64  `json:"id"`
+}
+
+func (q *Queries) SetUserName(ctx context.Context, arg SetUserNameParams) error {
+	_, err := q.db.ExecContext(ctx, setUserName, arg.Name, arg.ID)
 	return err
 }
 

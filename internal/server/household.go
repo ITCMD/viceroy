@@ -24,6 +24,8 @@ func (s *Server) householdRoutes(r chi.Router) {
 		r.Delete("/household/invites/{id}", s.handleRevokeInvite)
 		r.Patch("/household/members/{id}", s.handleUpdateMember)
 		r.Delete("/household/members/{id}", s.handleRemoveMember)
+		r.Patch("/me", s.handleUpdateMe)
+		r.Post("/me/password", s.handleChangePassword)
 	})
 }
 
@@ -274,4 +276,57 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("invite used", "user", u.Email)
 	s.startSession(w, r, u)
+}
+
+// handleUpdateMe changes the signed-in user's display name.
+func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" || len(in.Name) > 80 {
+		writeError(w, http.StatusBadRequest, "Enter your name (up to 80 characters).")
+		return
+	}
+	u := CurrentUser(r)
+	if err := db.New(s.db).SetUserName(r.Context(), db.SetUserNameParams{Name: in.Name, ID: u.ID}); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	u.Name = in.Name
+	writeJSON(w, http.StatusOK, map[string]any{"user": toUserDTO(u)})
+}
+
+// handleChangePassword needs the current password. Wrong ones count toward the login
+// limiter. Other sessions are signed out; this one stays.
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Current string `json:"current_password"`
+		New     string `json:"new_password"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	ip := ClientIP(r).String()
+	if !s.limiter.allow(ip) {
+		writeError(w, http.StatusTooManyRequests, "Too many attempts. Try again in a few minutes.")
+		return
+	}
+	c, _ := r.Cookie(sessionCookie) // present: sessionOnly ran
+	err := s.auth.ChangePassword(r.Context(), CurrentUser(r).ID, in.Current, in.New, c.Value)
+	var ve auth.ValidationError
+	switch {
+	case errors.Is(err, auth.ErrInvalidCredentials):
+		s.limiter.fail(ip)
+		writeError(w, http.StatusBadRequest, "Your current password isn't right.")
+	case errors.As(err, &ve):
+		writeError(w, http.StatusBadRequest, ve.Msg)
+	case err != nil:
+		s.internalError(w, err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }

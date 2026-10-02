@@ -111,9 +111,34 @@ test("invite a member, share data, owners, reset link and removal", async ({ pag
   await sam.getByRole("button", { name: "Set password" }).click();
   await expect(sam.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
 
+  // Sam renames themself and changes their password from the sidebar name.
+  await sam.getByRole("link", { name: /^Sam Rivera/ }).click();
+  await expect(sam).toHaveURL(/tab=household/);
+  const mine = sam.locator("section", { has: sam.getByRole("heading", { name: "Your account" }) });
+  await mine.getByLabel("Your name").fill("Sam R.");
+  await mine.getByRole("button", { name: "Save" }).click();
+  await expect(sam.getByRole("link", { name: /^Sam R\. / })).toBeVisible();
+  await mine.getByRole("button", { name: "Change password" }).click();
+  const pw = sam.getByRole("dialog");
+  await pw.getByLabel("Current password").fill("not my password");
+  await pw.getByLabel("New password", { exact: true }).fill("sam's newest password");
+  await pw.getByLabel("Confirm new password").fill("sam's newest password");
+  await pw.getByRole("button", { name: "Change password" }).click();
+  await expect(pw).toContainText("Your current password isn't right.");
+  await pw.getByLabel("Current password").fill("sam's newer password");
+  await pw.getByRole("button", { name: "Change password" }).click();
+  await expect(mine).toContainText("Password changed");
+  await sam.screenshot({ path: `${shots}/21-your-account.png` });
+  await samCtx.clearCookies();
+  await sam.goto("/login");
+  await sam.getByLabel("Email").fill("sam@example.com");
+  await sam.getByLabel("Password").fill("sam's newest password");
+  await sam.getByRole("button", { name: "Sign in" }).click();
+  await expect(sam.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+
   // Removing Sam ends their access; the account stays, shared.
   await page.reload();
-  await page.getByRole("button", { name: "Manage Sam Rivera" }).click();
+  await page.getByRole("button", { name: "Manage Sam R." }).click();
   await page.getByRole("menuitem", { name: "Remove from household" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
   await expect(members).toHaveCount(1);

@@ -197,3 +197,38 @@ func (s *Service) checkMember(ctx context.Context, q *db.Queries, householdID, u
 }
 
 func nullInt(v int64) sql.NullInt64 { return sql.NullInt64{Int64: v, Valid: true} }
+
+// ChangePassword checks the current password, sets a new one and signs the user out of
+// every other session (keepToken stays signed in).
+func (s *Service) ChangePassword(ctx context.Context, userID int64, current, next, keepToken string) error {
+	q := s.q()
+	u, err := q.GetUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if ok, err := argon2id.ComparePasswordAndHash(current, u.PasswordHash); err != nil {
+		return err
+	} else if !ok {
+		return ErrInvalidCredentials
+	}
+	if len(next) < MinPasswordLength {
+		return ValidationError{"Password must be at least 10 characters."}
+	}
+	hash, err := argon2id.CreateHash(next, argon2id.DefaultParams)
+	if err != nil {
+		return err
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	qt := db.New(tx)
+	if err := qt.SetUserPassword(ctx, db.SetUserPasswordParams{PasswordHash: hash, ID: userID}); err != nil {
+		return err
+	}
+	if err := qt.DeleteOtherSessions(ctx, db.DeleteOtherSessionsParams{UserID: userID, TokenHash: hashToken(keepToken)}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

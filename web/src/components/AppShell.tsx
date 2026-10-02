@@ -45,10 +45,10 @@ export function AppShell() {
           ))}
         </nav>
         <div className="border-t border-border p-3">
-          <div className="px-3 pb-2 text-[13px]">
+          <Link to={"/settings" as string} search={{ tab: "household" } as never} className="block rounded-lg px-3 pb-2 pt-1 text-[13px] hover:bg-surface-2" title="Your account and household">
             <div className="truncate font-medium">{data?.user?.name}</div>
             <div className="truncate text-xs text-muted">{data?.household?.name}</div>
-          </div>
+          </Link>
           <button className={linkBase + " w-full"} onClick={() => logout.mutate()}>
             <LogOut size={18} />
             Sign out
