@@ -113,11 +113,15 @@ func TestDebtReport(t *testing.T) {
 		t.Fatalf("debts = %v", debts)
 	}
 	visa := debts[1].(map[string]any) // largest first: the car loan, then the card
-	if visa["name"] != "Visa" || visa["apr_source"] != "assumed" || visa["apr_bps"] != float64(2200) || visa["min_payment_source"] != "estimate" || visa["interest_paid_12m"] != float64(4510) {
+	// Nothing is guessed: no plans until every debt has an APR and a minimum.
+	if visa["name"] != "Visa" || visa["apr_source"] != "missing" || visa["min_payment_source"] != "missing" || visa["interest_paid_12m"] != float64(4510) {
 		t.Fatalf("visa = %v", visa)
 	}
 	if loan := debts[0].(map[string]any); loan["apr_source"] != "missing" || loan["monthly_interest"] != float64(0) {
 		t.Fatalf("loan = %v", loan)
+	}
+	if r["ready"] != false || len(r["plans"].(map[string]any)) != 0 {
+		t.Fatalf("plans without terms: ready %v, plans %v", r["ready"], r["plans"])
 	}
 
 	if code, out := c.do("PATCH", fmt.Sprint("/api/accounts/", car["id"]), `{"apr":"6.5%","min_payment":"250"}`, true); code != 204 {
@@ -126,6 +130,12 @@ func TestDebtReport(t *testing.T) {
 	if code, _ := c.do("PATCH", fmt.Sprint("/api/accounts/", car["id"]), `{"apr":"lots"}`, true); code != 400 {
 		t.Fatalf("bad apr = %d", code)
 	}
+	if _, r := c.do("GET", "/api/reports/debt", "", false); r["ready"] != false {
+		t.Fatalf("ready with the card's terms missing")
+	}
+	if code, out := c.do("PATCH", fmt.Sprint("/api/accounts/", card["id"]), `{"apr":"24.99","min_payment":"90"}`, true); code != 204 {
+		t.Fatalf("set card terms = %d %v", code, out)
+	}
 	code, r := c.do("GET", "/api/reports/debt?extra=200", "", false)
 	if code != 200 || r["extra"] != float64(20000) {
 		t.Fatalf("debt = %d %v", code, r)
@@ -133,6 +143,9 @@ func TestDebtReport(t *testing.T) {
 	loan := r["debts"].([]any)[0].(map[string]any)
 	if loan["apr_bps"] != float64(650) || loan["apr_source"] != "user" || loan["min_payment"] != float64(25000) || loan["monthly_interest"] != float64(4333) {
 		t.Fatalf("loan with terms = %v", loan)
+	}
+	if r["ready"] != true {
+		t.Fatalf("not ready with all terms set")
 	}
 	plans := r["plans"].(map[string]any)
 	min, snow := plans["minimum"].(map[string]any), plans["snowball"].(map[string]any)

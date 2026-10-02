@@ -123,7 +123,23 @@ test("debt free future: debts, terms and payoff plans", async ({ page }) => {
   const table = page.getByTestId("debt-table");
   await expect(table).toContainText("Visa Rewards");
   await expect(table.getByTestId("debt-row").filter({ hasText: "Car Loan" })).toContainText("Not set");
+  // Nothing is guessed: the plan waits for every debt's terms.
+  await expect(page.getByTestId("debt-needs-terms")).toContainText("Car Loan");
+  await expect(page.getByTestId("debt-plans")).toHaveCount(0);
+  await shot(page, "234-debt-needs-terms");
 
+  // Debts other specs created get terms via the API; the visible ones through the UI.
+  const rep = await (await page.request.get("/api/reports/debt", { headers })).json();
+  for (const d of rep.debts) {
+    if (d.name === "Car Loan" || d.name === "Visa Rewards") continue;
+    if (d.apr_source === "missing" || d.min_payment_source === "missing") {
+      await page.request.patch(`/api/accounts/${d.account_id}`, { headers, data: { apr: "5", min_payment: "300" } });
+    }
+  }
+  await page.getByTestId("debt-needs-terms").locator("li").filter({ hasText: "Visa Rewards" }).getByRole("button", { name: "Set terms" }).click();
+  await page.getByLabel("APR (%)").fill("24.99");
+  await page.getByLabel("Minimum payment ($)").fill("120");
+  await page.getByRole("button", { name: "Save" }).click();
   await page.getByRole("button", { name: "Edit Car Loan rate and minimum" }).click();
   await page.getByLabel("APR (%)").fill("6.9");
   await page.getByLabel("Minimum payment ($)").fill("310");
@@ -133,12 +149,19 @@ test("debt free future: debts, terms and payoff plans", async ({ page }) => {
 
   await page.getByLabel("Extra each month").fill("250");
   await expect(page.getByTestId("debt-insight")).toContainText("$250 extra a month saves");
-  // Highest rate first: the 22% card before the 6.9% loan (other specs add their own debts).
+  // Highest rate first: the 24.99% card before the 6.9% loan (other specs add their own debts).
   await expect(page.getByTestId("debt-order")).toContainText("Visa Rewards");
   const order = await page.getByTestId("debt-order").locator("li").allTextContents();
   expect(order.findIndex((t) => t.includes("Visa Rewards"))).toBeLessThan(order.findIndex((t) => t.includes("Car Loan")));
-  await page.getByRole("button", { name: /Snowball/ }).click();
-  await expect(page.getByTestId("debt-plans")).toContainText("Snowball");
+  // When both strategies give the same order there's one combined plan and no toggle.
+  const toggle = page.getByRole("button", { name: /Snowball · smallest/ });
+  if (await toggle.count()) {
+    await toggle.click();
+    await expect(page.getByTestId("debt-plans").locator("> div").nth(1)).toContainText("Snowball");
+  } else {
+    await expect(page.getByTestId("debt-plans")).toContainText("Snowball & avalanche");
+    await expect(page.getByTestId("debt-insight")).toContainText("come out the same");
+  }
   await shot(page, "234-debt-free-future");
   await page.getByTestId("debt-order").scrollIntoViewIfNeeded();
   await shot(page, "234-debt-plan");

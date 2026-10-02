@@ -14,9 +14,6 @@ import (
 	"viceroy/internal/money"
 )
 
-// Assumed when a credit card has no APR entered: about the US average card rate.
-const defaultCardAPR = 2200
-
 type debtDTO struct {
 	AccountID        int64   `json:"account_id"`
 	Name             string  `json:"name"`
@@ -26,9 +23,9 @@ type debtDTO struct {
 	LogoURL          *string `json:"logo_url"`
 	Balance          int64   `json:"balance"` // owed, positive
 	APRBps           int64   `json:"apr_bps"`
-	APRSource        string  `json:"apr_source"` // user | assumed | missing
+	APRSource        string  `json:"apr_source"` // user | missing
 	MinPayment       int64   `json:"min_payment"`
-	MinPaymentSource string  `json:"min_payment_source"` // user | bill | estimate
+	MinPaymentSource string  `json:"min_payment_source"` // user | bill (the bank's statement email) | missing
 	MonthlyInterest  int64   `json:"monthly_interest"`
 	InterestPaid12m  int64   `json:"interest_paid_12m"` // interest/finance charges posted in the last 12 months
 }
@@ -47,11 +44,13 @@ type debtReport struct {
 	History         []debtHistoryPoint   `json:"history"`
 	Start           string               `json:"start"` // YYYY-MM of plan month 0 (this month)
 	Extra           int64                `json:"extra"`
+	Ready           bool                 `json:"ready"` // every debt has an APR and a minimum; plans are empty until then
 	Plans           map[string]debt.Plan `json:"plans"`
 }
 
 // GET /reports/debt?extra=200: debts owed with their cost, two years of balances, and payoff
-// plans (minimums only, snowball and avalanche with extra dollars a month on top).
+// plans (minimums only, snowball and avalanche with extra dollars a month on top). Rates and
+// minimums are never guessed: the plans are only run once the user has entered them all.
 func (s *Server) handleDebtReport(w http.ResponseWriter, r *http.Request) {
 	var extra int64
 	if v := strings.TrimSpace(r.URL.Query().Get("extra")); v != "" {
@@ -73,7 +72,7 @@ func (s *Server) handleDebtReport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) debtReport(ctx context.Context, hh int64, extra int64) (debtReport, error) {
 	q := db.New(s.db)
 	today := budgetview.Today()
-	rep := debtReport{Debts: []debtDTO{}, History: []debtHistoryPoint{}, Extra: extra, Start: today.Format("2006-01")}
+	rep := debtReport{Debts: []debtDTO{}, History: []debtHistoryPoint{}, Extra: extra, Start: today.Format("2006-01"), Ready: true, Plans: map[string]debt.Plan{}}
 	dtos, err := s.accountDTOs(ctx, hh)
 	if err != nil {
 		return rep, err
@@ -96,13 +95,9 @@ func (s *Server) debtReport(ctx context.Context, hh int64, extra int64) (debtRep
 			AccountID: a.ID, Name: a.Name, Type: a.Type, InstitutionName: a.InstitutionName, Color: a.Color, LogoURL: a.LogoURL,
 			Balance: owed, InterestPaid12m: paid[a.ID],
 		}
-		switch {
-		case a.APRBps != nil:
+		d.APRSource, d.MinPaymentSource = "missing", "missing"
+		if a.APRBps != nil {
 			d.APRBps, d.APRSource = *a.APRBps, "user"
-		case a.Type == accounts.CreditCard:
-			d.APRBps, d.APRSource = defaultCardAPR, "assumed"
-		default:
-			d.APRSource = "missing"
 		}
 		d.MonthlyInterest = debt.MonthlyInterest(owed, d.APRBps)
 		switch {
@@ -110,13 +105,9 @@ func (s *Server) debtReport(ctx context.Context, hh int64, extra int64) (debtRep
 			d.MinPayment, d.MinPaymentSource = *a.MinPaymentCents, "user"
 		case a.Bill != nil && a.Bill.MinimumCents != nil && *a.Bill.MinimumCents > 0:
 			d.MinPayment, d.MinPaymentSource = *a.Bill.MinimumCents, "bill"
-		default:
-			// Typical card minimum: 1% of the balance plus the month's interest; loans ~2%.
-			est := owed/100 + d.MonthlyInterest
-			if a.Type != accounts.CreditCard {
-				est = owed / 50
-			}
-			d.MinPayment, d.MinPaymentSource = min(max(est, 2500), owed+d.MonthlyInterest), "estimate"
+		}
+		if d.APRSource == "missing" || d.MinPaymentSource == "missing" {
+			rep.Ready = false
 		}
 		rep.Debts = append(rep.Debts, d)
 		rep.Total += owed
@@ -127,9 +118,10 @@ func (s *Server) debtReport(ctx context.Context, hh int64, extra int64) (debtRep
 		rep.InterestPaid12m += c.Total
 	}
 	sort.SliceStable(rep.Debts, func(i, j int) bool { return rep.Debts[i].Balance > rep.Debts[j].Balance })
-	rep.Plans = map[string]debt.Plan{}
-	for _, st := range []debt.Strategy{debt.Minimum, debt.Snowball, debt.Avalanche} {
-		rep.Plans[string(st)] = debt.Simulate(sims, st, extra)
+	if rep.Ready && len(sims) > 0 {
+		for _, st := range []debt.Strategy{debt.Minimum, debt.Snowball, debt.Avalanche} {
+			rep.Plans[string(st)] = debt.Simulate(sims, st, extra)
+		}
 	}
 
 	// Month-end owed balances for the last 24 months (and today), per liability account.

@@ -96,9 +96,9 @@ export type Debt = {
   logo_url: string | null;
   balance: number;
   apr_bps: number;
-  apr_source: "user" | "assumed" | "missing";
+  apr_source: "user" | "missing";
   min_payment: number;
-  min_payment_source: "user" | "bill" | "estimate";
+  min_payment_source: "user" | "bill" | "missing";
   monthly_interest: number;
   interest_paid_12m: number;
 };
@@ -119,7 +119,9 @@ export type DebtReport = {
   history: { date: string; total: number; accounts: Record<string, number> }[];
   start: string;
   extra: number;
-  plans: Record<DebtPlan["strategy"], DebtPlan>;
+  /** Every debt has an APR and a minimum; plans is empty until then. */
+  ready: boolean;
+  plans: Partial<Record<DebtPlan["strategy"], DebtPlan>>;
 };
 
 export const debtQuery = (extraCents: number) =>

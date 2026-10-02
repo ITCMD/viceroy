@@ -29,6 +29,10 @@ function loadExtra() {
 const aprText = (bps: number) => `${(bps / 100).toFixed(2).replace(/\.?0+$/, "")}%`;
 
 const when = (r: Report, p: DebtPlan) => (p.never ? "Never at this pace" : p.months === 0 ? "Now" : planMonth(r.start, p.months));
+/** Same payoff order means the same simulation, so the two plans are identical. */
+const sameOrder = (a: DebtPlan, b: DebtPlan) => a.debts.every((d, i) => d.order === b.debts[i]?.order);
+const needsTerms = (d: Debt) => d.apr_source === "missing" || d.min_payment_source === "missing";
+
 const span = (months: number) => {
   const y = Math.floor(months / 12);
   const m = months % 12;
@@ -76,19 +80,22 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
     };
   }, [r, colors, t]);
   const projection = useMemo(() => {
-    if (!r) return { labels: [] as string[], series: [] as Series[] };
-    const plans = [r.plans.minimum, r.plans.snowball, r.plans.avalanche];
-    const n = Math.min(Math.max(...plans.map((p) => p.balances.length)), 360);
+    const { minimum, snowball, avalanche } = r?.plans ?? {};
+    if (!r || !minimum || !snowball || !avalanche) return { labels: [] as string[], series: [] as Series[] };
+    const n = Math.min(Math.max(...[minimum, snowball, avalanche].map((p) => p.balances.length)), 360);
     const pick = (p: DebtPlan) => [r.total, ...Array.from({ length: n }, (_, i) => p.balances[i] ?? 0)];
+    const line = (name: string, p: DebtPlan, color: string) => ({ name, values: pick(p), color, type: "line" as const });
+    const snow = line("Snowball", snowball, t.series[1]);
+    const ava = line("Avalanche", avalanche, t.series[0]);
     return {
       labels: ["Now", ...Array.from({ length: n }, (_, i) => planMonth(r.start, i + 1))],
       series: [
-        { name: "Minimums only", values: pick(r.plans.minimum), color: t.muted, type: "line" as const, dashed: true },
-        { name: "Snowball", values: pick(r.plans.snowball), color: t.series[1], type: "line" as const },
-        { name: "Avalanche", values: pick(r.plans.avalanche), color: t.series[0], type: "line" as const },
+        { ...line("Minimums only", minimum, t.muted), dashed: true },
+        // Identical plans would draw one line over the other; show one. Otherwise the chosen one goes on top.
+        ...(sameOrder(snowball, avalanche) ? [line("Snowball & avalanche", avalanche, t.series[0])] : strategy === "snowball" ? [ava, snow] : [snow, ava]),
       ],
     };
-  }, [r, t]);
+  }, [r, t, strategy]);
 
   useEffect(() => {
     if (!r) return;
@@ -113,6 +120,7 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
           monthly_interest: dollars(d.monthly_interest),
           interest_charged_last_12_months: dollars(d.interest_paid_12m),
         })),
+        payoff_plans: r.ready ? undefined : "Not available until every debt has an APR and minimum payment entered.",
         plans: Object.fromEntries(
           Object.entries(r.plans).map(([k, p]) => [
             k,
@@ -140,13 +148,9 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
     );
   }
 
+  const missing = r.debts.filter(needsTerms);
+  const missingAPR = r.debts.filter((d) => d.apr_source === "missing").length;
   const plan = r.plans[strategy];
-  const other = r.plans[strategy === "snowball" ? "avalanche" : "snowball"];
-  const base = r.plans.minimum;
-  const saved = base.never ? null : base.interest - plan.interest;
-  const order = [...plan.debts].sort((a, b) => a.order - b.order);
-  const byId = new Map(r.debts.map((d) => [d.account_id, d]));
-  const guessed = r.debts.some((d) => d.apr_source !== "user" || d.min_payment_source === "estimate");
 
   return (
     <>
@@ -154,13 +158,15 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
         <StatTile label="Total debt">
           <MoneyText cents={r.total} whole />
         </StatTile>
-        <StatTile label="Interest per month">
-          <span className="text-negative">{formatMoney(r.monthly_interest, { whole: true })}</span>
+        <StatTile label="Interest per month" sub={missingAPR > 0 && `Not counting ${missingAPR} debt${missingAPR === 1 ? "" : "s"} without an APR`}>
+          {missingAPR === r.debts.length ? <span className="text-muted">—</span> : <span className="text-negative">{formatMoney(r.monthly_interest, { whole: true })}</span>}
         </StatTile>
         <StatTile label="Interest charged, last 12 mo">
           <MoneyText cents={r.interest_paid_12m} whole />
         </StatTile>
-        <StatTile label="Debt free">{when(r, plan)}</StatTile>
+        <StatTile label="Debt free" sub={!plan && "Needs rates and minimums"}>
+          {plan ? when(r, plan) : <span className="text-muted">—</span>}
+        </StatTile>
       </div>
 
       <Card title="Debt over time">
@@ -174,7 +180,7 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
         )}
       </Card>
 
-      <Card title="Your debts" action={guessed && <span className="text-xs text-muted">Enter rates and minimums for a better plan</span>}>
+      <Card title="Your debts" action={missing.length > 0 && <span className="text-xs text-muted">Enter each debt's APR and minimum from its statement</span>}>
         <div className="-mx-4 overflow-x-auto px-4">
           <table className="w-full min-w-[560px] text-[13px]" data-testid="debt-table">
             <thead>
@@ -200,20 +206,14 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
                     <MoneyText cents={d.balance} />
                   </td>
                   <td className="py-2 text-right tabular">
-                    {d.apr_source === "missing" ? (
-                      <Badge>Not set</Badge>
-                    ) : (
-                      <span className={clsx(d.apr_source === "assumed" && "text-muted")} title={d.apr_source === "assumed" ? "Assumed: a typical card rate" : undefined}>
-                        {aprText(d.apr_bps)}
-                        {d.apr_source === "assumed" && "*"}
-                      </span>
-                    )}
+                    {d.apr_source === "missing" ? <Badge>Not set</Badge> : aprText(d.apr_bps)}
                   </td>
                   <td className="py-2 text-right tabular">
-                    <span className={clsx(d.min_payment_source === "estimate" && "text-muted")} title={d.min_payment_source === "estimate" ? "Estimated" : d.min_payment_source === "bill" ? "From your bank's email" : undefined}>
-                      {formatMoney(d.min_payment)}
-                      {d.min_payment_source === "estimate" && "*"}
-                    </span>
+                    {d.min_payment_source === "missing" ? (
+                      <Badge>Not set</Badge>
+                    ) : (
+                      <span title={d.min_payment_source === "bill" ? "From your bank's statement email" : undefined}>{formatMoney(d.min_payment)}</span>
+                    )}
                   </td>
                   <td className="py-2 text-right text-negative tabular">{formatMoney(d.monthly_interest)}</td>
                   <td className="py-2 pl-2 text-right">
@@ -226,61 +226,104 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
             </tbody>
           </table>
         </div>
-        {guessed && <p className="mt-2 text-xs text-muted">* Estimated. Cards without a rate use 22%; loans without one count as 0% until you add it.</p>}
       </Card>
 
       <Card title="Payoff plan">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <Field
-              label="Extra each month"
-              inputMode="decimal"
-              value={extraText}
-              onChange={(e) => setExtraText(e.target.value)}
-              className="w-40"
-              hint="On top of the minimums"
-            />
-            <Segmented
-              label="Strategy"
-              value={strategy}
-              onChange={setStrategy}
-              className="mb-5"
-              items={[
-                { value: "avalanche", label: "Avalanche · highest rate first" },
-                { value: "snowball", label: "Snowball · smallest first" },
-              ]}
-            />
+        {r.ready ? (
+          <PayoffPlan r={r} strategy={strategy} setStrategy={setStrategy} extraText={extraText} setExtraText={setExtraText} projection={projection} />
+        ) : (
+          <div className="flex flex-col gap-3" data-testid="debt-needs-terms">
+            <p className="text-[13px] text-muted">
+              A payoff plan needs each debt's APR and minimum payment, from its latest statement. Use 0% for an interest-free loan.
+            </p>
+            <ul className="flex flex-col gap-1.5">
+              {missing.map((d) => (
+                <li key={d.account_id} className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
+                  <AccountAvatar account={{ name: d.name, institution_name: d.institution_name, color: d.color, logo_url: d.logo_url }} size={24} />
+                  <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
+                  <span className="hidden text-muted sm:block">
+                    Missing {[d.apr_source === "missing" && "APR", d.min_payment_source === "missing" && "minimum"].filter(Boolean).join(" and ")}
+                  </span>
+                  <Button variant="secondary" size="sm" onClick={() => setEditing(d)}>
+                    Set terms
+                  </Button>
+                </li>
+              ))}
+            </ul>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3" data-testid="debt-plans">
-            <PlanTile title="Minimums only" plan={base} r={r} muted />
-            <PlanTile title={strategy === "snowball" ? "Snowball" : "Avalanche"} plan={plan} r={r} highlight />
-            <PlanTile title={strategy === "snowball" ? "Avalanche" : "Snowball"} plan={other} r={r} />
-          </div>
-          <Insight r={r} strategy={strategy} saved={saved} />
-          <Legend items={projection.series} />
-          <SeriesChart labels={projection.labels} series={projection.series} label="Projected debt chart" height={240} />
-          <div>
-            <h3 className="mb-2 text-[13px] font-semibold">Order to pay off</h3>
-            <ol className="flex flex-col gap-1.5" data-testid="debt-order">
-              {order.map((o) => {
-                const d = byId.get(o.id);
-                if (!d) return null;
-                return (
-                  <li key={o.id} className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
-                    <span className="grid size-6 shrink-0 place-items-center rounded-full bg-surface text-xs font-semibold">{o.order}</span>
-                    <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
-                    <span className="text-muted">{o.months ? `Paid off ${planMonth(r.start, o.months)}` : "Not paid off at this pace"}</span>
-                    <span className="hidden w-32 text-right text-muted sm:block">{formatMoney(o.interest, { whole: true })} interest</span>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        </div>
+        )}
       </Card>
 
       <DebtTermsDialog debt={editing} onClose={() => setEditing(null)} />
     </>
+  );
+}
+
+function PayoffPlan({
+  r,
+  strategy,
+  setStrategy,
+  extraText,
+  setExtraText,
+  projection,
+}: {
+  r: Report;
+  strategy: Strategy;
+  setStrategy: (s: Strategy) => void;
+  extraText: string;
+  setExtraText: (v: string) => void;
+  projection: { labels: string[]; series: Series[] };
+}) {
+  const plan = r.plans[strategy]!;
+  const other = r.plans[strategy === "snowball" ? "avalanche" : "snowball"]!;
+  const base = r.plans.minimum!;
+  const same = sameOrder(plan, other);
+  const saved = base.never ? null : base.interest - plan.interest;
+  const order = [...plan.debts].sort((a, b) => a.order - b.order);
+  const byId = new Map(r.debts.map((d) => [d.account_id, d]));
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Extra each month" inputMode="decimal" value={extraText} onChange={(e) => setExtraText(e.target.value)} className="w-40" hint="On top of the minimums" />
+        {!same && (
+          <Segmented
+            label="Strategy"
+            value={strategy}
+            onChange={setStrategy}
+            className="mb-5"
+            items={[
+              { value: "avalanche", label: "Avalanche · highest rate first" },
+              { value: "snowball", label: "Snowball · smallest first" },
+            ]}
+          />
+        )}
+      </div>
+      <div className={clsx("grid gap-3", same ? "sm:grid-cols-2" : "sm:grid-cols-3")} data-testid="debt-plans">
+        <PlanTile title="Minimums only" plan={base} r={r} muted />
+        <PlanTile title={same ? "Snowball & avalanche" : strategy === "snowball" ? "Snowball" : "Avalanche"} plan={plan} r={r} highlight />
+        {!same && <PlanTile title={strategy === "snowball" ? "Avalanche" : "Snowball"} plan={other} r={r} />}
+      </div>
+      <Insight r={r} strategy={strategy} saved={saved} same={same} />
+      <Legend items={projection.series} />
+      <SeriesChart labels={projection.labels} series={projection.series} label="Projected debt chart" height={240} />
+      <div>
+        <h3 className="mb-2 text-[13px] font-semibold">Order to pay off</h3>
+        <ol className="flex flex-col gap-1.5" data-testid="debt-order">
+          {order.map((o) => {
+            const d = byId.get(o.id);
+            if (!d) return null;
+            return (
+              <li key={o.id} className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
+                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-surface text-xs font-semibold">{o.order}</span>
+                <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
+                <span className="text-muted">{o.months ? `Paid off ${planMonth(r.start, o.months)}` : "Not paid off at this pace"}</span>
+                <span className="hidden w-32 text-right text-muted sm:block">{formatMoney(o.interest, { whole: true })} interest</span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </div>
   );
 }
 
@@ -298,17 +341,19 @@ function PlanTile({ title, plan, r, highlight, muted }: { title: string; plan: D
 }
 
 /** Plain-language read on the plan: what extra buys, and how the two strategies differ here. */
-function Insight({ r, strategy, saved }: { r: Report; strategy: Strategy; saved: number | null }) {
-  const snow = r.plans.snowball;
-  const ava = r.plans.avalanche;
-  const base = r.plans.minimum;
+function Insight({ r, strategy, saved, same }: { r: Report; strategy: Strategy; saved: number | null; same: boolean }) {
+  const snow = r.plans.snowball!;
+  const ava = r.plans.avalanche!;
+  const base = r.plans.minimum!;
   const first = (p: DebtPlan) => r.debts.find((d) => d.account_id === p.debts.find((x) => x.order === 1)?.id);
   const lines: string[] = [];
   if (base.never) lines.push("Paying only the minimums never clears this debt: the interest outgrows the payments.");
   if (r.extra > 0 && saved !== null && saved > 0) {
-    lines.push(`${formatMoney(r.extra, { whole: true })} extra a month saves ${formatMoney(saved, { whole: true })} in interest and finishes ${span(Math.max(base.months - r.plans[strategy].months, 0))} sooner than minimums only.`);
+    lines.push(`${formatMoney(r.extra, { whole: true })} extra a month saves ${formatMoney(saved, { whole: true })} in interest and finishes ${span(Math.max(base.months - r.plans[strategy]!.months, 0))} sooner than minimums only.`);
   }
-  if (r.debts.length > 1) {
+  if (r.debts.length > 1 && same) {
+    lines.push("Snowball and avalanche come out the same here: your smallest balances also carry the highest rates, so both pay debts off in the same order.");
+  } else if (r.debts.length > 1) {
     const diff = snow.interest - ava.interest;
     const sf = first(snow);
     const af = first(ava);
@@ -354,7 +399,7 @@ function DebtTermsDialog({ debt, onClose }: { debt: Debt | null; onClose: () => 
       open={!!debt}
       onOpenChange={(o) => !o && onClose()}
       title={debt ? `${debt.name} terms` : ""}
-      description="From your statement. Leave a field empty to let Viceroy estimate it."
+      description="From your latest statement. Use 0% for an interest-free loan."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -373,11 +418,11 @@ function DebtTermsDialog({ debt, onClose }: { debt: Debt | null; onClose: () => 
           save.mutate();
         }}
       >
-        <Field label="APR (%)" inputMode="decimal" placeholder={debt?.apr_source === "assumed" ? "22 (assumed)" : "e.g. 24.99"} value={apr} onChange={(e) => setApr(e.target.value)} />
+        <Field label="APR (%)" inputMode="decimal" placeholder="e.g. 24.99" value={apr} onChange={(e) => setApr(e.target.value)} />
         <Field
           label="Minimum payment ($)"
           inputMode="decimal"
-          placeholder={debt ? `${(debt.min_payment / 100).toFixed(2)} (${debt.min_payment_source === "bill" ? "from your bank's email" : "estimated"})` : ""}
+          placeholder={debt?.min_payment_source === "bill" ? `${(debt.min_payment / 100).toFixed(2)} (from your bank's email)` : "e.g. 85.00"}
           value={min}
           onChange={(e) => setMin(e.target.value)}
         />

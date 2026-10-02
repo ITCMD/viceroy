@@ -415,7 +415,9 @@ func debtForModel(rep debtReport) map[string]any {
 	return map[string]any{
 		"total_owed": usd(rep.Total), "monthly_interest": usd(rep.MonthlyInterest), "interest_charged_last_12_months": usd(rep.InterestPaid12m),
 		"extra_per_month": usd(rep.Extra), "debts": debts, "plans": plans,
-		"note": "apr_source assumed = no APR entered (22% assumed for cards); missing = no APR entered, counted as 0%. min_payment_source estimate = guessed.",
+		"terms_complete": rep.Ready,
+		"note": "apr_source/min_payment_source missing = the user hasn't entered it (shown as 0). Plans only exist once every debt has both; " +
+			"until then, ask the user to enter them under Reports › Debt Free Future instead of guessing.",
 	}
 }
 
