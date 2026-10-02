@@ -24,6 +24,7 @@ const (
 	keyEmailBaseURL = "ai.email_base_url"
 	keyVisionModel  = "ai.vision_model"
 	keyCategorize   = "ai.categorize" // "off" turns automatic categorization off
+	keyCatReview    = "ai.categorize_review" // "on" marks AI picks as needs review
 )
 
 type Store struct {
@@ -42,6 +43,7 @@ type Settings struct {
 	EmailBaseURL string // self-hosted endpoint for email reading; "" = OpenRouter
 	VisionModel  string // multimodal model for budget imports; "" = ChatModel
 	Categorize   bool   // categorize new transactions with the email (light) model
+	CatReview    bool   // mark AI category picks as needs review
 
 	// What viceroy.toml would give, shown as placeholders.
 	ConfigChatModel string
@@ -82,6 +84,8 @@ func (s *Store) Load(ctx context.Context, hh int64) (Settings, error) {
 			out.VisionModel = r.Value
 		case keyCategorize:
 			out.Categorize = r.Value != "off"
+		case keyCatReview:
+			out.CatReview = r.Value == "on"
 		}
 	}
 	return out, nil
@@ -96,6 +100,7 @@ type Patch struct {
 	EmailBaseURL *string `json:"email_base_url"`
 	VisionModel  *string `json:"vision_model"`
 	Categorize   *bool   `json:"categorize"`
+	CatReview    *bool   `json:"categorize_review"`
 }
 
 var ErrBadURL = errors.New("the self-hosted endpoint must start with http:// or https://")
@@ -127,12 +132,15 @@ func (s *Store) Save(ctx context.Context, hh int64, p Patch) error {
 			return err
 		}
 	}
-	if p.Categorize != nil {
+	for k, b := range map[string]*bool{keyCategorize: p.Categorize, keyCatReview: p.CatReview} {
+		if b == nil {
+			continue
+		}
 		v := "on"
-		if !*p.Categorize {
+		if !*b {
 			v = "off"
 		}
-		if err := set(keyCategorize, v); err != nil {
+		if err := set(k, v); err != nil {
 			return err
 		}
 	}

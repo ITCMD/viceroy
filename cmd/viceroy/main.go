@@ -114,9 +114,9 @@ func runServe(path string) error {
 	}
 	notifier := notify.New(conn, log, keys, subject)
 	aiset := &aisettings.Store{DB: conn, Box: box, Config: cfg.AI, Referer: cfg.PublicURL}
-	cat := &aicat.Service{DB: conn, Log: log, Client: func(ctx context.Context, hh int64) (aicat.Client, bool, error) {
+	cat := &aicat.Service{DB: conn, Log: log, Client: func(ctx context.Context, hh int64) (aicat.Client, aicat.Auto, error) {
 		st, err := aiset.Load(ctx, hh)
-		return st.Email(cfg.AI.BaseURL, cfg.PublicURL), st.Categorize, err
+		return st.Email(cfg.AI.BaseURL, cfg.PublicURL), aicat.Auto{On: st.Categorize, Review: st.CatReview}, err
 	}}
 	colors := &branding.Service{DB: conn, Log: log, Client: func(ctx context.Context, hh int64) (branding.Client, error) {
 		return aiset.EmailClient(ctx, hh)

@@ -18,16 +18,20 @@ const (
 	setForwardDefault = "budget.forward_default"
 	setWeekStart      = "budget.week_start"
 	setPaySchedule    = "budget.pay_schedule"
+	setUpcomingWindow = "budget.upcoming_window"
 )
 
 type Settings struct {
 	ForwardDefault bool               `json:"forward_default"` // "apply to all future months" starts on
 	WeekStart      int                `json:"week_start"`      // 0 = Sunday
 	PaySchedule    budget.PaySchedule `json:"pay_schedule"`
+	// UpcomingWindow is how far ahead the budget marks recurring charges still to come:
+	// "week" (the next 7 days) or "paycheck" (until the next payday).
+	UpcomingWindow string `json:"upcoming_window"`
 }
 
 func LoadSettings(ctx context.Context, q *db.Queries, hh int64) (Settings, error) {
-	out := Settings{PaySchedule: budget.DefaultPaySchedule}
+	out := Settings{PaySchedule: budget.DefaultPaySchedule, UpcomingWindow: "week"}
 	rows, err := q.ListHouseholdSettings(ctx, hh)
 	if err != nil {
 		return out, err
@@ -40,6 +44,10 @@ func LoadSettings(ctx context.Context, q *db.Queries, hh int64) (Settings, error
 			if n, err := strconv.Atoi(r.Value); err == nil && n >= 0 && n <= 6 {
 				out.WeekStart = n
 			}
+		case setUpcomingWindow:
+			if r.Value == "week" || r.Value == "paycheck" {
+				out.UpcomingWindow = r.Value
+			}
 		case setPaySchedule:
 			var ps budget.PaySchedule
 			if json.Unmarshal([]byte(r.Value), &ps) == nil && ps.Validate() == nil {
@@ -51,7 +59,7 @@ func LoadSettings(ctx context.Context, q *db.Queries, hh int64) (Settings, error
 }
 
 // SaveSettings applies the non-nil fields; it returns a user-facing error for bad input.
-func SaveSettings(ctx context.Context, q *db.Queries, hh int64, forward *bool, weekStart *int, pay *budget.PaySchedule) (string, error) {
+func SaveSettings(ctx context.Context, q *db.Queries, hh int64, forward *bool, weekStart *int, pay *budget.PaySchedule, upcoming *string) (string, error) {
 	set := func(k, v string) error {
 		return q.SetHouseholdSetting(ctx, db.SetHouseholdSettingParams{HouseholdID: hh, Key: k, Value: v})
 	}
@@ -61,6 +69,14 @@ func SaveSettings(ctx context.Context, q *db.Queries, hh int64, forward *bool, w
 	if pay != nil {
 		if err := pay.Validate(); err != nil {
 			return "Pay schedule: " + err.Error() + ".", nil
+		}
+	}
+	if upcoming != nil {
+		if *upcoming != "week" && *upcoming != "paycheck" {
+			return "Upcoming window must be week or paycheck.", nil
+		}
+		if err := set(setUpcomingWindow, *upcoming); err != nil {
+			return "", err
 		}
 	}
 	if forward != nil {
@@ -104,6 +120,7 @@ type Line struct {
 	MonthBudget int64        `json:"month_budget"` // the editable monthly amount (month of the period start)
 	Chunk       budget.Chunk `json:"chunk"`
 	Hidden      bool         `json:"hidden"` // hidden from the budget (still counted in totals)
+	Upcoming    int64        `json:"upcoming"` // recurring charges still to come in the upcoming window (set by the API)
 	// Rollover is what a non-monthly category carries into this month from earlier ones
 	// (unspent budget, or overspending when negative). Budget already includes it.
 	Rollover int64 `json:"rollover"`

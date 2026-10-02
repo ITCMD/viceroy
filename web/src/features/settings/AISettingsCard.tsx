@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { aiSettingsQuery, modelsQuery, type AISettings } from "./ai";
 import { ModelPicker } from "./ModelPicker";
 
-type Patch = Partial<{ openrouter_key: string; chat_model: string; email_model: string; email_base_url: string; vision_model: string; categorize: boolean }>;
+type Patch = Partial<{ openrouter_key: string; chat_model: string; email_model: string; email_base_url: string; vision_model: string; categorize: boolean; categorize_review: boolean }>;
 type Target = "chat" | "email" | "vision";
 type TestResult = { ok: boolean; model?: string; error?: string };
 
@@ -181,9 +181,16 @@ export function AISettingsCard() {
           </details>
           <Switch
             label="Categorize new transactions with AI"
-            hint="Uses the cheaper model above, once per new merchant. Its picks are marked for review, and later transactions from that merchant follow them."
+            hint="Uses the cheaper model above, once per new merchant. Later transactions from that merchant follow its pick."
             checked={s?.categorize ?? true}
             onCheckedChange={(v) => save.mutate({ categorize: v })}
+            disabled={!canEdit}
+          />
+          <Switch
+            label="Mark AI picks as needs review"
+            hint="Off: a category the AI picks counts as reviewed. On: each pick waits in Needs review until you check it."
+            checked={s?.categorize_review ?? false}
+            onCheckedChange={(v) => save.mutate({ categorize_review: v })}
             disabled={!canEdit}
           />
           <div className="flex flex-wrap items-center gap-2">

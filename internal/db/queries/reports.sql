@@ -22,7 +22,7 @@ SELECT CAST(COALESCE(MIN(date), '') AS TEXT) FROM transactions WHERE household_i
 
 -- History the recurring detector reads: non-transfer, visible, unlinked rows since a date.
 -- name: RecurringCandidates :many
-SELECT t.id, t.date, t.amount_cents, t.merchant_id,
+SELECT t.id, t.date, t.amount_cents, t.merchant_id, t.description,
     CAST(COALESCE(m.name, NULLIF(t.payee, ''), t.description) AS TEXT) AS merchant,
     t.category_id, COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     t.account_id, a.name AS account_name

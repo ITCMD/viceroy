@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func day(s string) time.Time {
+func date(s string) time.Time {
 	d, _ := time.Parse(time.DateOnly, s)
 	return d
 }
@@ -29,7 +29,7 @@ func find(ss []Series, name string) *Series {
 }
 
 func TestDetect(t *testing.T) {
-	today := day("2026-09-20")
+	today := date("2026-09-20")
 	var txns []Txn
 	txns = append(txns, series(1, "Netflix", -1599, "2026-05-03", "2026-06-03", "2026-07-03", "2026-08-03", "2026-09-03")...)
 	txns = append(txns, series(2, "Acme Payroll", 250000, "2026-07-01", "2026-07-15", "2026-08-01", "2026-08-14", "2026-09-01", "2026-09-15")...)
@@ -82,7 +82,7 @@ func TestDetect(t *testing.T) {
 }
 
 func TestNextClampsMonthEnd(t *testing.T) {
-	os := []occ{{date: day("2026-01-31")}, {date: day("2026-03-31")}}
+	os := []occ{{date: date("2026-01-31")}, {date: date("2026-03-31")}}
 	if got := next(Monthly, os, nil).Format(time.DateOnly); got != "2026-04-30" {
 		t.Errorf("next = %s", got)
 	}

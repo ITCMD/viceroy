@@ -80,6 +80,7 @@ type aiSettingsDTO struct {
 	EmailBaseURL    string `json:"email_base_url"`
 	VisionModel     string `json:"vision_model"`
 	Categorize      bool   `json:"categorize"`
+	CatReview       bool   `json:"categorize_review"`
 	ConfigChatModel string `json:"config_chat_model"`
 	ChatReady       bool   `json:"chat_ready"`
 	EmailReady      bool   `json:"email_ready"`
@@ -95,7 +96,7 @@ func (s *Server) handleGetAISettings(w http.ResponseWriter, r *http.Request) {
 	out := aiSettingsDTO{
 		CanEdit: CurrentUser(r).IsAdmin == 1, KeySet: st.APIKey != "", KeySource: st.KeySource,
 		ChatModel: st.ChatModel, EmailModel: st.EmailModel, EmailBaseURL: st.EmailBaseURL, VisionModel: st.VisionModel, ConfigChatModel: st.ConfigChatModel,
-		Categorize:  st.Categorize,
+		Categorize:  st.Categorize, CatReview: st.CatReview,
 		ChatReady:   st.Chat(s.ai.Config.BaseURL, "").Configured(),
 		EmailReady:  st.Email(s.ai.Config.BaseURL, "").Configured(),
 		VisionReady: st.Vision(s.ai.Config.BaseURL, "").Configured(),

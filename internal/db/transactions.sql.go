@@ -1495,18 +1495,24 @@ func (q *Queries) SetCategoryPlace(ctx context.Context, arg SetCategoryPlacePara
 }
 
 const setTransactionAICategory = `-- name: SetTransactionAICategory :exec
-UPDATE transactions SET category_id = ?, category_source = 'ai', needs_review = 1, ai_cat_tried = 1
+UPDATE transactions SET category_id = ?, category_source = 'ai', needs_review = ?, ai_cat_tried = 1
 WHERE id = ? AND household_id = ? AND category_id IS NULL
 `
 
 type SetTransactionAICategoryParams struct {
 	CategoryID  sql.NullInt64 `json:"category_id"`
+	NeedsReview int64         `json:"needs_review"`
 	ID          int64         `json:"id"`
 	HouseholdID int64         `json:"household_id"`
 }
 
 func (q *Queries) SetTransactionAICategory(ctx context.Context, arg SetTransactionAICategoryParams) error {
-	_, err := q.db.ExecContext(ctx, setTransactionAICategory, arg.CategoryID, arg.ID, arg.HouseholdID)
+	_, err := q.db.ExecContext(ctx, setTransactionAICategory,
+		arg.CategoryID,
+		arg.NeedsReview,
+		arg.ID,
+		arg.HouseholdID,
+	)
 	return err
 }
 

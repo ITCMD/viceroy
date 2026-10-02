@@ -238,7 +238,14 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"transaction": t, "linked": linked, "email": alert, "ai_changes": changes})
+	var rec any
+	if sc, err := s.recurringSchedule(ctx, hh); err != nil {
+		s.internalError(w, err)
+		return
+	} else if it, ok := sc.TrackedFor(t.ID); ok {
+		rec = map[string]any{"id": it.ID, "name": it.Name, "cadence": it.Cadence, "next_date": it.NextDate}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"transaction": t, "linked": linked, "email": alert, "ai_changes": changes, "recurring": rec})
 }
 
 type createTxnIn struct {

@@ -1,6 +1,7 @@
 // Package recurring finds repeating transactions (subscriptions, bills, paychecks) in
-// transaction history: the same merchant, a steady cadence and a similar amount. It is
-// pure and recomputed on demand; only dismissals are stored.
+// transaction history: the same merchant, a steady cadence and a similar amount. Detection is
+// pure and recomputed on demand; series the household confirms or enters by hand are stored as
+// tracked items (schedule.go), and dismissals are stored by series key.
 package recurring
 
 import (
@@ -31,6 +32,7 @@ type Txn struct {
 	Amount       int64  // signed cents
 	MerchantID   int64  // 0 = none; Merchant is then the payee/description
 	Merchant     string
+	Description  string // original statement
 	CategoryID   int64
 	CategoryName string
 	CategoryIcon string
@@ -38,8 +40,13 @@ type Txn struct {
 	AccountName  string
 }
 
+// Series is a recurring transaction: detected from history (Source "detected", ID 0) or a
+// tracked item (Source "tracked").
 type Series struct {
-	Key          string  `json:"key"`
+	ID           int64   `json:"id"`     // tracked item id; 0 = detected
+	Source       string  `json:"source"` // detected | tracked
+	Key          string  `json:"key"`    // detected: series key; tracked: "item:<id>"
+	Strong       bool    `json:"strong"` // detected: repeated enough to count as upcoming without confirming
 	Name         string  `json:"name"`
 	MerchantID   int64   `json:"merchant_id"`
 	CategoryID   int64   `json:"category_id"`
@@ -53,21 +60,28 @@ type Series struct {
 	Count        int     `json:"count"`
 	LastDate     string  `json:"last_date"`
 	NextDate     string  `json:"next_date"`
+	Anchor       string  `json:"anchor_date"` // a due date the schedule repeats from
+	Day2         int     `json:"day2"`        // semimonthly: the other day of the month
+	MatchText    string  `json:"match_text"`  // tracked: text matched against merchants
+	Dismissed    bool    `json:"dismissed"`
+
+	occ []occ // detected: the charges it was built from
 }
 
 type rule struct {
-	cadence  Cadence
-	min, max int // accepted gap in days
-	minCount int
-	stale    int // days after the last charge before the series is considered over
+	cadence   Cadence
+	min, max  int // accepted gap in days
+	minCount  int // strong: counts as upcoming on its own
+	weakCount int // suggested only (e.g. two similar monthly charges)
+	stale     int // days after the last charge before the series is considered over
 }
 
 var rules = []rule{
-	{Weekly, 6, 8, 4, 11},
-	{Biweekly, 12, 17, 3, 21}, // 17: the 15th to the 1st of a 31-day month (semimonthly)
-	{Monthly, 26, 35, 3, 45},
-	{Quarterly, 84, 98, 3, 130},
-	{Yearly, 350, 380, 2, 400},
+	{Weekly, 6, 8, 4, 4, 11},
+	{Biweekly, 12, 17, 3, 3, 21}, // 17: the 15th to the 1st of a 31-day month (semimonthly)
+	{Monthly, 26, 35, 3, 2, 45},
+	{Quarterly, 84, 98, 3, 2, 130},
+	{Yearly, 350, 380, 2, 2, 400},
 }
 
 type occ struct {
@@ -76,7 +90,8 @@ type occ struct {
 	t      Txn
 }
 
-// Detect returns active recurring series, sorted by next date.
+// Detect returns active recurring series, sorted by next date. Weak ones (Strong false) are
+// only suggestions.
 func Detect(txns []Txn, today time.Time) []Series {
 	groups := map[string][]occ{}
 	var order []string
@@ -145,7 +160,15 @@ func detect(key string, os []occ, today time.Time, checkAmounts bool) (Series, b
 	last := os[len(os)-1]
 	sinceLast := int(today.Sub(last.date).Hours() / 24)
 	for _, r := range rules {
-		if mg < r.min || mg > r.max || len(os) < r.minCount || sinceLast > r.stale || sinceLast < -1 {
+		need := r.minCount
+		if checkAmounts { // a whole merchant; a cluster inside a busy merchant must be strong
+			need = r.weakCount
+		}
+		if mg < r.min || mg > r.max || len(os) < need || sinceLast > r.stale || sinceLast < -1 {
+			continue
+		}
+		strong := len(os) >= r.minCount
+		if !strong && !closeAmounts(amts) {
 			continue
 		}
 		good := 0
@@ -165,6 +188,7 @@ func detect(key string, os []occ, today time.Time, checkAmounts bool) (Series, b
 			}
 		}
 		s := Series{
+			Source: "detected", Strong: strong, occ: os,
 			Key: key, Name: last.t.Merchant, MerchantID: last.t.MerchantID,
 			CategoryID: last.t.CategoryID, CategoryName: last.t.CategoryName, CategoryIcon: last.t.CategoryIcon,
 			AccountID: last.t.AccountID, AccountName: last.t.AccountName,
@@ -176,6 +200,13 @@ func detect(key string, os []occ, today time.Time, checkAmounts bool) (Series, b
 			}
 		}
 		s.NextDate = next(cad, os, days).Format(time.DateOnly)
+		s.Anchor = s.NextDate
+		if len(days) == 2 {
+			s.Day2 = days[0]
+			if day(s.NextDate) == days[0] {
+				s.Day2 = days[1]
+			}
+		}
 		return s, true
 	}
 	return Series{}, false
@@ -276,6 +307,21 @@ func similar(amts []int64, med int64) bool {
 		}
 	}
 	return ok*3 >= len(amts)*2
+}
+
+// closeAmounts: every amount within 15% of the first (for a series seen only a few times).
+func closeAmounts(amts []int64) bool {
+	for _, a := range amts {
+		if abs(a-amts[0])*100 > abs(amts[0])*15 {
+			return false
+		}
+	}
+	return true
+}
+
+func day(s string) int {
+	d, _ := time.Parse(time.DateOnly, s)
+	return d.Day()
 }
 
 // largestCluster groups amounts that sit within 10% of their neighbor and returns the

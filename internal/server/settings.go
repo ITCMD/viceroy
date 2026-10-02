@@ -71,6 +71,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			ForwardDefault *bool               `json:"forward_default"`
 			WeekStart      *int                `json:"week_start"`
 			PaySchedule    *budget.PaySchedule `json:"pay_schedule"`
+			UpcomingWindow *string             `json:"upcoming_window"`
 		} `json:"budget"`
 	}
 	if !readJSON(w, r, &in) {
@@ -88,7 +89,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if b := in.Budget; b != nil {
-		msg, err := budgetview.SaveSettings(r.Context(), q, HouseholdID(r), b.ForwardDefault, b.WeekStart, b.PaySchedule)
+		msg, err := budgetview.SaveSettings(r.Context(), q, HouseholdID(r), b.ForwardDefault, b.WeekStart, b.PaySchedule, b.UpcomingWindow)
 		if err != nil {
 			s.internalError(w, err)
 			return

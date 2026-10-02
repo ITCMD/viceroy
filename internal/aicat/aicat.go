@@ -1,6 +1,6 @@
 // Package aicat asks the light (email) AI model to categorize uncategorized transactions. It
 // asks once per merchant, in batches, and only accepts category ids it offered. A pick is
-// stored with category_source 'ai' and needs_review, and merchant history then reuses it for
+// stored with category_source 'ai' (and needs_review only when the household asks for it), and merchant history then reuses it for
 // that merchant's later transactions without asking again (a "soft rule" that isn't on the
 // rules list; anything a person picks wins over it).
 package aicat
@@ -36,6 +36,7 @@ type Options struct {
 	Since        string // YYYY-MM-DD, transaction date
 	CreatedSince int64  // unix; 0 = any
 	IncludeTried bool   // also ask about ones the AI passed on before
+	Review       bool   // mark picks as needs review; otherwise a pick clears the flag
 }
 
 // Result counts what happened.
@@ -110,7 +111,7 @@ func Run(ctx context.Context, conn *sql.DB, client Client, hh int64, opts Option
 			for _, id := range g.IDs {
 				if c, ok := picks[i]; ok {
 					if err := q.SetTransactionAICategory(ctx, db.SetTransactionAICategoryParams{
-						CategoryID: sql.NullInt64{Int64: c, Valid: true}, ID: id, HouseholdID: hh,
+						CategoryID: sql.NullInt64{Int64: c, Valid: true}, NeedsReview: b2i(opts.Review), ID: id, HouseholdID: hh,
 					}); err != nil {
 						return res, err
 					}
@@ -257,10 +258,16 @@ func b2i(b bool) int64 {
 
 // Service runs the automatic pass after syncs and email alerts: transactions created in the
 // last 3 days that the AI hasn't looked at yet, when the household has it turned on.
+// Auto is the household's automatic categorization setup.
+type Auto struct {
+	On     bool
+	Review bool // mark picks as needs review
+}
+
 type Service struct {
 	DB     *sql.DB
 	Log    *slog.Logger
-	Client func(ctx context.Context, hh int64) (Client, bool, error) // client, enabled
+	Client func(ctx context.Context, hh int64) (Client, Auto, error)
 	Delay  time.Duration                                             // debounce; default 5s
 	Now    func() time.Time
 
@@ -296,8 +303,8 @@ func (s *Service) Changed(hh int64) {
 
 // RunAuto is one automatic pass (exported for tests).
 func (s *Service) RunAuto(ctx context.Context, hh int64) (Result, error) {
-	c, on, err := s.Client(ctx, hh)
-	if err != nil || !on {
+	c, auto, err := s.Client(ctx, hh)
+	if err != nil || !auto.On {
 		return Result{}, err
 	}
 	now := time.Now()
@@ -307,5 +314,6 @@ func (s *Service) RunAuto(ctx context.Context, hh int64) (Result, error) {
 	return Run(ctx, s.DB, c, hh, Options{
 		Since:        now.AddDate(0, 0, -45).Format(time.DateOnly),
 		CreatedSince: now.Add(-72 * time.Hour).Unix(),
+		Review:       auto.Review,
 	})
 }

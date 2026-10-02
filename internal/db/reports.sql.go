@@ -64,7 +64,7 @@ func (q *Queries) ListRecurringDismissed(ctx context.Context, householdID int64)
 
 const recurringCandidates = `-- name: RecurringCandidates :many
 
-SELECT t.id, t.date, t.amount_cents, t.merchant_id,
+SELECT t.id, t.date, t.amount_cents, t.merchant_id, t.description,
     CAST(COALESCE(m.name, NULLIF(t.payee, ''), t.description) AS TEXT) AS merchant,
     t.category_id, COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     t.account_id, a.name AS account_name
@@ -89,6 +89,7 @@ type RecurringCandidatesRow struct {
 	Date         string        `json:"date"`
 	AmountCents  int64         `json:"amount_cents"`
 	MerchantID   sql.NullInt64 `json:"merchant_id"`
+	Description  string        `json:"description"`
 	Merchant     string        `json:"merchant"`
 	CategoryID   sql.NullInt64 `json:"category_id"`
 	CategoryName string        `json:"category_name"`
@@ -113,6 +114,7 @@ func (q *Queries) RecurringCandidates(ctx context.Context, arg RecurringCandidat
 			&i.Date,
 			&i.AmountCents,
 			&i.MerchantID,
+			&i.Description,
 			&i.Merchant,
 			&i.CategoryID,
 			&i.CategoryName,

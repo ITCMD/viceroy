@@ -64,7 +64,8 @@ export function ModelPicker({
       <label htmlFor={id} className="text-[13px] font-medium text-text">
         {label}
       </label>
-      <Popover.Root open={open} onOpenChange={setOpen}>
+      {/* modal: its own scroll lock, so the wheel scrolls the list even inside a Dialog/Sheet (whose lock would swallow it). */}
+      <Popover.Root modal open={open} onOpenChange={setOpen}>
         <Popover.Trigger
           id={id}
           disabled={disabled}

@@ -3,23 +3,18 @@ package server
 import (
 	"context"
 	"net/http"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"viceroy/internal/budgetview"
 	"viceroy/internal/db"
-	"viceroy/internal/recurring"
 	"viceroy/internal/reports"
 )
 
 func (s *Server) reportRoutes(r chi.Router) {
 	r.Get("/reports", s.handleReport)
 	r.Get("/reports/spending-pace", s.handleSpendingPace)
-	r.Get("/recurring", s.handleListRecurring)
-	r.Put("/recurring/dismissed", s.handleDismissRecurring)
 }
 
 func parseDate(s string) (time.Time, bool) {
@@ -158,58 +153,3 @@ func (s *Server) handleSpendingPace(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type recurringDTO struct {
-	recurring.Series
-	Dismissed bool `json:"dismissed"`
-}
-
-func (s *Server) recurringSeries(ctx context.Context, hh int64) ([]recurringDTO, error) {
-	series, dismissed, err := recurring.Load(ctx, db.New(s.db), hh, budgetview.Today())
-	if err != nil {
-		return nil, err
-	}
-	out := []recurringDTO{}
-	for _, sr := range series {
-		out = append(out, recurringDTO{sr, dismissed[sr.Key]})
-	}
-	return out, nil
-}
-
-// GET /recurring: detected series sorted by next date, dismissed ones flagged.
-func (s *Server) handleListRecurring(w http.ResponseWriter, r *http.Request) {
-	list, err := s.recurringSeries(r.Context(), HouseholdID(r))
-	if err != nil {
-		s.internalError(w, err)
-		return
-	}
-	sort.SliceStable(list, func(i, j int) bool { return !list[i].Dismissed && list[j].Dismissed })
-	writeJSON(w, http.StatusOK, map[string]any{"series": list, "today": budgetview.Today().Format(time.DateOnly)})
-}
-
-// PUT /recurring/dismissed {key, dismissed}
-func (s *Server) handleDismissRecurring(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Key       string `json:"key"`
-		Dismissed bool   `json:"dismissed"`
-	}
-	if !readJSON(w, r, &body) {
-		return
-	}
-	body.Key = strings.TrimSpace(body.Key)
-	if body.Key == "" || len(body.Key) > 300 {
-		writeError(w, http.StatusBadRequest, "Missing series key.")
-		return
-	}
-	q, hh := db.New(s.db), HouseholdID(r)
-	var err error
-	if body.Dismissed {
-		err = q.DismissRecurring(r.Context(), db.DismissRecurringParams{HouseholdID: hh, Key: body.Key})
-	} else {
-		err = q.RestoreRecurring(r.Context(), db.RestoreRecurringParams{HouseholdID: hh, Key: body.Key})
-	}
-	if err != nil {
-		s.internalError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}

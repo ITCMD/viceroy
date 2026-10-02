@@ -236,7 +236,7 @@ WHERE t.household_id = sqlc.arg(household_id) AND t.category_id IS NULL AND t.hi
 ORDER BY t.date DESC, t.id DESC LIMIT 2000;
 
 -- name: SetTransactionAICategory :exec
-UPDATE transactions SET category_id = ?, category_source = 'ai', needs_review = 1, ai_cat_tried = 1
+UPDATE transactions SET category_id = ?, category_source = 'ai', needs_review = ?, ai_cat_tried = 1
 WHERE id = ? AND household_id = ? AND category_id IS NULL;
 
 -- name: MarkAICategoryTried :exec

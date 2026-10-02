@@ -52,6 +52,10 @@ var apiDocs = []apiDoc{
 	doc("Accounts", "POST", "/accounts/{id}/resolve", "Resolve an account in review after a sync.", "action (link | keep | ignore), target_id (for link)"),
 	doc("Accounts", "POST", "/accounts/merge", "Merge one account into another (moves transactions, drops duplicates).", "from, into"),
 	doc("Accounts", "GET", "/networth/history", "Daily net worth (assets, liabilities, per account group).", "days (default 90, max 3660)"),
+	doc("Accounts", "GET", "/networth/annotations", "Notes pinned to days on the net worth chart.", ""),
+	doc("Accounts", "POST", "/networth/annotations", "Add a note to the net worth chart.", "date, label, icon, transaction_id"),
+	doc("Accounts", "PATCH", "/networth/annotations/{id}", "Edit a net worth note.", "date, label, icon, transaction_id"),
+	doc("Accounts", "DELETE", "/networth/annotations/{id}", "Delete a net worth note.", ""),
 
 	doc("SimpleFIN", "GET", "/connections", "SimpleFIN connections with last sync and remaining daily syncs.", ""),
 	doc("SimpleFIN", "POST", "/connections", "Connect with a SimpleFIN setup token and run the first sync.", "setup_token"),
@@ -94,8 +98,11 @@ var apiDocs = []apiDoc{
 
 	doc("Reports", "GET", "/reports", "Income and spending per period, broken down by category, group or merchant.", "from (YYYY-MM-DD or all), to, interval (month | quarter | year), by (category | group | merchant)"),
 	doc("Reports", "GET", "/reports/spending-pace", "Cumulative spending by day, this month vs last.", "month (YYYY-MM)"),
-	doc("Reports", "GET", "/recurring", "Detected recurring bills, subscriptions and paychecks with next dates.", ""),
-	doc("Reports", "PUT", "/recurring/dismissed", "Hide or restore a recurring series.", "key, dismissed"),
+	doc("Recurring", "GET", "/recurring", "Tracked recurring items, suggestions, what's due before the next payday, and due dates in a range.", "from, to (YYYY-MM-DD; default this month)"),
+	doc("Recurring", "PUT", "/recurring/dismissed", "Hide or restore a suggested recurring series.", "key, dismissed"),
+	doc("Recurring", "POST", "/recurring/items", "Track a recurring transaction (blanks filled from transaction_id when given).", "name, merchant_id, match_text, account_id, category_id, amount, amount_varies, cadence, anchor_date, day2, series_key, transaction_id"),
+	doc("Recurring", "PATCH", "/recurring/items/{id}", "Edit a tracked recurring transaction.", "same fields as create"),
+	doc("Recurring", "DELETE", "/recurring/items/{id}", "Stop tracking a recurring transaction.", ""),
 
 	doc("Email alerts", "GET", "/email/mailboxes", "Watched mailboxes.", ""),
 	doc("Email alerts", "POST", "/email/mailboxes", "Connect a mailbox (the login is tested first).", "name, host, port, security (tls | starttls | none), username, password, folder, enabled, ai_read, ai_senders"),

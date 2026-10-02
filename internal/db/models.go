@@ -268,6 +268,16 @@ type Merchant struct {
 	Normalized  string `json:"normalized"`
 }
 
+type NetworthAnnotation struct {
+	ID            int64         `json:"id"`
+	HouseholdID   int64         `json:"household_id"`
+	Date          string        `json:"date"`
+	Label         string        `json:"label"`
+	Icon          string        `json:"icon"`
+	TransactionID sql.NullInt64 `json:"transaction_id"`
+	CreatedAt     int64         `json:"created_at"`
+}
+
 type Notification struct {
 	ID        int64         `json:"id"`
 	UserID    int64         `json:"user_id"`
@@ -298,6 +308,24 @@ type PushSubscription struct {
 type RecurringDismissed struct {
 	HouseholdID int64  `json:"household_id"`
 	Key         string `json:"key"`
+}
+
+type RecurringItem struct {
+	ID           int64         `json:"id"`
+	HouseholdID  int64         `json:"household_id"`
+	Name         string        `json:"name"`
+	MerchantID   sql.NullInt64 `json:"merchant_id"`
+	MatchText    string        `json:"match_text"`
+	AccountID    sql.NullInt64 `json:"account_id"`
+	CategoryID   sql.NullInt64 `json:"category_id"`
+	AmountCents  int64         `json:"amount_cents"`
+	AmountVaries int64         `json:"amount_varies"`
+	Cadence      string        `json:"cadence"`
+	AnchorDate   string        `json:"anchor_date"`
+	Day2         int64         `json:"day2"`
+	SeriesKey    string        `json:"series_key"`
+	CreatedAt    int64         `json:"created_at"`
+	UpdatedAt    int64         `json:"updated_at"`
 }
 
 type Rule struct {

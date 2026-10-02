@@ -49,7 +49,44 @@ func (s *Server) handleGetBudget(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
+	if err := s.addUpcoming(r.Context(), HouseholdID(r), &out, now); err != nil {
+		s.internalError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// addUpcoming fills Line.Upcoming for expense categories: unpaid recurring charges from today
+// through the upcoming window (a week, or until the next payday), within the period shown.
+func (s *Server) addUpcoming(ctx context.Context, hh int64, v *budgetview.View, today time.Time) error {
+	start, err1 := budget.ParseDate(v.Start)
+	end, err2 := budget.ParseDate(v.End)
+	if err1 != nil || err2 != nil || today.Before(start) || today.After(end) {
+		return nil
+	}
+	until := today.AddDate(0, 0, 6)
+	if v.Settings.UpcomingWindow == "paycheck" {
+		until = v.Settings.PaySchedule.PeriodAt(today).End.AddDate(0, 0, -1)
+	}
+	if until.After(end) {
+		until = end
+	}
+	sc, err := s.recurringSchedule(ctx, hh)
+	if err != nil {
+		return err
+	}
+	// Late charges (due before today, not yet seen) still count: they're about to land.
+	due := sc.Due(today.AddDate(0, 0, -7), until)
+	for gi := range v.Groups {
+		g := &v.Groups[gi]
+		if g.Kind == "income" || g.Kind == "goals" {
+			continue
+		}
+		for li := range g.Lines {
+			g.Lines[li].Upcoming = due[g.Lines[li].ID]
+		}
+	}
+	return nil
 }
 
 // budgetTarget reads which category or goal a request is about and checks it belongs to hh.

@@ -24,6 +24,12 @@ func TestAISettingsAPI(t *testing.T) {
 	if code != 200 || s["key_source"] != "settings" || s["key_hint"] != "abcd" || s["email_model"] != "cheap/model" || s["openrouter_key"] != nil {
 		t.Fatalf("save = %d %v", code, s)
 	}
+	if s["categorize_review"] != false {
+		t.Fatalf("review default = %v", s["categorize_review"])
+	}
+	if _, s := c.do("PATCH", "/api/settings/ai", `{"categorize_review":true}`, true); s["categorize_review"] != true || s["categorize"] != true {
+		t.Fatalf("review on = %v", s)
+	}
 	// The fake only accepts "test-key"; the saved key is wrong, so the test reports it.
 	_, res := c.do("POST", "/api/settings/ai/test", `{"target":"chat"}`, true)
 	if res["ok"] != false || res["error"] == nil {

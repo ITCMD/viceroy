@@ -27,15 +27,16 @@ func (s *Server) handleAICategorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hh := HouseholdID(r)
-	client, err := s.ai.EmailClient(r.Context(), hh)
+	st, err := s.ai.Load(r.Context(), hh)
 	if err != nil {
 		s.internalError(w, err)
 		return
 	}
+	client := st.Email(s.ai.Config.BaseURL, s.ai.Referer)
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	res, err := aicat.Run(ctx, s.db, client, hh, aicat.Options{
-		Since: time.Now().AddDate(0, 0, -in.Days).Format(time.DateOnly), IncludeTried: true,
+		Since: time.Now().AddDate(0, 0, -in.Days).Format(time.DateOnly), IncludeTried: true, Review: st.CatReview,
 	})
 	if errors.Is(err, ai.ErrNotConfigured) {
 		writeError(w, http.StatusBadRequest, "Set up AI in Settings → AI first.")

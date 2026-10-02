@@ -228,7 +228,7 @@ func (b *sandbox) schedule(ctx context.Context, _ json.RawMessage) (any, error) 
 	q := db.New(b.s.DB)
 	now := b.s.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	series, dismissed, err := recurring.Load(ctx, q, b.hh, today)
+	sc, err := recurring.Load(ctx, q, b.hh, today)
 	if err != nil {
 		return nil, err
 	}
@@ -241,8 +241,8 @@ func (b *sandbox) schedule(ctx context.Context, _ json.RawMessage) (any, error) 
 	}
 	limit := today.AddDate(0, 0, 45).Format(time.DateOnly)
 	recur := []item{}
-	for _, sr := range series {
-		if !dismissed[sr.Key] && sr.NextDate <= limit {
+	for _, sr := range sc.Upcoming() {
+		if sr.NextDate <= limit {
 			recur = append(recur, item{sr.Name, string(sr.Cadence), money.Format(sr.Amount), sr.NextDate, sr.AccountName})
 		}
 	}

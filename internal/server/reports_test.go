@@ -61,10 +61,10 @@ func TestReportsAPI(t *testing.T) {
 	}
 	_, r = c.do("GET", "/api/recurring", "", false)
 	var key string
-	for _, s := range r["series"].([]any) {
+	for _, s := range r["suggestions"].([]any) {
 		if sm := s.(map[string]any); sm["name"] == "Streamflix" {
 			key = sm["key"].(string)
-			if sm["cadence"] != "monthly" || sm["amount"] != float64(-1599) || sm["dismissed"] != false {
+			if sm["cadence"] != "monthly" || sm["amount"] != float64(-1599) || sm["strong"] != true {
 				t.Fatalf("series = %v", sm)
 			}
 		}
@@ -76,8 +76,8 @@ func TestReportsAPI(t *testing.T) {
 		t.Fatalf("dismiss = %d", code)
 	}
 	_, r = c.do("GET", "/api/recurring", "", false)
-	if s := r["series"].([]any); len(s) != 1 || s[0].(map[string]any)["dismissed"] != true {
-		t.Fatalf("after dismiss = %v", s)
+	if s := r["dismissed"].([]any); len(s) != 1 || s[0].(map[string]any)["dismissed"] != true || len(r["suggestions"].([]any)) != 0 {
+		t.Fatalf("after dismiss = %v", r)
 	}
 
 	_, nw := c.do("GET", "/api/networth/history?days=7", "", false)

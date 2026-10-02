@@ -42,7 +42,8 @@ export function CategoryPicker({
       <label htmlFor={id} className="text-[13px] font-medium text-text">
         {label}
       </label>
-      <Popover.Root open={open} onOpenChange={setOpen}>
+      {/* modal: its own scroll lock, so the wheel scrolls the list even inside a Dialog/Sheet (whose lock would swallow it). */}
+      <Popover.Root modal open={open} onOpenChange={setOpen}>
         <Popover.Trigger
           id={id}
           className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 text-left text-sm outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"

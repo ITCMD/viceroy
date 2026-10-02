@@ -78,6 +78,8 @@ func (s *Server) Handler() http.Handler {
 			s.budgetRoutes(r)
 			s.budgetIORoutes(r)
 			s.reportRoutes(r)
+			s.recurringRoutes(r)
+			s.annotationRoutes(r)
 			s.notifyRoutes(r)
 			s.chatRoutes(r)
 			s.importRoutes(r)

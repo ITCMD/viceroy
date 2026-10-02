@@ -88,7 +88,7 @@ func TestRunAndSoftRule(t *testing.T) {
 	}
 	for _, id := range []int64{a1, a2} {
 		tx, _ := q.GetTransactionByID(ctx, id)
-		if tx.CategoryID.Int64 != byName["Coffee Shops"] || tx.CategorySource != "ai" || tx.NeedsReview != 1 {
+		if tx.CategoryID.Int64 != byName["Coffee Shops"] || tx.CategorySource != "ai" || tx.NeedsReview != 0 {
 			t.Fatalf("not categorized: %+v", tx)
 		}
 	}

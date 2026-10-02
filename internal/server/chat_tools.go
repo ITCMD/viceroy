@@ -292,7 +292,7 @@ func (s *Server) chatTools(hh int64) []ai.Tool {
 		},
 		{
 			Name:        "upcoming_recurring",
-			Description: "Recurring bills, subscriptions and paychecks detected from history, with their next expected date and typical amount.",
+			Description: "Recurring bills, subscriptions and paychecks (tracked by the user or detected from history), with their next expected date and typical amount.",
 			Parameters: schema(`{"type":"object","properties":{
 				"days":{"type":"integer","description":"Only series due within this many days, default 30; 0 = all"}}}`),
 			Run: func(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -304,7 +304,7 @@ func (s *Server) chatTools(hh int64) []ai.Tool {
 				if a.Days != nil {
 					days = *a.Days
 				}
-				list, err := s.recurringSeries(ctx, hh)
+				sc, err := s.recurringSchedule(ctx, hh)
 				if err != nil {
 					return nil, err
 				}
@@ -320,8 +320,8 @@ func (s *Server) chatTools(hh int64) []ai.Tool {
 					Account  string `json:"account"`
 				}
 				out := []series{}
-				for _, r := range list {
-					if r.Dismissed || (days > 0 && r.NextDate > limit) {
+				for _, r := range sc.Upcoming() {
+					if days > 0 && r.NextDate > limit {
 						continue
 					}
 					out = append(out, series{r.Name, string(r.Cadence), usd(r.Amount), r.Variable, r.NextDate, r.LastDate, r.CategoryName, r.AccountName})
