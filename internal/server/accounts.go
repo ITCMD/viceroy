@@ -29,6 +29,7 @@ func (s *Server) accountRoutes(r chi.Router) {
 	r.Post("/accounts/merge", s.handleMergeAccounts)
 	r.Patch("/accounts/{id}", s.handleUpdateAccount)
 	r.Delete("/accounts/{id}", s.handleDeleteAccount)
+	r.Get("/accounts/{id}/history", s.handleAccountHistory)
 	r.Post("/accounts/{id}/resolve", s.handleResolveAccount)
 	r.Post("/accounts/{id}/color/suggest", s.handleSuggestAccountColor)
 	r.Get("/accounts/{id}/logo", s.handleGetAccountLogo)
@@ -680,69 +681,27 @@ func (s *Server) handleNetWorthHistory(w http.ResponseWriter, r *http.Request) {
 
 // netWorthHistory returns one point per day for the last days days (from the first snapshot).
 func (s *Server) netWorthHistory(ctx context.Context, hh int64, days int) ([]netWorthPoint, error) {
-	q := db.New(s.db)
-	accts, err := q.ListAccounts(ctx, hh)
+	accts, src, err := s.balanceSources(ctx, hh)
 	if err != nil {
 		return nil, err
 	}
-	snaps, err := q.ListHouseholdSnapshots(ctx, db.ListHouseholdSnapshotsParams{HouseholdID: hh, Date: ""})
-	if err != nil {
-		return nil, err
-	}
-	totals, err := q.DailyAccountTotals(ctx, hh)
-	if err != nil {
-		return nil, err
-	}
-	txns := map[int64]map[string]int64{}
-	for _, t := range totals {
-		if txns[t.AccountID] == nil {
-			txns[t.AccountID] = map[string]int64{}
-		}
-		txns[t.AccountID][t.Date] = t.Total
-	}
-	bySnap := map[int64][]db.BalanceSnapshot{}
-	for _, sn := range snaps {
-		bySnap[sn.AccountID] = append(bySnap[sn.AccountID], sn)
-	}
-
-	end := time.Now()
-	today := end.Format(time.DateOnly)
-	start := end.AddDate(0, 0, -(days - 1)).Format(time.DateOnly)
 	var series []accountHistory
 	earliest := ""
 	for _, a := range accts {
 		if a.IncludeInNetWorth != 1 || a.Status == "ignored" || a.Status == "review" {
 			continue
 		}
-		h := accountHistory{group: accounts.Group(a.Type), snaps: bySnap[a.ID]}
-		anchorDate, anchorBal := today, a.BalanceCents // no snapshot yet: today's balance
-		if len(h.snaps) > 0 {
-			anchorDate, anchorBal = h.snaps[0].Date, h.snaps[0].BalanceCents
-		}
-		h.before = backfill(anchorDate, anchorBal, txns[a.ID])
-		known := anchorDate
-		for d := range txns[a.ID] {
-			known = min(known, d)
-		}
-		if len(h.snaps) == 0 && len(txns[a.ID]) == 0 && a.BalanceCents == 0 {
-			continue // nothing known about it
+		h, known, ok := src.history(a)
+		if !ok {
+			continue
 		}
 		if earliest == "" || known < earliest {
 			earliest = known
 		}
-		h.anchor = anchorDate
 		series = append(series, h)
 	}
-	if earliest == "" {
-		return []netWorthPoint{}, nil // no history yet; don't draw a fake zero line
-	}
-	// Walk plain dates (UTC midnights) up to today's local date, not the local clock: in the
-	// evening UTC is already tomorrow.
-	from, _ := time.Parse(time.DateOnly, max(start, earliest))
-	last, _ := time.Parse(time.DateOnly, today)
-	out := make([]netWorthPoint, 0, days)
-	for d := from; !d.After(last); d = d.AddDate(0, 0, 1) {
-		ds := d.Format(time.DateOnly)
+	out := []netWorthPoint{}
+	for _, ds := range historyDays(days, earliest) {
 		p := netWorthPoint{Date: ds, Groups: map[string]int64{}}
 		for i := range series {
 			b := series[i].at(ds)
@@ -757,6 +716,109 @@ func (s *Server) netWorthHistory(ctx context.Context, hh int64, days int) ([]net
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// balanceSources is what account balance histories are built from: snapshots and daily
+// transaction totals per account.
+type balanceSources struct {
+	snaps map[int64][]db.BalanceSnapshot
+	txns  map[int64]map[string]int64
+}
+
+func (s *Server) balanceSources(ctx context.Context, hh int64) ([]db.Account, balanceSources, error) {
+	q := db.New(s.db)
+	src := balanceSources{snaps: map[int64][]db.BalanceSnapshot{}, txns: map[int64]map[string]int64{}}
+	accts, err := q.ListAccounts(ctx, hh)
+	if err != nil {
+		return nil, src, err
+	}
+	snaps, err := q.ListHouseholdSnapshots(ctx, db.ListHouseholdSnapshotsParams{HouseholdID: hh, Date: ""})
+	if err != nil {
+		return nil, src, err
+	}
+	totals, err := q.DailyAccountTotals(ctx, hh)
+	if err != nil {
+		return nil, src, err
+	}
+	for _, t := range totals {
+		if src.txns[t.AccountID] == nil {
+			src.txns[t.AccountID] = map[string]int64{}
+		}
+		src.txns[t.AccountID][t.Date] = t.Total
+	}
+	for _, sn := range snaps {
+		src.snaps[sn.AccountID] = append(src.snaps[sn.AccountID], sn)
+	}
+	return accts, src, nil
+}
+
+// history builds one account's balance history and the earliest day anything is known about
+// it; ok is false when nothing is.
+func (src balanceSources) history(a db.Account) (h accountHistory, known string, ok bool) {
+	today := time.Now().Format(time.DateOnly)
+	h = accountHistory{group: accounts.Group(a.Type), snaps: src.snaps[a.ID]}
+	anchorDate, anchorBal := today, a.BalanceCents // no snapshot yet: today's balance
+	if len(h.snaps) > 0 {
+		anchorDate, anchorBal = h.snaps[0].Date, h.snaps[0].BalanceCents
+	}
+	h.before = backfill(anchorDate, anchorBal, src.txns[a.ID])
+	h.anchor = anchorDate
+	known = anchorDate
+	for d := range src.txns[a.ID] {
+		known = min(known, d)
+	}
+	if len(h.snaps) == 0 && len(src.txns[a.ID]) == 0 && a.BalanceCents == 0 {
+		return h, "", false
+	}
+	return h, known, true
+}
+
+// historyDays lists the days of a history ending today: the last `days` days, but not before
+// earliest ("" = nothing known, no days; don't draw a fake zero line). It walks plain dates (UTC
+// midnights) up to today's local date, not the local clock: in the evening UTC is already
+// tomorrow.
+func historyDays(days int, earliest string) []string {
+	if earliest == "" {
+		return nil
+	}
+	end := time.Now()
+	start := end.AddDate(0, 0, -(days - 1)).Format(time.DateOnly)
+	from, _ := time.Parse(time.DateOnly, max(start, earliest))
+	last, _ := time.Parse(time.DateOnly, end.Format(time.DateOnly))
+	out := make([]string, 0, days)
+	for d := from; !d.After(last); d = d.AddDate(0, 0, 1) {
+		out = append(out, d.Format(time.DateOnly))
+	}
+	return out
+}
+
+type balancePoint struct {
+	Date    string `json:"date"`
+	Balance int64  `json:"balance"`
+}
+
+// handleAccountHistory returns one balance per day for an account (signed, like balance_cents).
+func (s *Server) handleAccountHistory(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.loadAccount(w, r)
+	if !ok {
+		return
+	}
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days <= 0 || days > 3660 {
+		days = 30
+	}
+	_, src, err := s.balanceSources(r.Context(), a.HouseholdID)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	out := []balancePoint{}
+	if h, known, ok := src.history(a); ok {
+		for _, d := range historyDays(days, known) {
+			out = append(out, balancePoint{Date: d, Balance: h.at(d)})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"points": out})
 }
 
 // accountHistory yields one account's balance on any day: the latest snapshot on or before

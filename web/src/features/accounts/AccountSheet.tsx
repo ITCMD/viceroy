@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import { shrinkImage } from "@/lib/image";
 import { AccountAvatar } from "./AccountAvatar";
+import { AccountHistory } from "./AccountHistory";
 import { BillBadges } from "./BillBadges";
 import { StatusBadge } from "./StatusBadge";
 import { accountSubtitle, typeLabels, useAccountsMutation, type Account } from "./api";
@@ -52,6 +53,8 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
             <div className="mt-1 text-xs text-muted">Bank name: {account.provider_name}</div>
           )}
         </div>
+
+        <AccountHistory account={account} />
 
         <form
           className="flex flex-col gap-3"

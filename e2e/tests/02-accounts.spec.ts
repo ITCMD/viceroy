@@ -90,6 +90,12 @@ test("account sheet renames and hides", async ({ page }) => {
   await login(page);
   await page.getByTestId("account-row").filter({ hasText: "Venture Card (5555)" }).click();
   const sheet = page.getByRole("dialog");
+  // Balance history chart with a range switch; cards chart the amount owed.
+  const hist = sheet.getByTestId("account-history");
+  await expect(hist.getByText("Amount owed")).toBeVisible();
+  await expect(hist.locator("svg")).toBeVisible();
+  await hist.getByRole("button", { name: "1Y" }).click();
+  await expect(hist.getByRole("button", { name: "1Y" })).toHaveAttribute("aria-pressed", "true");
   await sheet.getByLabel("Name").fill("Travel card");
   await sheet.getByRole("button", { name: "Save changes" }).click();
   await expect(sheet.getByRole("heading", { name: "Travel card" })).toBeVisible();

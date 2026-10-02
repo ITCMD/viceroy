@@ -44,6 +44,7 @@ var apiDocs = []apiDoc{
 	doc("Accounts", "GET", "/accounts", "All accounts with balances, sync status and bill state (from bank emails).", ""),
 	doc("Accounts", "POST", "/accounts", "Create a manual account.", "name, type (checking, savings, cash, credit_card, investment, loan, mortgage, other_asset, other_liability), balance"),
 	doc("Accounts", "PATCH", "/accounts/{id}", "Rename, retype, hide, close, include in net worth, set a manual balance or a color.", "name, type, include_in_net_worth, hidden, closed, balance, color (#rrggbb, \"\" = pick again), invert_balance (flip the sign the bank reports)"),
+	doc("Accounts", "GET", "/accounts/{id}/history", "One balance per day for an account (signed cents; before its first snapshot, rebuilt from transactions).", "days (default 30)"),
 	doc("Accounts", "POST", "/accounts/{id}/color/suggest", "Ask the AI for the bank's brand color (not saved).", ""),
 	doc("Accounts", "GET", "/accounts/{id}/logo", "The account's uploaded logo image.", ""),
 	doc("Accounts", "PUT", "/accounts/{id}/logo", "Upload a logo (PNG, JPEG, WebP or GIF data URL, 256 KB at most).", "image"),

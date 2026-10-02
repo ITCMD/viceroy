@@ -103,6 +103,12 @@ export const netWorthQuery = (days: number) =>
     queryFn: () => api.get<{ points: NetWorthPoint[] }>(`/networth/history?days=${days}`),
   });
 
+export const accountHistoryQuery = (id: number, days: number) =>
+  queryOptions({
+    queryKey: ["networth", "account", id, days],
+    queryFn: () => api.get<{ points: { date: string; balance: number }[] }>(`/accounts/${id}/history?days=${days}`),
+  });
+
 /** Mutation that refreshes everything account-related when it settles. */
 export function useAccountsMutation<TVars, TRes = unknown>(fn: (v: TVars) => Promise<TRes>, onSuccess?: (r: TRes) => void) {
   const qc = useQueryClient();

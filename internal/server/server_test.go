@@ -189,6 +189,13 @@ func TestAccountsAPI(t *testing.T) {
 	if code, _ := c.do("PATCH", "/api/accounts/999", `{"name":"x"}`, true); code != 404 {
 		t.Fatalf("missing account = %d", code)
 	}
+	_, ah := c.do("GET", "/api/accounts/"+strconv.FormatInt(id, 10)+"/history?days=365", "", false)
+	if apts := ah["points"].([]any); len(apts) == 0 || apts[len(apts)-1].(map[string]any)["balance"].(float64) != 5000 {
+		t.Fatalf("account history = %v", ah)
+	}
+	if code, _ := c.do("GET", "/api/accounts/999/history", "", false); code != 404 {
+		t.Fatalf("missing account history = %d", code)
+	}
 	if code, _ := c.do("PATCH", "/api/accounts/"+strconv.FormatInt(id, 10), `{"invert_balance":true}`, true); code != 400 {
 		t.Fatalf("flip a manual balance = %d", code)
 	}
