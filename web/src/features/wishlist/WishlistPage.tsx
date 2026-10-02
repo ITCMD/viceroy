@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { ChevronDown, ExternalLink, Gift, Pencil, Plus, ShoppingBag, Trash2, Undo2 } from "lucide-react";
+import { ChevronDown, ExternalLink, Pencil, Plus, ShoppingBag, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Button, Card, EmptyState, Menu, MoneyText, PageHeader, Segmented } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
 import { useSession } from "@/lib/session";
+import { ShootingStar } from "@/components/icons/ShootingStar";
 import { BoughtDialog } from "./BoughtDialog";
 import { StarPicker } from "./StarPicker";
 import { WishItemDialog } from "./WishItemDialog";
@@ -13,19 +14,19 @@ import { useWishMutation, wishlistQuery, type Afford, type Member, type WishItem
 import { api } from "@/lib/api";
 
 const sorts: { value: WishSort; label: string }[] = [
+  { value: "score", label: "Best value" },
   { value: "added", label: "Newest" },
   { value: "price", label: "Price" },
-  { value: "score", label: "Best value" },
 ];
 
-const SORT_KEY = "viceroy.wishlist.sort";
+const SORT_KEY = "viceroy.wishlist.sort.v2"; // v2: Best value became the default
 
 function loadSort(): WishSort {
   try {
     const v = localStorage.getItem(SORT_KEY);
-    return v === "price" || v === "score" ? v : "added";
+    return v === "price" || v === "added" ? v : "score";
   } catch {
-    return "added";
+    return "score";
   }
 }
 
@@ -92,7 +93,7 @@ export function WishlistPage() {
         </div>
         {data && items.length === 0 ? (
           <Card>
-            <EmptyState icon={Gift} title={person ? "Nothing on their list" : "Your wishlist is empty"}>
+            <EmptyState icon={ShootingStar} title={person ? "Nothing on their list" : "Your wishlist is empty"}>
               Add things you'd like to buy, or paste a product link anywhere on this page. Budget a monthly amount for the Wishlist goal and Viceroy shows what you can afford.
             </EmptyState>
           </Card>
@@ -107,7 +108,7 @@ export function WishlistPage() {
           <section className="flex flex-col gap-2">
             <button type="button" onClick={() => setShowBought(!showBought)} className="flex items-center gap-1.5 self-start text-[13px] font-medium text-muted hover:text-text" aria-expanded={showBought}>
               <ChevronDown size={14} className={clsx("transition", !showBought && "-rotate-90")} />
-              Bought ({bought.length})
+              Purchased ({bought.length})
             </button>
             {showBought && (
               <Card className="overflow-hidden [&>div]:p-0">
@@ -227,7 +228,7 @@ function ItemCard({ it, sort, members, onEdit, onBuy }: { it: WishItem; sort: Wi
             items={[
               { label: "Edit", icon: Pencil, onSelect: onEdit },
               ...(it.url ? [{ label: "Open link", icon: ExternalLink, onSelect: () => window.open(it.url, "_blank", "noopener,noreferrer") }] : []),
-              { label: "Mark as bought", icon: ShoppingBag, onSelect: onBuy },
+              { label: "Mark as purchased", icon: ShoppingBag, onSelect: onBuy },
               { label: "Delete", icon: Trash2, onSelect: () => confirm(`Delete “${it.title}”?`) && del.mutate() },
             ]}
           />
@@ -259,6 +260,13 @@ function ItemCard({ it, sort, members, onEdit, onBuy }: { it: WishItem; sort: Wi
           </div>
         </div>
       </div>
+      <button
+        type="button"
+        onClick={onBuy}
+        className="flex items-center justify-center gap-1.5 border-t border-border py-2 text-[13px] font-medium text-muted transition hover:bg-surface-2 hover:text-text"
+      >
+        <ShoppingBag size={14} /> Mark as purchased
+      </button>
     </article>
   );
 }
@@ -267,11 +275,11 @@ function BoughtRow({ it }: { it: WishItem }) {
   const undo = useWishMutation(() => api.del(`/wishlist/${it.id}/bought`));
   return (
     <li className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-      {it.image_url ? <img src={it.image_url} alt="" className="size-9 rounded bg-white object-contain" /> : <Gift size={18} className="text-muted" />}
+      {it.image_url ? <img src={it.image_url} alt="" className="size-9 rounded bg-white object-contain" /> : <ShootingStar size={18} className="text-muted" />}
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{it.title}</div>
         <div className="text-xs text-muted">
-          Bought {it.bought_at ? fmtDay(it.bought_at) : ""}
+          Purchased {it.bought_at ? fmtDay(it.bought_at) : ""}
           {it.bought_txn_id ? ` · ${it.txn_name}` : ""}
         </div>
       </div>

@@ -1,4 +1,5 @@
-import { ArrowLeftRight, BarChart3, Gift, Landmark, LayoutDashboard, PiggyBank, Repeat, Settings, Target, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, BarChart3, Landmark, LayoutDashboard, PiggyBank, Repeat, Settings, Target, type LucideIcon } from "lucide-react";
+import { ShootingStar } from "./icons/ShootingStar";
 
 export type NavItem = { to: string; label: string; icon: LucideIcon; mobile?: boolean };
 
@@ -11,6 +12,6 @@ export const navItems: NavItem[] = [
   { to: "/recurring", label: "Recurring", icon: Repeat },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/goals", label: "Goals", icon: Target },
-  { to: "/wishlist", label: "Wishlist", icon: Gift },
+  { to: "/wishlist", label: "Wishlist", icon: ShootingStar },
   { to: "/settings", label: "Settings", icon: Settings, mobile: true },
 ];

@@ -4,11 +4,12 @@ import { AlertTriangle, ChevronRight, Landmark, Plus, RefreshCw } from "lucide-r
 import { useState } from "react";
 import { Badge, Button, Card, EmptyState, FormError, MoneyText, PageHeader, Tabs } from "@/components/ui";
 import { api } from "@/lib/api";
-import { timeAgo } from "@/lib/format";
+import { timeAgo, timeUntil } from "@/lib/format";
 import { NetWorthCard } from "./NetWorthCard";
 import { AccountSheet } from "./AccountSheet";
 import { AddAccountDialog } from "./AddAccountDialog";
 import { ReviewDialog } from "./ReviewDialog";
+import { ManageConnectionDialog } from "./ManageConnectionDialog";
 import { BillBadges } from "./BillBadges";
 import { AccountAvatar } from "./AccountAvatar";
 import { StatusBadge } from "./StatusBadge";
@@ -39,6 +40,7 @@ export function AccountsPage() {
   const [reviewing, setReviewing] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [managing, setManaging] = useState<number | null>(null);
   // New accounts get their bank color in the background; check back until they have one.
   const { data } = useQuery({ ...accountsQuery, refetchInterval: (q) => (q.state.data?.accounts.some((a) => !a.color) ? 3000 : false) });
   const { data: connData } = useQuery(connectionsQuery);
@@ -48,8 +50,11 @@ export function AccountsPage() {
   const syncAll = useAccountsMutation(() => Promise.all(connections.map((c) => api.post(`/connections/${c.id}/sync`))));
 
   const reviewCount = accounts.filter((a) => a.status === "review").length;
-  const visible = accounts.filter((a) => a.status !== "review" && (showHidden || (!a.hidden && a.status !== "ignored")));
-  const hiddenCount = accounts.filter((a) => a.status !== "review" && (a.hidden || a.status === "ignored")).length;
+  // Accounts SimpleFIN offered but nobody added yet aren't the household's accounts.
+  const listed = accounts.filter((a) => a.status !== "review" && !a.offered);
+  const visible = listed.filter((a) => showHidden || (!a.hidden && a.status !== "ignored"));
+  const hiddenCount = listed.filter((a) => a.hidden || a.status === "ignored").length;
+  const offered = accounts.filter((a) => a.offered);
   const shown = tab === "networth" ? visible : visible.filter((a) => a.group === tab);
   const selectedAccount = accounts.find((a) => a.id === selected) ?? null;
 
@@ -82,6 +87,19 @@ export function AccountsPage() {
             <AlertTriangle size={16} />
             <span className="flex-1 font-medium">
               {reviewCount} {reviewCount === 1 ? "account needs" : "accounts need"} review after your last sync
+            </span>
+            <ChevronRight size={16} />
+          </button>
+        )}
+
+        {offered.length > 0 && offered[0].connection_id !== null && (
+          <button
+            onClick={() => setManaging(offered[0].connection_id)}
+            className="flex items-center gap-3 rounded-xl border border-accent/40 bg-accent-soft px-4 py-3 text-left text-sm text-accent"
+          >
+            <Landmark size={16} />
+            <span className="flex-1 font-medium">
+              {offered.length} new {offered.length === 1 ? "account" : "accounts"} on SimpleFIN: {offered.map((a) => a.name).join(", ")}. Choose which to add
             </span>
             <ChevronRight size={16} />
           </button>
@@ -126,14 +144,15 @@ export function AccountsPage() {
             <div className="flex flex-col gap-4">
               <Summary accounts={accounts} />
               {connections.map((c) => (
-                <ConnectionCard key={c.id} connection={c} />
+                <ConnectionCard key={c.id} connection={c} onManage={() => setManaging(c.id)} />
               ))}
             </div>
           </div>
         )}
       </div>
 
-      <AddAccountDialog open={adding} onOpenChange={setAdding} />
+      <AddAccountDialog open={adding} onOpenChange={setAdding} onConnected={setManaging} />
+      <ManageConnectionDialog connection={connections.find((c) => c.id === managing) ?? null} accounts={accounts} onClose={() => setManaging(null)} />
       <ReviewDialog open={reviewing} onOpenChange={setReviewing} accounts={accounts} />
       <AccountSheet account={selectedAccount} accounts={accounts} onClose={() => setSelected(null)} />
     </>
@@ -217,7 +236,7 @@ function Row({ label, dot, cents }: { label: string; dot: string; cents: number 
   );
 }
 
-function ConnectionCard({ connection: c }: { connection: Connection }) {
+function ConnectionCard({ connection: c, onManage }: { connection: Connection; onManage: () => void }) {
   const [showLog, setShowLog] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const sync = useAccountsMutation(() => api.post(`/connections/${c.id}/sync`));
@@ -230,7 +249,11 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
     <Card title={c.name} action={c.status !== "active" ? <Badge tone="negative">{c.status === "revoked" ? "Access revoked" : "Error"}</Badge> : undefined}>
       <div className="flex flex-col gap-3 text-[13px]">
         <div className="text-muted">
-          Synced {timeAgo(c.last_sync_at)} · {c.requests_remaining} syncs left today
+          Synced {timeAgo(c.last_sync_at)}
+          {c.next_sync_at && c.next_sync_at * 1000 > Date.now() && <> · next {timeUntil(c.next_sync_at)}</>}
+          <span className="block text-xs" title={`SimpleFIN updates bank data about once a day and allows up to 24 requests a day. Viceroy checks every ${c.interval_hours} hours and stops at ${c.requests_cap} a day, refreshes included.`}>
+            Checks every {c.interval_hours}h · {c.requests_remaining} of {c.requests_cap} refreshes left today
+          </span>
         </div>
         {c.last_error && <p className="rounded-lg bg-negative/10 px-3 py-2 text-negative">{c.last_error}</p>}
         {reauth.map((i) => (
@@ -252,6 +275,9 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
         )}
         <FormError error={sync.error ?? remove.error} />
         <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" onClick={onManage}>
+            Manage accounts
+          </Button>
           <Button size="sm" variant="secondary" loading={sync.isPending} disabled={c.requests_remaining === 0} onClick={() => sync.mutate(undefined)}>
             Sync now
           </Button>

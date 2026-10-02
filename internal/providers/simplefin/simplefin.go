@@ -204,7 +204,9 @@ func (s *AccountSet) UnmarshalJSON(b []byte) error {
 }
 
 // Fetch retrieves accounts and transactions between start and end (inclusive of start).
-func (c *Client) Fetch(ctx context.Context, accessURL string, start, end time.Time) (*AccountSet, error) {
+// With accountIDs, only those accounts are returned (the Bridge counts these against a
+// separate per-account quota).
+func (c *Client) Fetch(ctx context.Context, accessURL string, start, end time.Time, accountIDs ...string) (*AccountSet, error) {
 	u, err := url.Parse(accessURL)
 	if err != nil {
 		return nil, errors.New("invalid stored access URL")
@@ -220,6 +222,9 @@ func (c *Client) Fetch(ctx context.Context, accessURL string, start, end time.Ti
 	q.Set("pending", "1")
 	q.Set("start-date", strconv.FormatInt(start.Unix(), 10))
 	q.Set("end-date", strconv.FormatInt(end.Unix(), 10))
+	for _, id := range accountIDs {
+		q.Add("account", id)
+	}
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)

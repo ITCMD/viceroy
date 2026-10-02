@@ -37,6 +37,12 @@ test("manual account and SimpleFIN connect", async ({ page, request }) => {
   await page.getByRole("button", { name: /Connect with SimpleFIN/ }).click();
   await page.getByLabel("Setup token").fill(token);
   await page.getByRole("button", { name: "Connect" }).click();
+  // Connecting opens the account picker with everything on.
+  const manage = page.getByTestId("manage-connection");
+  await expect(manage.getByTestId("manage-row")).toHaveCount(6);
+  await expect(manage.getByRole("switch", { checked: false })).toHaveCount(1); // auto-add starts off
+  await shot(page, "10a-accounts-manage");
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).first().click();
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.getByTestId("account-row")).toHaveCount(8);
   await expect(page.getByText("360 Checking (1111)")).toBeVisible();
@@ -54,7 +60,8 @@ test("relink keeps history, review links duplicates", async ({ page, request }) 
   await page.getByRole("button", { name: "Sync now" }).click();
   const banner = page.getByRole("button", { name: /1 account needs review/ });
   await expect(banner).toBeVisible();
-  await expect(page.getByTestId("account-row").filter({ hasText: "Venture Card (5555)" })).toBeVisible();
+  // A card shared for the first time waits to be added.
+  await expect(page.getByTestId("account-row").filter({ hasText: "Venture Card (5555)" })).toHaveCount(0);
   await expect(page.getByTestId("account-row").filter({ hasText: "360 Performance Savings" }).getByText("Disconnected")).toBeVisible();
   await expect(page.getByTestId("account-row").filter({ hasText: "360 Checking (1111)" }).getByText("Disconnected")).toHaveCount(0);
   await shot(page, "12-accounts-review-banner");
@@ -66,6 +73,17 @@ test("relink keeps history, review links duplicates", async ({ page, request }) 
   await expect(page.getByText("All accounts are reviewed.")).toBeVisible();
   await page.getByRole("button", { name: "Close" }).first().click();
   await expect(banner).toBeHidden();
+
+  // Add the new card from the banner; its history comes with it.
+  await page.getByRole("button", { name: /1 new account on SimpleFIN: Venture Card/ }).click();
+  const manage = page.getByTestId("manage-connection");
+  await expect(manage.getByTestId("manage-row").filter({ hasText: "Venture Card" }).getByText("New")).toBeVisible();
+  await shot(page, "13a-accounts-new-offered");
+  await manage.getByRole("switch", { name: /Venture Card/ }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page.getByTestId("account-row").filter({ hasText: "Venture Card (5555)" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /new account on SimpleFIN/ })).toHaveCount(0);
 });
 
 test("account sheet renames and hides", async ({ page }) => {
@@ -76,6 +94,16 @@ test("account sheet renames and hides", async ({ page }) => {
   await sheet.getByRole("button", { name: "Save changes" }).click();
   await expect(sheet.getByRole("heading", { name: "Travel card" })).toBeVisible();
   await shot(page, "14-account-sheet");
+  // Flip a balance the bank reports backwards, and back.
+  await expect(sheet.getByText("-$310.00").first()).toBeVisible();
+  await sheet.getByRole("switch", { name: /Flip the bank's balance sign/ }).click();
+  await expect(sheet.getByText("$310.00").first()).toBeVisible();
+  await expect(sheet.getByText("-$310.00")).toHaveCount(0);
+  await sheet.getByRole("switch", { name: /Flip the bank's balance sign/ }).click();
+  await expect(sheet.getByText("-$310.00").first()).toBeVisible();
+  // The color's hex code can be typed.
+  await sheet.getByLabel("Hex color").fill("#123abc");
+  await expect(sheet.getByLabel("Account color")).toHaveValue("#123abc");
   await sheet.getByRole("switch", { name: "Hide from lists" }).click();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("account-row").filter({ hasText: "Travel card" })).toHaveCount(0);

@@ -88,6 +88,14 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
             onCheckedChange={(v) => patch.mutate({ include_in_net_worth: v })}
           />
           <Switch label="Hide from lists" checked={account.hidden} onCheckedChange={(v) => patch.mutate({ hidden: v })} />
+          {!account.is_manual && (
+            <Switch
+              label="Flip the bank's balance sign"
+              hint="For a bank that reports this balance backwards through SimpleFIN, e.g. an overdrawn checking account showing as positive."
+              checked={account.invert_balance}
+              onCheckedChange={(v) => patch.mutate({ invert_balance: v })}
+            />
+          )}
           {account.builtin ? (
             <p className="text-xs text-muted">Paper Cash is built in. Turn it off in Settings if you don't track cash.</p>
           ) : (
@@ -156,7 +164,10 @@ const colorNotes: Record<Account["color_source"], string> = {
 function Appearance({ account }: { account: Account }) {
   const file = useRef<HTMLInputElement>(null);
   const [color, setColor] = useState(account.color || "#888888");
+  // What's typed in the hex box; it becomes the color once it's a full #rrggbb.
+  const [hex, setHex] = useState(color);
   useEffect(() => setColor(account.color || "#888888"), [account.color]);
+  useEffect(() => setHex(color), [color]);
   const patch = useAccountsMutation((body: Record<string, unknown>) => api.patch(`/accounts/${account.id}`, body));
   const suggest = useAccountsMutation(
     () => api.post<{ color: string }>(`/accounts/${account.id}/color/suggest`),
@@ -172,7 +183,20 @@ function Appearance({ account }: { account: Account }) {
         <AccountAvatar account={{ ...account, color }} size={40} />
         <label className="flex items-center gap-2 text-[13px]">
           <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-10 cursor-pointer rounded border border-border bg-surface" aria-label="Account color" />
-          <span className="font-mono text-xs text-muted">{color}</span>
+          <input
+            value={hex}
+            onChange={(e) => {
+              const v = e.target.value.trim();
+              setHex(v);
+              const full = (v.startsWith("#") ? v : "#" + v).toLowerCase();
+              if (/^#[0-9a-f]{6}$/.test(full)) setColor(full);
+            }}
+            onBlur={() => setHex(color)}
+            maxLength={7}
+            spellCheck={false}
+            aria-label="Hex color"
+            className="h-8 w-[5.5rem] rounded-lg border border-border bg-surface px-2 font-mono text-xs outline-none focus:border-accent"
+          />
         </label>
         {changed && (
           <Button size="sm" loading={patch.isPending} onClick={() => patch.mutate({ color })}>

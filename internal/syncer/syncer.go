@@ -205,6 +205,8 @@ type run struct {
 	now         time.Time
 	windowStart string
 	txnCount    int
+	// partial is a fetch of only some accounts (adding accounts): others' absence means nothing.
+	partial bool
 	household   []db.Account
 	claimed     map[int64]bool // accounts already matched in this run
 	fetched     map[string]bool
@@ -272,6 +274,9 @@ func (r *run) apply(ctx context.Context, set *simplefin.AccountSet) error {
 		}
 	}
 
+	if r.partial {
+		return nil
+	}
 	// Accounts this connection used to return but didn't this time.
 	for _, a := range r.household {
 		if !a.ConnectionID.Valid || a.ConnectionID.Int64 != r.conn.ID || r.claimed[a.ID] {
@@ -329,10 +334,14 @@ func (r *run) reconcile(ctx context.Context, sa simplefin.Account, inst db.Insti
 		currency = "USD"
 	}
 	// update stores the bank's reading; bal becomes the balance kept (a newer email reading wins).
-	update := func(id int64) error {
+	update := func(a db.Account) error {
+		b, av := bal, avail
+		if a.InvertBalance == 1 { // the bank reports this one with the wrong sign
+			b, av.Int64 = -b, -av.Int64
+		}
 		kept, err := r.q.UpdateAccountFromSync(ctx, db.UpdateAccountFromSyncParams{
 			InstitutionID: instID, InstitutionName: inst.Name, ProviderName: sa.Name, Currency: currency,
-			BalanceCents: bal, AvailableCents: avail, BalanceAt: balAt, UpdatedAt: r.now.Unix(), ID: id,
+			BalanceCents: b, AvailableCents: av, BalanceAt: balAt, UpdatedAt: r.now.Unix(), ID: a.ID,
 		})
 		bal = kept
 		return err
@@ -340,7 +349,7 @@ func (r *run) reconcile(ctx context.Context, sa simplefin.Account, inst db.Insti
 
 	if a, err := r.q.GetAccountByExternal(ctx, db.GetAccountByExternalParams{ConnectionID: nullInt(r.conn.ID), ExternalID: nullStr(sa.ID)}); err == nil {
 		r.claimed[a.ID] = true
-		if err := update(a.ID); err != nil {
+		if err := update(a); err != nil {
 			return a, false, err
 		}
 		if a.Status == "disconnected" {
@@ -363,7 +372,7 @@ func (r *run) reconcile(ctx context.Context, sa simplefin.Account, inst db.Insti
 		}); err != nil {
 			return a, false, err
 		}
-		if err := update(a.ID); err != nil {
+		if err := update(a); err != nil {
 			return a, false, err
 		}
 		r.event(ctx, "account_relinked", a.ID, fmt.Sprintf("%s reconnected to existing account %q", sa.Name, a.Name))
@@ -386,11 +395,18 @@ func (r *run) reconcile(ctx context.Context, sa simplefin.Account, inst db.Insti
 		return a, false, err
 	}
 	r.claimed[a.ID] = true
-	r.household = append(r.household, a)
 	msg := "new account " + sa.Name
 	if kind == "account_review" {
 		msg = fmt.Sprintf("%s may be an existing account (%d possible matches); needs review", sa.Name, len(cands))
+	} else if r.conn.LastSyncAt.Valid && r.conn.AutoAddNew == 0 {
+		// Shared on the Bridge after setup: wait for the user to add it.
+		if err := r.q.SetAccountOffered(ctx, db.SetAccountOfferedParams{OfferedAt: nullInt(r.now.Unix()), UpdatedAt: r.now.Unix(), ID: a.ID}); err != nil {
+			return a, false, err
+		}
+		a.Status, a.OfferedAt = "ignored", nullInt(r.now.Unix())
+		kind, msg = "account_offered", sa.Name+" is available on SimpleFIN; add it to start syncing"
 	}
+	r.household = append(r.household, a)
 	r.event(ctx, kind, a.ID, msg)
 	return a, false, nil
 }

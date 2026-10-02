@@ -31,6 +31,10 @@ export type Account = {
   color: string;
   color_source: "" | "ai" | "auto" | "user";
   logo_url: string | null;
+  /** The bank's balance sign is flipped on every sync. */
+  invert_balance: boolean;
+  /** Shared on SimpleFIN after setup and waiting to be added (status "ignored" until then). */
+  offered: boolean;
 };
 
 /** Payment state read from bank emails by the AI. Cents; dates YYYY-MM-DD. */
@@ -52,6 +56,11 @@ export type Connection = {
   last_sync_at: number | null;
   next_sync_at: number | null;
   requests_remaining: number;
+  /** Viceroy's own daily request limit (SimpleFIN allows 24). */
+  requests_cap: number;
+  /** Scheduled syncs run about this often. */
+  interval_hours: number;
+  auto_add_new: boolean;
   institutions: { id: number; name: string; url: string; status: "ok" | "reauth"; last_error: string }[];
   events: { at: number; kind: string; account_id: number | null; message: string }[];
 };

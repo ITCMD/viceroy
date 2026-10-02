@@ -43,7 +43,7 @@ var apiDocs = []apiDoc{
 
 	doc("Accounts", "GET", "/accounts", "All accounts with balances, sync status and bill state (from bank emails).", ""),
 	doc("Accounts", "POST", "/accounts", "Create a manual account.", "name, type (checking, savings, cash, credit_card, investment, loan, mortgage, other_asset, other_liability), balance"),
-	doc("Accounts", "PATCH", "/accounts/{id}", "Rename, retype, hide, close, include in net worth, set a manual balance or a color.", "name, type, include_in_net_worth, hidden, closed, balance, color (#rrggbb, \"\" = pick again)"),
+	doc("Accounts", "PATCH", "/accounts/{id}", "Rename, retype, hide, close, include in net worth, set a manual balance or a color.", "name, type, include_in_net_worth, hidden, closed, balance, color (#rrggbb, \"\" = pick again), invert_balance (flip the sign the bank reports)"),
 	doc("Accounts", "POST", "/accounts/{id}/color/suggest", "Ask the AI for the bank's brand color (not saved).", ""),
 	doc("Accounts", "GET", "/accounts/{id}/logo", "The account's uploaded logo image.", ""),
 	doc("Accounts", "PUT", "/accounts/{id}/logo", "Upload a logo (PNG, JPEG, WebP or GIF data URL, 256 KB at most).", "image"),
@@ -61,6 +61,8 @@ var apiDocs = []apiDoc{
 	doc("SimpleFIN", "POST", "/connections", "Connect with a SimpleFIN setup token and run the first sync.", "setup_token"),
 	doc("SimpleFIN", "DELETE", "/connections/{id}", "Remove a connection (accounts stay, stop syncing).", ""),
 	doc("SimpleFIN", "POST", "/connections/{id}/sync", "Sync now.", ""),
+	doc("SimpleFIN", "PATCH", "/connections/{id}", "Connection settings.", "auto_add_new (add accounts shared on the Bridge later without asking)"),
+	doc("SimpleFIN", "PUT", "/connections/{id}/accounts", "Choose which of the connection's accounts Viceroy follows; added ones get 90 days of history.", "include, exclude (account ids)"),
 
 	doc("Transactions", "GET", "/transactions", "Transactions, newest first, paged.", "q, account, category, uncategorized=1, review=1, hidden=1, limit (≤500), cursor (from next_cursor)"),
 	doc("Transactions", "POST", "/transactions", "Add a manual or pending transaction. A likely duplicate returns 409 unless force is true.", "account_id, date (YYYY-MM-DD), amount (negative = money out), description, category_id, notes, tags, pending, force"),

@@ -28,7 +28,8 @@ const (
 //
 // Appending "+posted" to a scenario (e.g. "relinked+posted") adds a Chipotle charge on
 // checking dated today, for pending-entry linking; "+dinner" adds a $60.00 Luna Trattoria charge
-// (an email alert for $50 plus a tip). Extras combine: "relinked+posted+dinner".
+// (an email alert for $50 plus a tip); "+newbank" adds a Chase login (Sapphire card) that was
+// linked on the Bridge later. Extras combine: "relinked+posted+dinner".
 var Scenarios = []string{"initial", "relinked", "reauth"}
 
 type Server struct {
@@ -85,7 +86,7 @@ func (s *Server) setScenario(w http.ResponseWriter, r *http.Request) {
 	}
 	parts := strings.Split(in.Name, "+")
 	for _, e := range parts[1:] {
-		if e != "posted" && e != "dinner" {
+		if e != "posted" && e != "dinner" && e != "newbank" {
 			http.Error(w, "unknown scenario extra", http.StatusBadRequest)
 			return
 		}
@@ -124,6 +125,19 @@ func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 	s.Requests++
 	set := build(s.scenario, s.Now())
 	s.mu.Unlock()
+	if only := r.URL.Query()["account"]; len(only) > 0 {
+		want := map[string]bool{}
+		for _, id := range only {
+			want[id] = true
+		}
+		kept := set.Accounts[:0]
+		for _, a := range set.Accounts {
+			if want[a.ID] {
+				kept = append(kept, a)
+			}
+		}
+		set.Accounts = kept
+	}
 	for i := range set.Accounts {
 		a := &set.Accounts[i]
 		kept := a.Transactions[:0]
@@ -201,6 +215,11 @@ func build(scenario string, now time.Time) simplefin.AccountSet {
 		accts = []acct{ally}
 	}
 	for _, e := range extras {
+		if e == "newbank" {
+			conns = append(conns, simplefin.Connection{ConnID: "CON-chase", Name: "Chase", OrgID: "chase", OrgURL: "https://chase.com"})
+			accts = append(accts, acct{"ACT-chase-sp", "CON-chase", "Sapphire Preferred (6666)", "-512.40", []txn{{3, "-88.10", "SHELL OIL 5741", false}}})
+			continue
+		}
 		add := map[string]txn{"posted": {0, "-18.75", "CHIPOTLE 2231 AUSTIN TX", false}, "dinner": {0, "-60.00", "LUNA TRATTORIA 22 BROOKLYN NY", false}}[e]
 		for i := range accts {
 			if strings.HasSuffix(accts[i].id, "-chk") {

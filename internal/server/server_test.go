@@ -189,6 +189,9 @@ func TestAccountsAPI(t *testing.T) {
 	if code, _ := c.do("PATCH", "/api/accounts/999", `{"name":"x"}`, true); code != 404 {
 		t.Fatalf("missing account = %d", code)
 	}
+	if code, _ := c.do("PATCH", "/api/accounts/"+strconv.FormatInt(id, 10), `{"invert_balance":true}`, true); code != 400 {
+		t.Fatalf("flip a manual balance = %d", code)
+	}
 }
 
 func TestTransactionsAPI(t *testing.T) {

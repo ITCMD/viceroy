@@ -36,7 +36,9 @@ func (s *Server) accountRoutes(r chi.Router) {
 	r.Delete("/accounts/{id}/logo", s.handleDeleteAccountLogo)
 	r.Get("/connections", s.handleListConnections)
 	r.Post("/connections", s.handleCreateConnection)
+	r.Patch("/connections/{id}", s.handleUpdateConnection)
 	r.Post("/connections/{id}/sync", s.handleSyncConnection)
+	r.Put("/connections/{id}/accounts", s.handleConnectionAccounts)
 	r.Delete("/connections/{id}", s.handleDeleteConnection)
 	r.Get("/networth/history", s.handleNetWorthHistory)
 }
@@ -66,6 +68,8 @@ type accountDTO struct {
 	Color             string   `json:"color"`        // #rrggbb, "" until picked
 	ColorSource       string   `json:"color_source"` // ai | auto | user | ""
 	LogoURL           *string  `json:"logo_url"`     // uploaded logo, nil = none
+	InvertBalance     bool     `json:"invert_balance"` // the bank's balance sign is flipped on sync
+	Offered           bool     `json:"offered"`        // shared on SimpleFIN after setup; not added yet
 }
 
 // billDTO is an account's payment state. Amounts are cents; dates YYYY-MM-DD.
@@ -151,6 +155,7 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 			Status: a.Status, ReviewCandidateID: ptr(a.ReviewCandidateID), IncludeInNetWorth: a.IncludeInNetWorth == 1,
 			Hidden: a.Hidden == 1, IsManual: a.IsManual == 1, ConnectionID: ptr(a.ConnectionID), InstitutionStatus: "ok",
 			Builtin: a.Builtin, Color: a.Color, ColorSource: a.ColorSource,
+			InvertBalance: a.InvertBalance == 1, Offered: a.OfferedAt.Valid && a.Status == "ignored",
 		}
 		if v, ok := logos[a.ID]; ok {
 			u := fmt.Sprintf("/api/accounts/%d/logo?v=%d", a.ID, v)
@@ -272,6 +277,7 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		Closed            *bool   `json:"closed"`
 		Balance           *string `json:"balance"`
 		Color             *string `json:"color"` // #rrggbb, or "" to let Viceroy pick again
+		InvertBalance     *bool   `json:"invert_balance"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -329,6 +335,21 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 			src = "" // picked again in the background
 		}
 		if err := q.SetAccountColor(r.Context(), db.SetAccountColorParams{Color: c, ColorSource: src, UpdatedAt: p.UpdatedAt, ID: a.ID, HouseholdID: a.HouseholdID}); err != nil {
+			s.internalError(w, err)
+			return
+		}
+	}
+	if in.InvertBalance != nil && b2i(*in.InvertBalance) != a.InvertBalance {
+		if a.IsManual == 1 {
+			writeError(w, http.StatusBadRequest, "Only synced accounts can flip the bank's balance.")
+			return
+		}
+		// Flip what's stored too, so the balance and its history read right straight away.
+		if err := q.SetAccountInvert(r.Context(), db.SetAccountInvertParams{InvertBalance: b2i(*in.InvertBalance), UpdatedAt: p.UpdatedAt, ID: a.ID, HouseholdID: a.HouseholdID}); err != nil {
+			s.internalError(w, err)
+			return
+		}
+		if err := q.NegateAccountSnapshots(r.Context(), a.ID); err != nil {
 			s.internalError(w, err)
 			return
 		}
@@ -457,6 +478,9 @@ type connectionDTO struct {
 	LastSyncAt        *int64           `json:"last_sync_at"`
 	NextSyncAt        *int64           `json:"next_sync_at"`
 	RequestsRemaining int64            `json:"requests_remaining"`
+	RequestsCap       int64            `json:"requests_cap"`       // Viceroy's own daily limit (the Bridge allows 24)
+	IntervalHours     int64            `json:"interval_hours"`     // scheduled syncs run about this often
+	AutoAddNew        bool             `json:"auto_add_new"`       // accounts shared later are added without asking
 	Institutions      []institutionDTO `json:"institutions"`
 	Events            []syncEventDTO   `json:"events"`
 }
@@ -480,6 +504,7 @@ func (s *Server) handleListConnections(w http.ResponseWriter, r *http.Request) {
 		d := connectionDTO{
 			ID: c.ID, Name: c.Name, Provider: c.Provider, Status: c.Status, LastError: c.LastError,
 			LastSyncAt: ptr(c.LastSyncAt), NextSyncAt: ptr(c.NextSyncAt), RequestsRemaining: syncer.DailyRequestCap,
+			RequestsCap: syncer.DailyRequestCap, IntervalHours: int64(syncer.Interval.Hours()), AutoAddNew: c.AutoAddNew == 1,
 			Institutions: []institutionDTO{}, Events: []syncEventDTO{},
 		}
 		if c.RequestsDay == today {
@@ -556,6 +581,57 @@ func (s *Server) handleSyncConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleUpdateConnection(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.loadConnection(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		AutoAddNew *bool `json:"auto_add_new"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.AutoAddNew != nil {
+		if err := s.sync.SetAutoAdd(r.Context(), c.HouseholdID, c.ID, *in.AutoAddNew); err != nil {
+			s.internalError(w, err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleConnectionAccounts picks which of a connection's accounts Viceroy follows. Accounts
+// added get their history fetched right away; if that can't happen now, it loads at the next
+// sync and the response says so.
+func (s *Server) handleConnectionAccounts(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.loadConnection(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Include []int64 `json:"include"`
+		Exclude []int64 `json:"exclude"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	err := s.sync.SetTracked(r.Context(), c.ID, in.Include, in.Exclude)
+	switch {
+	case errors.Is(err, syncer.HistoryPending):
+		s.log.Warn("simplefin history fetch for added accounts failed", "connection", c.ID, "err", err)
+		writeJSON(w, http.StatusOK, map[string]any{"warning": "Added, but SimpleFIN couldn't send their history right now; it will load at the next sync."})
+	case errors.Is(err, syncer.ErrNotOnConnection):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case err != nil && strings.Contains(err.Error(), "can't be removed"):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case err != nil:
+		s.internalError(w, err)
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{})
+	}
 }
 
 func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) {

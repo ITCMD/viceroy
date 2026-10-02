@@ -34,6 +34,8 @@ type Account struct {
 	Builtin           string         `json:"builtin"`
 	Color             string         `json:"color"`
 	ColorSource       string         `json:"color_source"`
+	InvertBalance     int64          `json:"invert_balance"`
+	OfferedAt         sql.NullInt64  `json:"offered_at"`
 }
 
 type AccountBill struct {
@@ -149,6 +151,7 @@ type Connection struct {
 	RequestsDay   string        `json:"requests_day"`
 	RequestsCount int64         `json:"requests_count"`
 	CreatedAt     int64         `json:"created_at"`
+	AutoAddNew    int64         `json:"auto_add_new"`
 }
 
 type EmailFilter struct {

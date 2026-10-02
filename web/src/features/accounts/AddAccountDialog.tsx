@@ -8,7 +8,16 @@ type Mode = "choose" | "simplefin" | "manual";
 
 const typeOptions = Object.entries(typeLabels).map(([value, label]) => ({ value, label }));
 
-export function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+export function AddAccountDialog({
+  open,
+  onOpenChange,
+  onConnected,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  /** Called with the new connection so its accounts can be chosen. */
+  onConnected?: (connectionID: number) => void;
+}) {
   const [mode, setMode] = useState<Mode>("choose");
   const [token, setToken] = useState("");
   const [name, setName] = useState("");
@@ -31,7 +40,11 @@ export function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpen
 
   const connect = useAccountsMutation(
     () => api.post<{ id: number; sync_error?: string }>("/connections", { setup_token: token }),
-    (r) => (r.sync_error ? setSyncWarning(r.sync_error) : close()),
+    (r) => {
+      if (r.sync_error) return setSyncWarning(r.sync_error);
+      close();
+      onConnected?.(r.id);
+    },
   );
   const manual = useAccountsMutation(() => api.post("/accounts", { name, type, balance }), close);
 

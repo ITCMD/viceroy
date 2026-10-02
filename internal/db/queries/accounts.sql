@@ -229,3 +229,26 @@ DELETE FROM account_logos WHERE account_id = ?;
 
 -- name: ListAccountLogoTimes :many
 SELECT l.account_id, l.updated_at FROM account_logos l JOIN accounts a ON a.id = l.account_id WHERE a.household_id = ?;
+
+-- ---- managing what SimpleFIN shares ----
+
+-- name: SetAccountOffered :exec
+UPDATE accounts SET status = 'ignored', offered_at = ?, updated_at = ? WHERE id = ?;
+
+-- name: SetConnectionAccountTracked :execrows
+UPDATE accounts SET status = ?, offered_at = NULL, review_candidate_id = NULL, updated_at = ?
+WHERE id = ? AND connection_id = ? AND status IN ('active', 'disconnected', 'ignored');
+
+-- name: ClearConnectionSyncedThrough :exec
+UPDATE connections SET synced_through = NULL WHERE id = ?;
+
+-- name: SetConnectionAutoAdd :exec
+UPDATE connections SET auto_add_new = ? WHERE id = ? AND household_id = ?;
+
+-- name: SetAccountInvert :exec
+UPDATE accounts
+SET invert_balance = ?, balance_cents = -balance_cents, available_cents = -available_cents, updated_at = ?
+WHERE id = ? AND household_id = ?;
+
+-- name: NegateAccountSnapshots :exec
+UPDATE balance_snapshots SET balance_cents = -balance_cents WHERE account_id = ?;

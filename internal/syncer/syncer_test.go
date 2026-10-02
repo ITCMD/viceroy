@@ -127,8 +127,9 @@ func TestConnectRelinkAndMerge(t *testing.T) {
 	if s := accts["360 Performance Savings (2222)"].Status; s != "disconnected" {
 		t.Fatalf("unshared savings status = %s", s)
 	}
-	if s := accts["Venture Card (5555)"].Status; s != "active" {
-		t.Fatalf("new card status = %s", s)
+	// A card the bank never shared before waits for the user to add it.
+	if v := accts["Venture Card (5555)"]; v.Status != "ignored" || !v.OfferedAt.Valid {
+		t.Fatalf("new card = %s, offered %v", v.Status, v.OfferedAt.Valid)
 	}
 	var review db.Account
 	for _, a := range accts {

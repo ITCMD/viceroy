@@ -55,6 +55,9 @@ test("wishlist: add from a link, sort, afford card, mark as bought", async ({ pa
 
   // Sorting.
   const titles = () => page.getByTestId("wish-card").locator("button.line-clamp-2").allTextContents();
+  // Best value is the default.
+  await expect(page.getByRole("button", { name: "Best value" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Newest" }).click();
   await expect.poll(titles).toEqual(["Water filter", "Noise Cancelling Headphones", "Brightside Reading Lamp"]);
   await page.getByRole("button", { name: "Price", exact: true }).click();
   await expect.poll(titles).toEqual(["Water filter", "Brightside Reading Lamp", "Noise Cancelling Headphones"]);
@@ -80,18 +83,19 @@ test("wishlist: add from a link, sort, afford card, mark as bought", async ({ pa
   await lamp.getByRole("radio", { name: "5 stars" }).click();
   await expect(lamp.getByRole("radio", { name: "5 stars" })).toHaveAttribute("aria-checked", "true");
 
-  // Mark as bought with the purchase transaction: spent from the goal.
+  // Mark as purchased, linking the purchase transaction: spent from the goal.
   const acct = await (await page.request.post("/api/accounts", { headers: csrf, data: { name: "Wish Cash", type: "cash", balance: "500" } })).json();
   await page.request.post("/api/transactions", { headers: csrf, data: { account_id: acct.id, date: ymd(new Date()), amount: "-49.99", description: "Brightside Home" } });
-  await page.getByRole("button", { name: "Actions for Brightside Reading Lamp" }).click();
-  await page.getByRole("menuitem", { name: "Mark as bought" }).click();
+  await lamp.getByRole("button", { name: "Mark as purchased" }).click();
   const bought = page.getByTestId("wish-bought-dialog");
+  await expect(bought.getByLabel("Purchased on")).toBeVisible(); // linking is optional
+  await bought.getByRole("switch", { name: "Link the purchase transaction" }).click();
   await bought.getByLabel("Search transactions").fill("Brightside");
   await bought.getByRole("button", { name: /Brightside Home/ }).click();
-  await page.getByRole("button", { name: "Mark as bought" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Mark as purchased" }).click();
   await expect(page.getByTestId("wish-card")).toHaveCount(2);
   await expect(card).toContainText("$50.01");
-  await page.getByRole("button", { name: "Bought (1)" }).click();
+  await page.getByRole("button", { name: "Purchased (1)" }).click();
   await expect(page.getByTestId("wishlist-bought")).toContainText("Brightside Reading Lamp");
 
   // The transaction says it was spent from the goal.
@@ -102,7 +106,7 @@ test("wishlist: add from a link, sort, afford card, mark as bought", async ({ pa
 
   // Undo puts it back.
   await page.goto("/wishlist");
-  await page.getByRole("button", { name: "Bought (1)" }).click();
+  await page.getByRole("button", { name: "Purchased (1)" }).click();
   await page.getByRole("button", { name: "Put Brightside Reading Lamp back on the list" }).click();
   await expect(page.getByTestId("wish-card")).toHaveCount(3);
   await expect(card).toContainText("$100.00");

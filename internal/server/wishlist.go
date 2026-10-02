@@ -42,7 +42,7 @@ func ensureWishlistGoal(ctx context.Context, q *db.Queries, hh int64) (db.Goal, 
 	g, err := q.GetBuiltinGoal(ctx, db.GetBuiltinGoalParams{HouseholdID: hh, Builtin: wishlistGoal})
 	if errors.Is(err, sql.ErrNoRows) {
 		return q.CreateBuiltinGoal(ctx, db.CreateBuiltinGoalParams{
-			HouseholdID: hh, Name: "Wishlist", Icon: "🎁", Builtin: wishlistGoal, CreatedAt: time.Now().Unix(),
+			HouseholdID: hh, Name: "Wishlist", Icon: "🌠", Builtin: wishlistGoal, CreatedAt: time.Now().Unix(),
 		})
 	}
 	return g, err

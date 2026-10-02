@@ -16,3 +16,11 @@ export function timeAgo(unix: number | null | undefined) {
   if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`;
   return new Date(unix * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+
+/** "in 5m", "in 3h", "in 2d" for a future unix-second timestamp. */
+export function timeUntil(unix: number) {
+  const s = Math.max(0, unix - Date.now() / 1000);
+  if (s < 3600) return `in ${Math.max(1, Math.round(s / 60))}m`;
+  if (s < 86400) return `in ${Math.round(s / 3600)}h`;
+  return `in ${Math.round(s / 86400)}d`;
+}
