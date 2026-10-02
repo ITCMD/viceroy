@@ -35,6 +35,8 @@ export type Account = {
   invert_balance: boolean;
   /** Shared on SimpleFIN after setup and waiting to be added (status "ignored" until then). */
   offered: boolean;
+  /** Replaced by this account (a sync duplicate); kept hidden so its bank link isn't offered again. */
+  replaced_by: number | null;
 };
 
 /** Payment state read from bank emails by the AI. Cents; dates YYYY-MM-DD. */

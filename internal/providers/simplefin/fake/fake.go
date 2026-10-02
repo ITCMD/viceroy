@@ -29,7 +29,8 @@ const (
 // Appending "+posted" to a scenario (e.g. "relinked+posted") adds a Chipotle charge on
 // checking dated today, for pending-entry linking; "+dinner" adds a $60.00 Luna Trattoria charge
 // (an email alert for $50 plus a tip); "+newbank" adds a Chase login (Sapphire card) that was
-// linked on the Bridge later. Extras combine: "relinked+posted+dinner".
+// linked on the Bridge later; "+dupcard" adds a second Capital One login that also reports the
+// Quicksilver card, under a new id and name (a sync duplicate). Extras combine: "relinked+posted+dinner".
 var Scenarios = []string{"initial", "relinked", "reauth"}
 
 type Server struct {
@@ -86,7 +87,7 @@ func (s *Server) setScenario(w http.ResponseWriter, r *http.Request) {
 	}
 	parts := strings.Split(in.Name, "+")
 	for _, e := range parts[1:] {
-		if e != "posted" && e != "dinner" && e != "newbank" {
+		if e != "posted" && e != "dinner" && e != "newbank" && e != "dupcard" {
 			http.Error(w, "unknown scenario extra", http.StatusBadRequest)
 			return
 		}
@@ -218,6 +219,11 @@ func build(scenario string, now time.Time) simplefin.AccountSet {
 		if e == "newbank" {
 			conns = append(conns, simplefin.Connection{ConnID: "CON-chase", Name: "Chase", OrgID: "chase", OrgURL: "https://chase.com"})
 			accts = append(accts, acct{"ACT-chase-sp", "CON-chase", "Sapphire Preferred (6666)", "-512.40", []txn{{3, "-88.10", "SHELL OIL 5741", false}}})
+			continue
+		}
+		if e == "dupcard" {
+			conns = append(conns, simplefin.Connection{ConnID: "CON-c1b", Name: "Capital One", OrgID: "capone", OrgURL: "https://capitalone.com"})
+			accts = append(accts, acct{"ACT-c1b-qs", "CON-c1b", "Quicksilver Rewards (3333)", "-742.18", []txn{{1, "-23.45", "UBER *TRIP", false}, {4, "-118.20", "AMAZON.COM*2K4", false}}})
 			continue
 		}
 		add := map[string]txn{"posted": {0, "-18.75", "CHIPOTLE 2231 AUSTIN TX", false}, "dinner": {0, "-60.00", "LUNA TRATTORIA 22 BROOKLYN NY", false}}[e]

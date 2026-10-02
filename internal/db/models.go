@@ -36,6 +36,8 @@ type Account struct {
 	ColorSource       string         `json:"color_source"`
 	InvertBalance     int64          `json:"invert_balance"`
 	OfferedAt         sql.NullInt64  `json:"offered_at"`
+	ReplacedBy        sql.NullInt64  `json:"replaced_by"`
+	AdoptRows         int64          `json:"adopt_rows"`
 }
 
 type AccountBill struct {

@@ -269,8 +269,14 @@ func (r *run) apply(ctx context.Context, set *simplefin.AccountSet) error {
 		if err := r.q.UpsertBalanceSnapshot(ctx, db.UpsertBalanceSnapshotParams{AccountID: acct.ID, Date: today, BalanceCents: acct.BalanceCents}); err != nil {
 			return err
 		}
-		if err := r.transactions(ctx, acct, sa.Transactions, relinked); err != nil {
+		// After a replacement, rows from the replaced account may be taken over like a relink.
+		if err := r.transactions(ctx, acct, sa.Transactions, relinked || acct.AdoptRows == 1); err != nil {
 			return fmt.Errorf("account %s transactions: %w", sa.Name, err)
+		}
+		if acct.AdoptRows == 1 {
+			if err := r.q.ClearAdoptRows(ctx, acct.ID); err != nil {
+				return err
+			}
 		}
 	}
 

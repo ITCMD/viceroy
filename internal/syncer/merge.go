@@ -32,41 +32,8 @@ func (s *Service) Merge(ctx context.Context, householdID, fromID, intoID int64) 
 	}
 	now := s.Now().Unix()
 
-	intoTx, err := q.ListAccountTransactionKeys(ctx, into.ID)
-	if err != nil {
+	if err := moveTransactions(ctx, q, from.ID, into.ID, now); err != nil {
 		return err
-	}
-	byExt := map[string]bool{}
-	type key struct {
-		date string
-		amt  int64
-	}
-	byKey := map[key]int{}
-	for _, t := range intoTx {
-		if t.ExternalID.Valid {
-			byExt[t.ExternalID.String] = true
-		}
-		byKey[key{t.Date, t.AmountCents}]++
-	}
-	fromTx, err := q.ListAccountTransactionKeys(ctx, from.ID)
-	if err != nil {
-		return err
-	}
-	for _, t := range fromTx {
-		k := key{t.Date, t.AmountCents}
-		dup := (t.ExternalID.Valid && byExt[t.ExternalID.String]) || byKey[k] > 0
-		if dup {
-			if byKey[k] > 0 {
-				byKey[k]--
-			}
-			if err := q.DeleteTransaction(ctx, t.ID); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := q.MoveTransaction(ctx, db.MoveTransactionParams{AccountID: into.ID, UpdatedAt: now, ID: t.ID}); err != nil {
-			return err
-		}
 	}
 	if err := q.MoveSnapshots(ctx, db.MoveSnapshotsParams{IntoID: into.ID, FromID: from.ID}); err != nil {
 		return err
@@ -101,4 +68,46 @@ func (s *Service) Merge(ctx context.Context, householdID, fromID, intoID int64) 
 		return err
 	}
 	return tx.Commit()
+}
+
+// moveTransactions moves from's transactions onto into. Ones into already has (same provider
+// id, or same date and amount) are dropped: into's copy wins.
+func moveTransactions(ctx context.Context, q *db.Queries, fromID, intoID, now int64) error {
+	intoTx, err := q.ListAccountTransactionKeys(ctx, intoID)
+	if err != nil {
+		return err
+	}
+	byExt := map[string]bool{}
+	type key struct {
+		date string
+		amt  int64
+	}
+	byKey := map[key]int{}
+	for _, t := range intoTx {
+		if t.ExternalID.Valid {
+			byExt[t.ExternalID.String] = true
+		}
+		byKey[key{t.Date, t.AmountCents}]++
+	}
+	fromTx, err := q.ListAccountTransactionKeys(ctx, fromID)
+	if err != nil {
+		return err
+	}
+	for _, t := range fromTx {
+		k := key{t.Date, t.AmountCents}
+		dup := (t.ExternalID.Valid && byExt[t.ExternalID.String]) || byKey[k] > 0
+		if dup {
+			if byKey[k] > 0 {
+				byKey[k]--
+			}
+			if err := q.DeleteTransaction(ctx, t.ID); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := q.MoveTransaction(ctx, db.MoveTransactionParams{AccountID: intoID, UpdatedAt: now, ID: t.ID}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -41,7 +41,7 @@ func (s *Service) SetTracked(ctx context.Context, connID int64, include, exclude
 	set := func(ids []int64, status string) error {
 		for _, id := range ids {
 			a, ok := byID[id]
-			if !ok {
+			if !ok || a.ReplacedBy.Valid {
 				return ErrNotOnConnection
 			}
 			if status == "active" && a.Status != "ignored" {

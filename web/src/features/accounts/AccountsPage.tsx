@@ -51,7 +51,7 @@ export function AccountsPage() {
 
   const reviewCount = accounts.filter((a) => a.status === "review").length;
   // Accounts SimpleFIN offered but nobody added yet aren't the household's accounts.
-  const listed = accounts.filter((a) => a.status !== "review" && !a.offered);
+  const listed = accounts.filter((a) => a.status !== "review" && !a.offered && !a.replaced_by);
   const visible = listed.filter((a) => showHidden || (!a.hidden && a.status !== "ignored"));
   const hiddenCount = listed.filter((a) => a.hidden || a.status === "ignored").length;
   const offered = accounts.filter((a) => a.offered);

@@ -252,3 +252,39 @@ WHERE id = ? AND household_id = ?;
 
 -- name: NegateAccountSnapshots :exec
 UPDATE balance_snapshots SET balance_cents = -balance_cents WHERE account_id = ?;
+
+-- ---- replacing an account (sync duplicates) ----
+
+-- name: CopyAccountSettings :exec
+UPDATE accounts SET
+    name = ?, type = ?, include_in_net_worth = ?, hidden = ?, color = ?, color_source = ?, owner_user_id = ?,
+    status = 'active', offered_at = NULL, review_candidate_id = NULL, adopt_rows = 1, updated_at = ?
+WHERE id = ?;
+
+-- name: RepointRules :exec
+UPDATE rules SET account_id = sqlc.arg(into_id) WHERE account_id = sqlc.arg(from_id);
+
+-- name: RepointEmailFilters :exec
+UPDATE email_filters SET account_id = sqlc.arg(into_id) WHERE account_id = sqlc.arg(from_id);
+
+-- name: RepointRecurring :exec
+UPDATE recurring_items SET account_id = sqlc.arg(into_id) WHERE account_id = sqlc.arg(from_id);
+
+-- name: RepointBills :exec
+UPDATE account_bills SET account_id = sqlc.arg(into_id) WHERE account_id = sqlc.arg(from_id);
+
+-- name: MoveAccountLogo :exec
+-- The replaced account's logo wins when it has one.
+INSERT OR REPLACE INTO account_logos (account_id, mime, data, updated_at)
+SELECT sqlc.arg(into_id), l.mime, l.data, l.updated_at FROM account_logos l WHERE l.account_id = sqlc.arg(from_id);
+
+-- name: DeleteAccountSnapshots :exec
+DELETE FROM balance_snapshots WHERE account_id = ?;
+
+-- name: SetAccountReplaced :exec
+UPDATE accounts SET status = 'ignored', hidden = 1, offered_at = NULL, review_candidate_id = NULL,
+    replaced_by = ?, updated_at = ?
+WHERE id = ?;
+
+-- name: ClearAdoptRows :exec
+UPDATE accounts SET adopt_rows = 0 WHERE id = ?;

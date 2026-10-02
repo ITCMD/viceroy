@@ -31,6 +31,7 @@ func (s *Server) accountRoutes(r chi.Router) {
 	r.Delete("/accounts/{id}", s.handleDeleteAccount)
 	r.Get("/accounts/{id}/history", s.handleAccountHistory)
 	r.Post("/accounts/{id}/resolve", s.handleResolveAccount)
+	r.Post("/accounts/{id}/replace", s.handleReplaceAccount)
 	r.Post("/accounts/{id}/color/suggest", s.handleSuggestAccountColor)
 	r.Get("/accounts/{id}/logo", s.handleGetAccountLogo)
 	r.Put("/accounts/{id}/logo", s.handlePutAccountLogo)
@@ -71,6 +72,7 @@ type accountDTO struct {
 	LogoURL           *string  `json:"logo_url"`     // uploaded logo, nil = none
 	InvertBalance     bool     `json:"invert_balance"` // the bank's balance sign is flipped on sync
 	Offered           bool     `json:"offered"`        // shared on SimpleFIN after setup; not added yet
+	ReplacedBy        *int64   `json:"replaced_by"`    // replaced by this account (sync duplicate); a hidden tombstone
 }
 
 // billDTO is an account's payment state. Amounts are cents; dates YYYY-MM-DD.
@@ -156,7 +158,7 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 			Status: a.Status, ReviewCandidateID: ptr(a.ReviewCandidateID), IncludeInNetWorth: a.IncludeInNetWorth == 1,
 			Hidden: a.Hidden == 1, IsManual: a.IsManual == 1, ConnectionID: ptr(a.ConnectionID), InstitutionStatus: "ok",
 			Builtin: a.Builtin, Color: a.Color, ColorSource: a.ColorSource,
-			InvertBalance: a.InvertBalance == 1, Offered: a.OfferedAt.Valid && a.Status == "ignored",
+			InvertBalance: a.InvertBalance == 1, Offered: a.OfferedAt.Valid && a.Status == "ignored", ReplacedBy: ptr(a.ReplacedBy),
 		}
 		if v, ok := logos[a.ID]; ok {
 			u := fmt.Sprintf("/api/accounts/%d/logo?v=%d", a.ID, v)
@@ -423,6 +425,35 @@ func (s *Server) handleResolveAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mergeResult(w, err)
+}
+
+// handleReplaceAccount replaces this account with another that is really the same account
+// (a sync duplicate); see syncer.Replace.
+func (s *Server) handleReplaceAccount(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.loadAccount(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		With int64 `json:"with"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	err := s.sync.Replace(r.Context(), a.HouseholdID, a.ID, in.With)
+	switch {
+	case errors.Is(err, syncer.HistoryPending):
+		s.log.Warn("history fetch for replacement account failed", "account", in.With, "err", err)
+		writeJSON(w, http.StatusOK, map[string]any{"warning": "Replaced, but SimpleFIN couldn't send the new account's history right now; it will load at the next sync."})
+	case errors.Is(err, syncer.ErrReplaceBuiltin), errors.Is(err, syncer.ErrMergeSelf):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, sql.ErrNoRows):
+		writeError(w, http.StatusNotFound, "Account not found.")
+	case err != nil:
+		s.internalError(w, err)
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{})
+	}
 }
 
 func (s *Server) handleMergeAccounts(w http.ResponseWriter, r *http.Request) {

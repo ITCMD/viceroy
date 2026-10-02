@@ -121,3 +121,62 @@ func TestInvertBalance(t *testing.T) {
 		t.Fatalf("sync keeps it flipped: %d", a.BalanceCents)
 	}
 }
+
+// The same card shows up through a second login: replacing the old account with it keeps one
+// account, one copy of each transaction, and the old name; the old link stays a tombstone.
+func TestReplaceDuplicate(t *testing.T) {
+	e := newEnv(t)
+	c, err := e.svc.Connect(e.ctx, e.hh, fake.Token(e.url, "r1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := db.New(e.svc.DB)
+	old := e.accounts()["Quicksilver Card (3333)"]
+	if err := q.UpdateAccountSettings(e.ctx, db.UpdateAccountSettingsParams{Name: "My Quicksilver", Type: old.Type, IncludeInNetWorth: 1, Status: "active", UpdatedAt: 1, ID: old.ID, HouseholdID: e.hh}); err != nil {
+		t.Fatal(err)
+	}
+	e.fake.SetScenario("initial+dupcard")
+	if err := e.svc.Sync(e.ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	dup := e.accounts()["Quicksilver Rewards (3333)"]
+	if !dup.OfferedAt.Valid {
+		t.Fatalf("duplicate should be offered: %+v", dup)
+	}
+
+	if err := e.svc.Replace(e.ctx, e.hh, old.ID, dup.ID); err != nil {
+		t.Fatal(err)
+	}
+	byID := func(id int64) db.Account {
+		a, err := q.GetAccount(e.ctx, db.GetAccountParams{ID: id, HouseholdID: e.hh})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	repl := byID(dup.ID)
+	if repl.Name != "My Quicksilver" || repl.Status != "active" || repl.Type != "credit_card" || repl.AdoptRows != 0 {
+		t.Fatalf("replacement = %+v", repl)
+	}
+	if n := e.txnCount(repl.ID); n != 2 || e.pendingCount(repl.ID) != 0 {
+		t.Fatalf("replacement has %d txns, %d pending; want 2 posted", n, e.pendingCount(repl.ID))
+	}
+	tomb := byID(old.ID)
+	if tomb.Status != "ignored" || tomb.Hidden != 1 || tomb.ReplacedBy.Int64 != dup.ID || e.txnCount(tomb.ID) != 0 {
+		t.Fatalf("old account = %+v", tomb)
+	}
+
+	// Later syncs keep it that way.
+	if err := e.svc.Sync(e.ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.txnCount(repl.ID); n != 2 {
+		t.Fatalf("after sync: %d txns", n)
+	}
+	if a := byID(old.ID); a.Status != "ignored" || a.OfferedAt.Valid {
+		t.Fatalf("tombstone after sync = %+v", a)
+	}
+	if err := e.svc.SetTracked(e.ctx, c.ID, []int64{tomb.ID}, nil); !errors.Is(err, ErrNotOnConnection) {
+		t.Fatalf("tombstone can't be turned back on: %v", err)
+	}
+}
