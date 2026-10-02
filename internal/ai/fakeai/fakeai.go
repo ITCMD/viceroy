@@ -49,7 +49,20 @@ var keywords = []struct{ word, tool string }{
 	{"transaction", "search_transactions"},
 }
 
+// models is a small slice of OpenRouter's catalog shape.
+const models = `{"data":[
+{"id":"anthropic/claude-sonnet-5.5","name":"Anthropic: Claude Sonnet 5.5","context_length":1000000,"pricing":{"prompt":"0.000003","completion":"0.000015"},"architecture":{"input_modalities":["text","image"]},"supported_parameters":["tools","response_format"]},
+{"id":"google/gemini-3-pro","name":"Google: Gemini 3 Pro","context_length":1048576,"pricing":{"prompt":"0.00000125","completion":"0.00001"},"architecture":{"input_modalities":["text","image","file"]},"supported_parameters":["tools"]},
+{"id":"deepseek/deepseek-v4-flash","name":"DeepSeek: V4 Flash","context_length":163840,"pricing":{"prompt":"0.00000007","completion":"0.00000028"},"architecture":{"input_modalities":["text"]},"supported_parameters":["tools","response_format"]},
+{"id":"meta/llama-free","name":"Meta: Llama (free)","context_length":131072,"pricing":{"prompt":"0","completion":"0"},"architecture":{"input_modalities":["text"]},"supported_parameters":[]}
+]}`
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/models" || r.URL.Path == "/api/v1/models" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(models))
+		return
+	}
 	if r.URL.Path != "/chat/completions" && r.URL.Path != "/api/v1/chat/completions" {
 		http.NotFound(w, r)
 		return

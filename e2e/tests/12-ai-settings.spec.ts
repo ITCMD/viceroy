@@ -23,7 +23,10 @@ test("AI settings: save a key, pick models, test, remove", async ({ page }) => {
   await card.getByRole("button", { name: "Save key" }).click();
   await expect(card.getByTestId("ai-key-status")).toHaveText("Saved key ending in -key");
 
-  await card.getByLabel("Email reading model").fill("cheap/flash");
+  // A model id that isn't in the catalog can be typed in.
+  await card.getByLabel("Email reading model").click();
+  await page.getByLabel("Search models").fill("cheap/flash");
+  await page.getByLabel("Search models").press("Enter");
   await card.getByRole("button", { name: "Save", exact: true }).click();
   await expect(card).toContainText("cheap/flash via OpenRouter");
   await card.getByRole("button", { name: "Test email reading" }).click();
@@ -33,7 +36,8 @@ test("AI settings: save a key, pick models, test, remove", async ({ page }) => {
   // Removing the saved key falls back to viceroy.toml's.
   await card.getByRole("button", { name: "Remove" }).click();
   await expect(card.getByTestId("ai-key-status")).toContainText("(from viceroy.toml)");
-  await card.getByLabel("Email reading model").fill("");
+  await card.getByLabel("Email reading model").click();
+  await page.getByRole("option", { name: "Same as chat model" }).click();
   await card.getByRole("button", { name: "Save", exact: true }).click();
   await expect(card.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
 });

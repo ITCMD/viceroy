@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"slices"
 	"strings"
@@ -388,4 +389,81 @@ func runTool(ctx context.Context, tools map[string]Tool, call ToolCall) string {
 		b, _ = json.Marshal(map[string]string{"error": "result too large; narrow the request (shorter range or a filter)"})
 	}
 	return string(b)
+}
+
+// ModelInfo is one model an endpoint offers. Prices are US dollars per million tokens as
+// decimal strings ("" when the endpoint doesn't say, like Ollama).
+type ModelInfo struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Context         int64  `json:"context"`
+	PromptPrice     string `json:"prompt_price"`
+	CompletionPrice string `json:"completion_price"`
+	Images          bool   `json:"images"` // accepts image input
+	Tools           bool   `json:"tools"`  // supports tool calling
+}
+
+// ListModels reads GET {base}/models (OpenRouter's catalog, or an OpenAI-compatible list).
+func (c *Client) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.Key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Key)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s returned %s", c.name(), resp.Status)
+	}
+	var out struct {
+		Data []struct {
+			ID            string `json:"id"`
+			Name          string `json:"name"`
+			ContextLength int64  `json:"context_length"`
+			Pricing       struct {
+				Prompt     string `json:"prompt"`
+				Completion string `json:"completion"`
+			} `json:"pricing"`
+			Architecture struct {
+				InputModalities []string `json:"input_modalities"`
+			} `json:"architecture"`
+			SupportedParameters []string `json:"supported_parameters"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&out); err != nil {
+		return nil, fmt.Errorf("%s: unreadable model list: %w", c.name(), err)
+	}
+	models := make([]ModelInfo, 0, len(out.Data))
+	for _, m := range out.Data {
+		if m.ID == "" {
+			continue
+		}
+		name := m.Name
+		if name == "" {
+			name = m.ID
+		}
+		models = append(models, ModelInfo{
+			ID: m.ID, Name: name, Context: m.ContextLength,
+			PromptPrice: perMillion(m.Pricing.Prompt), CompletionPrice: perMillion(m.Pricing.Completion),
+			Images: slices.Contains(m.Architecture.InputModalities, "image"),
+			Tools:  slices.Contains(m.SupportedParameters, "tools"),
+		})
+	}
+	return models, nil
+}
+
+// perMillion turns a per-token price ("0.000003") into dollars per million tokens ("3"),
+// exactly. Negative prices (OpenRouter uses -1 for "varies") come back as "".
+func perMillion(s string) string {
+	r, ok := new(big.Rat).SetString(strings.TrimSpace(s))
+	if !ok || r.Sign() < 0 {
+		return ""
+	}
+	v := strings.TrimRight(r.Mul(r, big.NewRat(1_000_000, 1)).FloatString(4), "0")
+	return strings.TrimSuffix(v, ".")
 }

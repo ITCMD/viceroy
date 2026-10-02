@@ -54,3 +54,18 @@ func TestAISettingsAPI(t *testing.T) {
 		t.Fatalf("remove key = %v", s)
 	}
 }
+
+func TestListModels(t *testing.T) {
+	c := newTestServer(t)
+	c.do("POST", "/api/setup", `{"name":"A","email":"a@example.com","password":"correct horse battery"}`, true)
+	code, out := c.do("GET", "/api/settings/ai/models", "", false)
+	if code != 200 {
+		t.Fatalf("models = %d %v", code, out)
+	}
+	ms := out["models"].([]any)
+	first, flash, free := ms[0].(map[string]any), ms[2].(map[string]any), ms[3].(map[string]any)
+	if len(ms) != 4 || first["id"] != "anthropic/claude-sonnet-5.5" || first["prompt_price"] != "3" || first["completion_price"] != "15" ||
+		first["images"] != true || first["tools"] != true || flash["images"] != false || flash["prompt_price"] != "0.07" || free["prompt_price"] != "0" || free["tools"] != false {
+		t.Fatalf("models %v", ms)
+	}
+}

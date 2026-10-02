@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +17,57 @@ func (s *Server) aiSettingsRoutes(r chi.Router) {
 	r.Get("/settings/ai", s.handleGetAISettings)
 	r.Patch("/settings/ai", s.handleSaveAISettings)
 	r.Post("/settings/ai/test", s.handleTestAI)
+	r.Get("/settings/ai/models", s.handleListModels)
+}
+
+// modelCache keeps each endpoint's model list for an hour (OpenRouter's is ~1 MB).
+type modelCache struct {
+	mu      sync.Mutex
+	entries map[string]modelCacheEntry
+}
+
+type modelCacheEntry struct {
+	at     time.Time
+	models []ai.ModelInfo
+}
+
+func (m *modelCache) get(ctx context.Context, c *ai.Client) ([]ai.ModelInfo, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if e, ok := m.entries[c.BaseURL]; ok && time.Since(e.at) < time.Hour {
+		return e.models, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	models, err := c.ListModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if m.entries == nil {
+		m.entries = map[string]modelCacheEntry{}
+	}
+	m.entries[c.BaseURL] = modelCacheEntry{time.Now(), models}
+	return models, nil
+}
+
+// GET /settings/ai/models?endpoint=openrouter|email: the models the chat/vision endpoint
+// (or the self-hosted email endpoint, when set) offers.
+func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
+	st, err := s.ai.Load(r.Context(), HouseholdID(r))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	c := st.Chat(s.ai.Config.BaseURL, "")
+	if r.URL.Query().Get("endpoint") == "email" && st.EmailBaseURL != "" {
+		c = st.Email(s.ai.Config.BaseURL, "")
+	}
+	models, err := s.models.get(r.Context(), c)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Couldn't load the model list: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"models": models})
 }
 
 type aiSettingsDTO struct {

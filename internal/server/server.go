@@ -37,6 +37,7 @@ type Server struct {
 	mail    *email.Service
 	notify  *notify.Service
 	ai      *aisettings.Store
+	models  modelCache
 }
 
 func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger, sync *syncer.Service, mail *email.Service, nt *notify.Service, aiset *aisettings.Store) *Server {

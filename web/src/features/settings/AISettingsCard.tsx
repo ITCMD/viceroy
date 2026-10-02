@@ -5,7 +5,8 @@ import { Badge, Button, Card, Field, FormError } from "@/components/ui";
 import { mailboxesQuery, type Mailbox } from "@/features/email/api";
 import { MailboxDialog } from "@/features/email/MailboxDialog";
 import { api } from "@/lib/api";
-import { aiSettingsQuery, type AISettings } from "./ai";
+import { aiSettingsQuery, modelsQuery, type AISettings } from "./ai";
+import { ModelPicker } from "./ModelPicker";
 
 type Patch = Partial<{ openrouter_key: string; chat_model: string; email_model: string; email_base_url: string; vision_model: string }>;
 type Target = "chat" | "email" | "vision";
@@ -17,6 +18,8 @@ export function AISettingsCard() {
   const qc = useQueryClient();
   const { data: s } = useQuery(aiSettingsQuery);
   const { data: mailboxes } = useQuery(mailboxesQuery);
+  const models = useQuery(modelsQuery("openrouter", !!s));
+  const localModels = useQuery(modelsQuery("email", !!s?.email_base_url));
   const [editing, setEditing] = useState<Mailbox | null>(null);
   const [open, setOpen] = useState(false);
   const [replacing, setReplacing] = useState(false);
@@ -126,31 +129,39 @@ export function AISettingsCard() {
           )}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field
+            <ModelPicker
               label="Chat model"
               value={chatModel}
-              onChange={(e) => setChatModel(e.target.value)}
-              placeholder={s?.config_chat_model}
-              hint="Any OpenRouter model id with tool calling."
+              onChange={setChatModel}
+              models={models.data?.models}
+              error={models.error?.message}
+              need="tools"
+              emptyLabel={s?.config_chat_model ? `Default (${s.config_chat_model})` : undefined}
+              hint="Needs tool calling."
               disabled={!canEdit}
             />
-            <Field
+            <ModelPicker
               label="Email reading model"
               value={emailModel}
-              onChange={(e) => setEmailModel(e.target.value)}
-              placeholder="Same as chat model"
-              hint="A cheap, fast model is plenty (e.g. a DeepSeek flash model)."
+              onChange={setEmailModel}
+              models={(s?.email_base_url ? localModels : models).data?.models}
+              error={(s?.email_base_url ? localModels : models).error?.message}
+              emptyLabel="Same as chat model"
+              hint={s?.email_base_url ? "Models served by your self-hosted endpoint." : "A cheap, fast model is plenty (e.g. a DeepSeek flash model)."}
+              disabled={!canEdit}
+            />
+            <ModelPicker
+              label="Multimodal model"
+              value={visionModel}
+              onChange={setVisionModel}
+              models={models.data?.models}
+              error={models.error?.message}
+              need="images"
+              emptyLabel="Same as chat model"
+              hint="Reads budgets you paste or screenshot (Budget → Import). Pick a stronger model that accepts images."
               disabled={!canEdit}
             />
           </div>
-          <Field
-            label="Multimodal model"
-            value={visionModel}
-            onChange={(e) => setVisionModel(e.target.value)}
-            placeholder="Same as chat model"
-            hint="Reads budgets you paste or screenshot (Budget → Import). Pick a stronger model that accepts images, e.g. a Claude Sonnet or Gemini Pro model."
-            disabled={!canEdit}
-          />
           <details className="text-[13px]" open={!!s?.email_base_url}>
             <summary className="cursor-pointer text-muted">Read emails with a self-hosted model instead</summary>
             <Field

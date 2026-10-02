@@ -78,12 +78,23 @@ test("multimodal model in Settings → AI", async ({ page }) => {
   await login(page);
   await page.goto("/settings#ai");
   const card = page.locator("section", { has: page.getByRole("heading", { name: "AI", exact: true }) });
-  await card.getByLabel("Multimodal model").fill("vision/pro");
+  // The picker lists OpenRouter's models, image-capable ones by default.
+  await card.getByLabel("Multimodal model").click();
+  const list = page.getByRole("listbox", { name: "Multimodal model" });
+  await expect(list.getByRole("option", { name: /Claude Sonnet 5\.5/ })).toContainText("$3 / $15");
+  await expect(list.getByRole("option", { name: /DeepSeek/ })).toHaveCount(0);
+  await page.screenshot({ path: `${shots}/14-model-picker.png` });
+  await page.getByLabel("Only models that accept images").uncheck();
+  await expect(list.getByRole("option", { name: /DeepSeek/ })).toBeVisible();
+  await page.getByLabel("Search models").fill("gemini");
+  await list.getByRole("option", { name: /Gemini 3 Pro/ }).click();
+  await expect(card.getByLabel("Multimodal model")).toHaveText("Google: Gemini 3 Pro");
   await card.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(card).toContainText("vision/pro");
+  await expect(card).toContainText("google/gemini-3-pro");
   await card.getByRole("button", { name: "Test images" }).click();
-  await expect(card.getByRole("status")).toHaveText("Works (vision/pro).");
-  await card.getByLabel("Multimodal model").fill("");
+  await expect(card.getByRole("status")).toHaveText("Works (google/gemini-3-pro).");
+  await card.getByLabel("Multimodal model").click();
+  await page.getByRole("option", { name: "Same as chat model" }).click();
   await card.getByRole("button", { name: "Save", exact: true }).click();
   await expect(card.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
 });
