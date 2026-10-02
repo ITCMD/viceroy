@@ -88,6 +88,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(req.Messages[0].Content, "imported into Viceroy") {
 			content = budgetRows(last)
 		}
+		if strings.Contains(req.Messages[0].Content, "You categorize bank transactions") {
+			content = categorizeReply(req.Messages[0].Content, last.Content)
+		}
+		if strings.Contains(req.Messages[0].Content, "brand colors") {
+			content = brandColors(last.Content)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{
 			"role": "assistant", "content": content}}}})
@@ -381,4 +387,79 @@ func recipe(text string) map[string]any {
 		r["subject_contains"] = strings.TrimSpace(m[1])
 	}
 	return r
+}
+
+// categorizeReply plays the transaction categorizer (aicat.Messages): known merchant words map
+// to seeded category names; anything else gets null.
+func categorizeReply(system, user string) string {
+	ids := map[string]int64{}
+	for _, line := range strings.Split(system, "\n") {
+		var id int64
+		var rest string
+		if i := strings.Index(line, ": "); i > 0 {
+			if _, err := fmt.Sscanf(line[:i], "%d", &id); err == nil {
+				rest = line[i+2:]
+				if j := strings.LastIndex(rest, " ("); j > 0 {
+					rest = rest[:j]
+				}
+				ids[strings.ToLower(rest)] = id
+			}
+		}
+	}
+	words := []struct{ word, cat string }{
+		{"coffee", "coffee shops"}, {"starbucks", "coffee shops"}, {"blue bottle", "coffee shops"},
+		{"chipotle", "restaurants & bars"}, {"trattoria", "restaurants & bars"}, {"pizza", "restaurants & bars"},
+		{"trader joe", "groceries"}, {"whole foods", "groceries"}, {"market", "groceries"},
+		{"shell", "gas"}, {"chevron", "gas"},
+	}
+	type item struct {
+		N          int    `json:"n"`
+		CategoryID *int64 `json:"category_id"`
+	}
+	var items []item
+	for _, line := range strings.Split(user, "\n") {
+		var n int
+		if _, err := fmt.Sscanf(line, "%d.", &n); err != nil || n == 0 {
+			continue
+		}
+		low := strings.ToLower(line)
+		it := item{N: n}
+		for _, w := range words {
+			if strings.Contains(low, w.word) {
+				if id, ok := ids[w.cat]; ok {
+					it.CategoryID = &id
+				}
+				break
+			}
+		}
+		items = append(items, it)
+	}
+	b, _ := json.Marshal(map[string]any{"items": items})
+	return string(b)
+}
+
+// brandColors plays the bank color picker (branding.Messages).
+func brandColors(user string) string {
+	known := map[string]string{"capital one": "#004977", "chase": "#117aca", "dcu": "#00703c", "first platypus": "#6b4fbb"}
+	type item struct {
+		N     int    `json:"n"`
+		Color string `json:"color"`
+	}
+	var items []item
+	for _, line := range strings.Split(user, "\n") {
+		var n int
+		if _, err := fmt.Sscanf(line, "%d.", &n); err != nil || n == 0 {
+			continue
+		}
+		low := strings.ToLower(line)
+		c := ""
+		for k, v := range known {
+			if strings.Contains(low, k) {
+				c = v
+			}
+		}
+		items = append(items, item{N: n, Color: c})
+	}
+	b, _ := json.Marshal(map[string]any{"items": items})
+	return string(b)
 }

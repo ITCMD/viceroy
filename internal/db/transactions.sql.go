@@ -11,6 +11,20 @@ import (
 	"strings"
 )
 
+const addRuleTag = `-- name: AddRuleTag :exec
+INSERT OR IGNORE INTO rule_tags (rule_id, tag_id) VALUES (?, ?)
+`
+
+type AddRuleTagParams struct {
+	RuleID int64 `json:"rule_id"`
+	TagID  int64 `json:"tag_id"`
+}
+
+func (q *Queries) AddRuleTag(ctx context.Context, arg AddRuleTagParams) error {
+	_, err := q.db.ExecContext(ctx, addRuleTag, arg.RuleID, arg.TagID)
+	return err
+}
+
 const addTransactionTag = `-- name: AddTransactionTag :exec
 INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
 SELECT ?1, t.id FROM tags t WHERE t.id = ?2 AND t.household_id = ?3
@@ -38,6 +52,15 @@ type BlacklistLinkParams struct {
 
 func (q *Queries) BlacklistLink(ctx context.Context, arg BlacklistLinkParams) error {
 	_, err := q.db.ExecContext(ctx, blacklistLink, arg.ProvisionalID, arg.PostedID)
+	return err
+}
+
+const clearRuleTags = `-- name: ClearRuleTags :exec
+DELETE FROM rule_tags WHERE rule_id = ?
+`
+
+func (q *Queries) ClearRuleTags(ctx context.Context, ruleID int64) error {
+	_, err := q.db.ExecContext(ctx, clearRuleTags, ruleID)
 	return err
 }
 
@@ -145,8 +168,8 @@ func (q *Queries) CreateCategoryGroup(ctx context.Context, arg CreateCategoryGro
 const createRule = `-- name: CreateRule :one
 INSERT INTO rules (
     household_id, priority, match_field, match_op, match_value, account_id, amount_min, amount_max,
-    set_category_id, set_merchant, add_tag_id, set_hidden, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, household_id, priority, match_field, match_op, match_value, account_id, amount_min, amount_max, set_category_id, set_merchant, add_tag_id, set_hidden, created_at
+    direction, day_min, day_max, set_category_id, set_merchant, set_hidden, set_goal_id, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, household_id, priority, match_field, match_op, match_value, account_id, amount_min, amount_max, set_category_id, set_merchant, add_tag_id, set_hidden, created_at, direction, day_min, day_max, set_goal_id
 `
 
 type CreateRuleParams struct {
@@ -158,10 +181,13 @@ type CreateRuleParams struct {
 	AccountID     sql.NullInt64 `json:"account_id"`
 	AmountMin     sql.NullInt64 `json:"amount_min"`
 	AmountMax     sql.NullInt64 `json:"amount_max"`
+	Direction     string        `json:"direction"`
+	DayMin        sql.NullInt64 `json:"day_min"`
+	DayMax        sql.NullInt64 `json:"day_max"`
 	SetCategoryID sql.NullInt64 `json:"set_category_id"`
 	SetMerchant   string        `json:"set_merchant"`
-	AddTagID      sql.NullInt64 `json:"add_tag_id"`
 	SetHidden     int64         `json:"set_hidden"`
+	SetGoalID     sql.NullInt64 `json:"set_goal_id"`
 	CreatedAt     int64         `json:"created_at"`
 }
 
@@ -175,10 +201,13 @@ func (q *Queries) CreateRule(ctx context.Context, arg CreateRuleParams) (Rule, e
 		arg.AccountID,
 		arg.AmountMin,
 		arg.AmountMax,
+		arg.Direction,
+		arg.DayMin,
+		arg.DayMax,
 		arg.SetCategoryID,
 		arg.SetMerchant,
-		arg.AddTagID,
 		arg.SetHidden,
+		arg.SetGoalID,
 		arg.CreatedAt,
 	)
 	var i Rule
@@ -197,6 +226,10 @@ func (q *Queries) CreateRule(ctx context.Context, arg CreateRuleParams) (Rule, e
 		&i.AddTagID,
 		&i.SetHidden,
 		&i.CreatedAt,
+		&i.Direction,
+		&i.DayMin,
+		&i.DayMax,
+		&i.SetGoalID,
 	)
 	return i, err
 }
@@ -277,7 +310,7 @@ func (q *Queries) GetMerchant(ctx context.Context, arg GetMerchantParams) (Merch
 }
 
 const getRule = `-- name: GetRule :one
-SELECT id, household_id, priority, match_field, match_op, match_value, account_id, amount_min, amount_max, set_category_id, set_merchant, add_tag_id, set_hidden, created_at FROM rules WHERE id = ? AND household_id = ?
+SELECT id, household_id, priority, match_field, match_op, match_value, account_id, amount_min, amount_max, set_category_id, set_merchant, add_tag_id, set_hidden, created_at, direction, day_min, day_max, set_goal_id FROM rules WHERE id = ? AND household_id = ?
 `
 
 type GetRuleParams struct {
@@ -303,12 +336,16 @@ func (q *Queries) GetRule(ctx context.Context, arg GetRuleParams) (Rule, error) 
 		&i.AddTagID,
 		&i.SetHidden,
 		&i.CreatedAt,
+		&i.Direction,
+		&i.DayMin,
+		&i.DayMax,
+		&i.SetGoalID,
 	)
 	return i, err
 }
 
 const getTransaction = `-- name: GetTransaction :one
-SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id FROM transactions WHERE id = ? AND household_id = ?
+SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id, ai_cat_tried FROM transactions WHERE id = ? AND household_id = ?
 `
 
 type GetTransactionParams struct {
@@ -344,12 +381,13 @@ func (q *Queries) GetTransaction(ctx context.Context, arg GetTransactionParams) 
 		&i.LinkedAt,
 		&i.GoalID,
 		&i.OwnerUserID,
+		&i.AiCatTried,
 	)
 	return i, err
 }
 
 const getTransactionByID = `-- name: GetTransactionByID :one
-SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id FROM transactions WHERE id = ?
+SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id, ai_cat_tried FROM transactions WHERE id = ?
 `
 
 func (q *Queries) GetTransactionByID(ctx context.Context, id int64) (Transaction, error) {
@@ -380,12 +418,13 @@ func (q *Queries) GetTransactionByID(ctx context.Context, id int64) (Transaction
 		&i.LinkedAt,
 		&i.GoalID,
 		&i.OwnerUserID,
+		&i.AiCatTried,
 	)
 	return i, err
 }
 
 const getTransactionView = `-- name: GetTransactionView :one
-SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, a.name AS account_name, a.mask AS account_mask,
+SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, t.ai_cat_tried, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
@@ -427,6 +466,7 @@ type GetTransactionViewRow struct {
 	LinkedAt       sql.NullInt64  `json:"linked_at"`
 	GoalID         sql.NullInt64  `json:"goal_id"`
 	OwnerUserID    sql.NullInt64  `json:"owner_user_id"`
+	AiCatTried     int64          `json:"ai_cat_tried"`
 	AccountName    string         `json:"account_name"`
 	AccountMask    string         `json:"account_mask"`
 	MerchantName   string         `json:"merchant_name"`
@@ -464,6 +504,7 @@ func (q *Queries) GetTransactionView(ctx context.Context, arg GetTransactionView
 		&i.LinkedAt,
 		&i.GoalID,
 		&i.OwnerUserID,
+		&i.AiCatTried,
 		&i.AccountName,
 		&i.AccountMask,
 		&i.MerchantName,
@@ -704,7 +745,7 @@ func (q *Queries) ListLinkCandidates(ctx context.Context, arg ListLinkCandidates
 }
 
 const listLinkedProvisional = `-- name: ListLinkedProvisional :many
-SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id FROM transactions WHERE linked_txn_id = ? ORDER BY id
+SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id, ai_cat_tried FROM transactions WHERE linked_txn_id = ? ORDER BY id
 `
 
 func (q *Queries) ListLinkedProvisional(ctx context.Context, linkedTxnID sql.NullInt64) ([]Transaction, error) {
@@ -741,6 +782,7 @@ func (q *Queries) ListLinkedProvisional(ctx context.Context, linkedTxnID sql.Nul
 			&i.LinkedAt,
 			&i.GoalID,
 			&i.OwnerUserID,
+			&i.AiCatTried,
 		); err != nil {
 			return nil, err
 		}
@@ -928,8 +970,42 @@ func (q *Queries) ListPostedForLink(ctx context.Context, arg ListPostedForLinkPa
 	return items, nil
 }
 
+const listRuleTags = `-- name: ListRuleTags :many
+SELECT rt.rule_id, t.id, t.name FROM rule_tags rt JOIN tags t ON t.id = rt.tag_id
+JOIN rules r ON r.id = rt.rule_id WHERE r.household_id = ? ORDER BY t.name
+`
+
+type ListRuleTagsRow struct {
+	RuleID int64  `json:"rule_id"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+}
+
+func (q *Queries) ListRuleTags(ctx context.Context, householdID int64) ([]ListRuleTagsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRuleTags, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRuleTagsRow
+	for rows.Next() {
+		var i ListRuleTagsRow
+		if err := rows.Scan(&i.RuleID, &i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRuleTargets = `-- name: ListRuleTargets :many
-SELECT t.id, t.account_id, t.amount_cents, t.description, t.payee, t.merchant_id, COALESCE(m.name, '') AS merchant_name
+SELECT t.id, t.account_id, t.date, t.amount_cents, t.description, t.payee, t.merchant_id, COALESCE(m.name, '') AS merchant_name
 FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id
 WHERE t.household_id = ? AND t.linked_txn_id IS NULL
 `
@@ -937,6 +1013,7 @@ WHERE t.household_id = ? AND t.linked_txn_id IS NULL
 type ListRuleTargetsRow struct {
 	ID           int64         `json:"id"`
 	AccountID    int64         `json:"account_id"`
+	Date         string        `json:"date"`
 	AmountCents  int64         `json:"amount_cents"`
 	Description  string        `json:"description"`
 	Payee        string        `json:"payee"`
@@ -957,6 +1034,7 @@ func (q *Queries) ListRuleTargets(ctx context.Context, householdID int64) ([]Lis
 		if err := rows.Scan(
 			&i.ID,
 			&i.AccountID,
+			&i.Date,
 			&i.AmountCents,
 			&i.Description,
 			&i.Payee,
@@ -978,7 +1056,7 @@ func (q *Queries) ListRuleTargets(ctx context.Context, householdID int64) ([]Lis
 
 const listRules = `-- name: ListRules :many
 
-SELECT id, household_id, priority, match_field, match_op, match_value, account_id, amount_min, amount_max, set_category_id, set_merchant, add_tag_id, set_hidden, created_at FROM rules WHERE household_id = ? ORDER BY priority, id
+SELECT id, household_id, priority, match_field, match_op, match_value, account_id, amount_min, amount_max, set_category_id, set_merchant, add_tag_id, set_hidden, created_at, direction, day_min, day_max, set_goal_id FROM rules WHERE household_id = ? ORDER BY priority, id
 `
 
 // ---- rules ----
@@ -1006,6 +1084,10 @@ func (q *Queries) ListRules(ctx context.Context, householdID int64) ([]Rule, err
 			&i.AddTagID,
 			&i.SetHidden,
 			&i.CreatedAt,
+			&i.Direction,
+			&i.DayMin,
+			&i.DayMax,
+			&i.SetGoalID,
 		); err != nil {
 			return nil, err
 		}
@@ -1104,9 +1186,36 @@ func (q *Queries) ListTagsForTransactions(ctx context.Context, ids []int64) ([]L
 	return items, nil
 }
 
+const listTransactionTagIDs = `-- name: ListTransactionTagIDs :many
+SELECT tag_id FROM transaction_tags WHERE transaction_id = ?
+`
+
+func (q *Queries) ListTransactionTagIDs(ctx context.Context, transactionID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listTransactionTagIDs, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var tag_id int64
+		if err := rows.Scan(&tag_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tag_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTransactions = `-- name: ListTransactions :many
 
-SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, a.name AS account_name, a.mask AS account_mask,
+SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, t.ai_cat_tried, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
@@ -1169,6 +1278,7 @@ type ListTransactionsRow struct {
 	LinkedAt       sql.NullInt64  `json:"linked_at"`
 	GoalID         sql.NullInt64  `json:"goal_id"`
 	OwnerUserID    sql.NullInt64  `json:"owner_user_id"`
+	AiCatTried     int64          `json:"ai_cat_tried"`
 	AccountName    string         `json:"account_name"`
 	AccountMask    string         `json:"account_mask"`
 	MerchantName   string         `json:"merchant_name"`
@@ -1224,6 +1334,7 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 			&i.LinkedAt,
 			&i.GoalID,
 			&i.OwnerUserID,
+			&i.AiCatTried,
 			&i.AccountName,
 			&i.AccountMask,
 			&i.MerchantName,
@@ -1245,11 +1356,92 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 	return items, nil
 }
 
+const listUncategorizedForAI = `-- name: ListUncategorizedForAI :many
+
+SELECT t.id, t.merchant_id, t.amount_cents, t.description, t.payee, COALESCE(m.name, '') AS merchant_name
+FROM transactions t
+JOIN accounts a ON a.id = t.account_id
+LEFT JOIN merchants m ON m.id = t.merchant_id
+WHERE t.household_id = ?1 AND t.category_id IS NULL AND t.hidden = 0
+  AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+  AND t.date >= ?2 AND (?3 = 1 OR t.ai_cat_tried = 0)
+  AND t.created_at >= ?4
+ORDER BY t.date DESC, t.id DESC LIMIT 2000
+`
+
+type ListUncategorizedForAIParams struct {
+	HouseholdID  int64       `json:"household_id"`
+	Since        string      `json:"since"`
+	IncludeTried interface{} `json:"include_tried"`
+	CreatedSince int64       `json:"created_since"`
+}
+
+type ListUncategorizedForAIRow struct {
+	ID           int64         `json:"id"`
+	MerchantID   sql.NullInt64 `json:"merchant_id"`
+	AmountCents  int64         `json:"amount_cents"`
+	Description  string        `json:"description"`
+	Payee        string        `json:"payee"`
+	MerchantName string        `json:"merchant_name"`
+}
+
+// ---- AI categorization ----
+// Uncategorized money movements the AI may look at. `tried` rows (the AI already passed on
+// them) are skipped unless include_tried.
+func (q *Queries) ListUncategorizedForAI(ctx context.Context, arg ListUncategorizedForAIParams) ([]ListUncategorizedForAIRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUncategorizedForAI,
+		arg.HouseholdID,
+		arg.Since,
+		arg.IncludeTried,
+		arg.CreatedSince,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUncategorizedForAIRow
+	for rows.Next() {
+		var i ListUncategorizedForAIRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MerchantID,
+			&i.AmountCents,
+			&i.Description,
+			&i.Payee,
+			&i.MerchantName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markAICategoryTried = `-- name: MarkAICategoryTried :exec
+UPDATE transactions SET ai_cat_tried = 1 WHERE id = ? AND household_id = ?
+`
+
+type MarkAICategoryTriedParams struct {
+	ID          int64 `json:"id"`
+	HouseholdID int64 `json:"household_id"`
+}
+
+func (q *Queries) MarkAICategoryTried(ctx context.Context, arg MarkAICategoryTriedParams) error {
+	_, err := q.db.ExecContext(ctx, markAICategoryTried, arg.ID, arg.HouseholdID)
+	return err
+}
+
 const merchantHistoryCategory = `-- name: MerchantHistoryCategory :one
 SELECT category_id FROM transactions
 WHERE household_id = ? AND merchant_id = ? AND category_id IS NOT NULL
-  AND category_source IN ('user', 'rule', 'linked')
-ORDER BY date DESC, id DESC LIMIT 1
+  AND category_source IN ('user', 'rule', 'linked', 'ai')
+ORDER BY category_source = 'ai', date DESC, id DESC LIMIT 1
 `
 
 type MerchantHistoryCategoryParams struct {
@@ -1257,7 +1449,8 @@ type MerchantHistoryCategoryParams struct {
 	MerchantID  sql.NullInt64 `json:"merchant_id"`
 }
 
-// Category most recently chosen by the user (or a rule) for a merchant.
+// Category most recently chosen by the user (or a rule) for a merchant. An AI pick counts too
+// (a "soft rule": the merchant needn't go to the AI again), but anything a person chose wins.
 func (q *Queries) MerchantHistoryCategory(ctx context.Context, arg MerchantHistoryCategoryParams) (sql.NullInt64, error) {
 	row := q.db.QueryRowContext(ctx, merchantHistoryCategory, arg.HouseholdID, arg.MerchantID)
 	var category_id sql.NullInt64
@@ -1277,6 +1470,22 @@ type RenameMerchantParams struct {
 
 func (q *Queries) RenameMerchant(ctx context.Context, arg RenameMerchantParams) error {
 	_, err := q.db.ExecContext(ctx, renameMerchant, arg.Name, arg.ID, arg.HouseholdID)
+	return err
+}
+
+const setTransactionAICategory = `-- name: SetTransactionAICategory :exec
+UPDATE transactions SET category_id = ?, category_source = 'ai', needs_review = 1, ai_cat_tried = 1
+WHERE id = ? AND household_id = ? AND category_id IS NULL
+`
+
+type SetTransactionAICategoryParams struct {
+	CategoryID  sql.NullInt64 `json:"category_id"`
+	ID          int64         `json:"id"`
+	HouseholdID int64         `json:"household_id"`
+}
+
+func (q *Queries) SetTransactionAICategory(ctx context.Context, arg SetTransactionAICategoryParams) error {
+	_, err := q.db.ExecContext(ctx, setTransactionAICategory, arg.CategoryID, arg.ID, arg.HouseholdID)
 	return err
 }
 
@@ -1317,7 +1526,8 @@ func (q *Queries) UnlinkTransaction(ctx context.Context, id int64) error {
 
 const updateRule = `-- name: UpdateRule :exec
 UPDATE rules SET priority = ?, match_field = ?, match_op = ?, match_value = ?, account_id = ?,
-    amount_min = ?, amount_max = ?, set_category_id = ?, set_merchant = ?, add_tag_id = ?, set_hidden = ?
+    amount_min = ?, amount_max = ?, direction = ?, day_min = ?, day_max = ?,
+    set_category_id = ?, set_merchant = ?, set_hidden = ?, set_goal_id = ?
 WHERE id = ? AND household_id = ?
 `
 
@@ -1329,10 +1539,13 @@ type UpdateRuleParams struct {
 	AccountID     sql.NullInt64 `json:"account_id"`
 	AmountMin     sql.NullInt64 `json:"amount_min"`
 	AmountMax     sql.NullInt64 `json:"amount_max"`
+	Direction     string        `json:"direction"`
+	DayMin        sql.NullInt64 `json:"day_min"`
+	DayMax        sql.NullInt64 `json:"day_max"`
 	SetCategoryID sql.NullInt64 `json:"set_category_id"`
 	SetMerchant   string        `json:"set_merchant"`
-	AddTagID      sql.NullInt64 `json:"add_tag_id"`
 	SetHidden     int64         `json:"set_hidden"`
+	SetGoalID     sql.NullInt64 `json:"set_goal_id"`
 	ID            int64         `json:"id"`
 	HouseholdID   int64         `json:"household_id"`
 }
@@ -1346,10 +1559,13 @@ func (q *Queries) UpdateRule(ctx context.Context, arg UpdateRuleParams) error {
 		arg.AccountID,
 		arg.AmountMin,
 		arg.AmountMax,
+		arg.Direction,
+		arg.DayMin,
+		arg.DayMax,
 		arg.SetCategoryID,
 		arg.SetMerchant,
-		arg.AddTagID,
 		arg.SetHidden,
+		arg.SetGoalID,
 		arg.ID,
 		arg.HouseholdID,
 	)

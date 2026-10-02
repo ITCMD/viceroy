@@ -8,6 +8,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"viceroy/internal/db"
@@ -96,6 +97,7 @@ type Txn struct {
 	HouseholdID int64
 	AccountID   int64
 	AmountCents int64
+	Date        string // YYYY-MM-DD; rules with a day-of-month range need it
 	Description string
 	Payee       string
 }
@@ -106,7 +108,8 @@ type Result struct {
 	Merchant    string
 	CategoryID  sql.NullInt64
 	Source      string
-	TagID       sql.NullInt64
+	TagIDs      []int64
+	GoalID      sql.NullInt64
 	Hidden      bool
 	NeedsReview bool
 }
@@ -117,6 +120,7 @@ type Categorizer struct {
 	q         *db.Queries
 	household int64
 	rules     []db.Rule
+	tags      map[int64][]int64 // rule id → tag ids
 	Suggester Suggester
 }
 
@@ -125,7 +129,24 @@ func New(ctx context.Context, q *db.Queries, householdID int64) (*Categorizer, e
 	if err != nil {
 		return nil, err
 	}
-	return &Categorizer{q: q, household: householdID, rules: rules}, nil
+	tags, err := RuleTags(ctx, q, householdID)
+	if err != nil {
+		return nil, err
+	}
+	return &Categorizer{q: q, household: householdID, rules: rules, tags: tags}, nil
+}
+
+// RuleTags maps each of the household's rules to the tag ids it adds.
+func RuleTags(ctx context.Context, q *db.Queries, householdID int64) (map[int64][]int64, error) {
+	rows, err := q.ListRuleTags(ctx, householdID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64][]int64{}
+	for _, r := range rows {
+		out[r.RuleID] = append(out[r.RuleID], r.ID)
+	}
+	return out, nil
 }
 
 // Decide works out merchant and category without writing to the transaction.
@@ -152,7 +173,8 @@ func (c *Categorizer) Decide(ctx context.Context, t Txn) (Result, error) {
 			}
 			res.MerchantID, res.Merchant = sql.NullInt64{Int64: m.ID, Valid: true}, m.Name
 		}
-		res.TagID = rule.AddTagID
+		res.TagIDs = c.tags[rule.ID]
+		res.GoalID = rule.SetGoalID
 		res.Hidden = rule.SetHidden == 1
 		if rule.SetCategoryID.Valid {
 			res.CategoryID, res.Source = rule.SetCategoryID, SourceRule
@@ -196,8 +218,13 @@ func (c *Categorizer) Apply(ctx context.Context, t Txn) (Result, error) {
 	}); err != nil {
 		return res, err
 	}
-	if res.TagID.Valid {
-		if err := c.q.AddTransactionTag(ctx, db.AddTransactionTagParams{TransactionID: t.ID, TagID: res.TagID.Int64, HouseholdID: c.household}); err != nil {
+	for _, tag := range res.TagIDs {
+		if err := c.q.AddTransactionTag(ctx, db.AddTransactionTagParams{TransactionID: t.ID, TagID: tag, HouseholdID: c.household}); err != nil {
+			return res, err
+		}
+	}
+	if res.GoalID.Valid {
+		if err := c.q.SetTransactionGoal(ctx, db.SetTransactionGoalParams{GoalID: res.GoalID, ID: t.ID, HouseholdID: c.household}); err != nil {
 			return res, err
 		}
 	}
@@ -228,19 +255,39 @@ func RuleMatches(r db.Rule, t Txn, merchant string) bool {
 	if r.AmountMax.Valid && abs > r.AmountMax.Int64 {
 		return false
 	}
-	want := strings.ToLower(strings.TrimSpace(r.MatchValue))
-	if want == "" {
+	switch r.Direction {
+	case "out":
+		if t.AmountCents >= 0 {
+			return false
+		}
+	case "in":
+		if t.AmountCents <= 0 {
+			return false
+		}
+	}
+	if (r.DayMin.Valid || r.DayMax.Valid) && !dayInRange(t.Date, r.DayMin, r.DayMax) {
 		return false
 	}
+	norm := func(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 	var fields []string
 	switch r.MatchField {
 	case "description":
 		fields = []string{t.Description, t.Payee}
 	default:
-		fields = []string{merchant}
+		// Merchant names compare on letters and digits only, so "Trader Joe's" from an email
+		// alert matches "TRADER JOES" from the bank.
+		fields, norm = []string{merchant}, Key
+	}
+	want := norm(r.MatchValue)
+	if want == "" {
+		// No text condition: account, amount or day decide, if there are any.
+		return r.AccountID.Valid || r.AmountMin.Valid || r.AmountMax.Valid
 	}
 	for _, f := range fields {
-		f = strings.ToLower(strings.TrimSpace(f))
+		f = norm(f)
+		if f == "" {
+			continue
+		}
 		switch r.MatchOp {
 		case "equals":
 			if f == want {
@@ -257,6 +304,27 @@ func RuleMatches(r db.Rule, t Txn, merchant string) bool {
 		}
 	}
 	return false
+}
+
+// dayInRange reports whether date's day of the month is within [min, max]; a missing bound
+// is open, and min > max wraps around the month end (28-3 = the 28th through the 3rd).
+func dayInRange(date string, min, max sql.NullInt64) bool {
+	d, err := time.Parse(time.DateOnly, date)
+	if err != nil {
+		return false
+	}
+	day := int64(d.Day())
+	lo, hi := int64(1), int64(31)
+	if min.Valid {
+		lo = min.Int64
+	}
+	if max.Valid {
+		hi = max.Int64
+	}
+	if lo <= hi {
+		return day >= lo && day <= hi
+	}
+	return day >= lo || day <= hi
 }
 
 func b2i(b bool) int64 {

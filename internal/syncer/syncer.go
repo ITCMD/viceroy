@@ -521,7 +521,7 @@ func (r *run) classify(ctx context.Context, acct db.Account, id int64, date stri
 		r.cat = c
 	}
 	res, err := r.cat.Apply(ctx, categorize.Txn{
-		ID: id, HouseholdID: acct.HouseholdID, AccountID: acct.ID, AmountCents: amt, Description: t.Description, Payee: t.Payee,
+		ID: id, HouseholdID: acct.HouseholdID, AccountID: acct.ID, AmountCents: amt, Date: date, Description: t.Description, Payee: t.Payee,
 	})
 	if err != nil {
 		return err

@@ -45,7 +45,7 @@ test("email alert shows first, SimpleFIN confirms it without a duplicate (with a
   await expect(rows).toHaveCount(1, { timeout: 15_000 });
   await expect(rows.getByLabel("From an email alert")).toBeVisible();
   await expect(rows).toContainText("-$50.00");
-  await expect(rows).toContainText("Email alert");
+  await expect(rows).toContainText("Email");
 
   // The bank posts it for $60.00 (tip included) on the next sync.
   await req.post(`${fakeBank}/_control/scenario`, { data: { name: "relinked+posted+dinner" } });
@@ -56,12 +56,12 @@ test("email alert shows first, SimpleFIN confirms it without a duplicate (with a
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("-$60.00");
   await expect(rows.getByLabel("From an email alert")).toHaveCount(0);
-  await expect(rows.getByText("Email alert")).toHaveCount(0);
+  await expect(rows.getByText("Email", { exact: true })).toHaveCount(0);
 
   await rows.click();
   const sources = page.getByRole("dialog").getByTestId("txn-sources");
   await expect(sources).toContainText("SimpleFIN");
-  await expect(sources).toContainText("Email alert");
+  await expect(sources).toContainText("Email");
   await expect(page.getByRole("dialog").getByTestId("txn-email")).toContainText("Debit card purchase");
   await page.screenshot({ path: `${shots}/10-confirmed.png` });
 });

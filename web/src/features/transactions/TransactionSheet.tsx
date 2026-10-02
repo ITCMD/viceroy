@@ -24,7 +24,7 @@ import {
 
 const sourceChips: Record<string, { icon: LucideIcon; label: string }> = {
   simplefin: { icon: Landmark, label: "SimpleFIN" },
-  email: { icon: Mail, label: "Email alert" },
+  email: { icon: Mail, label: "Email" },
   manual: { icon: PencilLine, label: "Manual" },
   import: { icon: Upload, label: "Imported" },
 };

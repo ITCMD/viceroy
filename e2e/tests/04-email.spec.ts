@@ -104,7 +104,7 @@ test("custom parser filter turns an email into a final transaction", async ({ pa
   await page.getByRole("link", { name: "Transactions" }).first().click();
   const row = page.getByTestId("txn-row").filter({ hasText: "Shell Oil" });
   await expect(row).toContainText("-$48.10");
-  await expect(row).not.toContainText("Email alert"); // final on an email-only account
+  await expect(row).not.toContainText("Email"); // final on an email-only account
 });
 
 test("template filter on a synced account creates a pending email alert", async ({ page, request }) => {
@@ -126,7 +126,7 @@ test("template filter on a synced account creates a pending email alert", async 
 
   await page.getByRole("link", { name: "Transactions" }).first().click();
   await expect(page.getByTestId("email-review-banner")).toContainText("1 email needs a filter");
-  const row = page.getByTestId("txn-row").filter({ hasText: "Email alert" });
+  const row = page.getByTestId("txn-row").filter({ hasText: "Email" });
   await expect(row).toContainText("-$1,045.20");
   await row.click();
   const sheet = page.getByRole("dialog");

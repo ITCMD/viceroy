@@ -34,12 +34,13 @@ SELECT * FROM merchants WHERE id = ? AND household_id = ?;
 -- name: RenameMerchant :exec
 UPDATE merchants SET name = ? WHERE id = ? AND household_id = ?;
 
--- Category most recently chosen by the user (or a rule) for a merchant.
+-- Category most recently chosen by the user (or a rule) for a merchant. An AI pick counts too
+-- (a "soft rule": the merchant needn't go to the AI again), but anything a person chose wins.
 -- name: MerchantHistoryCategory :one
 SELECT category_id FROM transactions
 WHERE household_id = ? AND merchant_id = ? AND category_id IS NOT NULL
-  AND category_source IN ('user', 'rule', 'linked')
-ORDER BY date DESC, id DESC LIMIT 1;
+  AND category_source IN ('user', 'rule', 'linked', 'ai')
+ORDER BY category_source = 'ai', date DESC, id DESC LIMIT 1;
 
 -- ---- tags ----
 
@@ -73,13 +74,27 @@ SELECT * FROM rules WHERE id = ? AND household_id = ?;
 -- name: CreateRule :one
 INSERT INTO rules (
     household_id, priority, match_field, match_op, match_value, account_id, amount_min, amount_max,
-    set_category_id, set_merchant, add_tag_id, set_hidden, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
+    direction, day_min, day_max, set_category_id, set_merchant, set_hidden, set_goal_id, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
 
 -- name: UpdateRule :exec
 UPDATE rules SET priority = ?, match_field = ?, match_op = ?, match_value = ?, account_id = ?,
-    amount_min = ?, amount_max = ?, set_category_id = ?, set_merchant = ?, add_tag_id = ?, set_hidden = ?
+    amount_min = ?, amount_max = ?, direction = ?, day_min = ?, day_max = ?,
+    set_category_id = ?, set_merchant = ?, set_hidden = ?, set_goal_id = ?
 WHERE id = ? AND household_id = ?;
+
+-- name: ListRuleTags :many
+SELECT rt.rule_id, t.id, t.name FROM rule_tags rt JOIN tags t ON t.id = rt.tag_id
+JOIN rules r ON r.id = rt.rule_id WHERE r.household_id = ? ORDER BY t.name;
+
+-- name: ClearRuleTags :exec
+DELETE FROM rule_tags WHERE rule_id = ?;
+
+-- name: AddRuleTag :exec
+INSERT OR IGNORE INTO rule_tags (rule_id, tag_id) VALUES (?, ?);
+
+-- name: ListTransactionTagIDs :many
+SELECT tag_id FROM transaction_tags WHERE transaction_id = ?;
 
 -- name: DeleteRule :exec
 DELETE FROM rules WHERE id = ? AND household_id = ?;
@@ -155,7 +170,7 @@ DELETE FROM transactions WHERE id = ? AND household_id = ? AND source = 'manual'
 
 -- Transactions a rule may apply to (it never overrides a category the user chose by hand).
 -- name: ListRuleTargets :many
-SELECT t.id, t.account_id, t.amount_cents, t.description, t.payee, t.merchant_id, COALESCE(m.name, '') AS merchant_name
+SELECT t.id, t.account_id, t.date, t.amount_cents, t.description, t.payee, t.merchant_id, COALESCE(m.name, '') AS merchant_name
 FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id
 WHERE t.household_id = ? AND t.linked_txn_id IS NULL;
 
@@ -204,3 +219,25 @@ SELECT sqlc.arg(to_id), src.tag_id FROM transaction_tags src WHERE src.transacti
 
 -- name: GetTransactionByID :one
 SELECT * FROM transactions WHERE id = ?;
+
+-- ---- AI categorization ----
+
+-- Uncategorized money movements the AI may look at. `tried` rows (the AI already passed on
+-- them) are skipped unless include_tried.
+-- name: ListUncategorizedForAI :many
+SELECT t.id, t.merchant_id, t.amount_cents, t.description, t.payee, COALESCE(m.name, '') AS merchant_name
+FROM transactions t
+JOIN accounts a ON a.id = t.account_id
+LEFT JOIN merchants m ON m.id = t.merchant_id
+WHERE t.household_id = sqlc.arg(household_id) AND t.category_id IS NULL AND t.hidden = 0
+  AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+  AND t.date >= sqlc.arg(since) AND (sqlc.arg(include_tried) = 1 OR t.ai_cat_tried = 0)
+  AND t.created_at >= sqlc.arg(created_since)
+ORDER BY t.date DESC, t.id DESC LIMIT 2000;
+
+-- name: SetTransactionAICategory :exec
+UPDATE transactions SET category_id = ?, category_source = 'ai', needs_review = 1, ai_cat_tried = 1
+WHERE id = ? AND household_id = ? AND category_id IS NULL;
+
+-- name: MarkAICategoryTried :exec
+UPDATE transactions SET ai_cat_tried = 1 WHERE id = ? AND household_id = ?;

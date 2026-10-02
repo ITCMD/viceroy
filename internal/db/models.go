@@ -32,6 +32,8 @@ type Account struct {
 	CreatedAt         int64          `json:"created_at"`
 	UpdatedAt         int64          `json:"updated_at"`
 	Builtin           string         `json:"builtin"`
+	Color             string         `json:"color"`
+	ColorSource       string         `json:"color_source"`
 }
 
 type AccountBill struct {
@@ -45,6 +47,13 @@ type AccountBill struct {
 	Summary        string         `json:"summary"`
 	EmailMessageID sql.NullInt64  `json:"email_message_id"`
 	CreatedAt      int64          `json:"created_at"`
+}
+
+type AccountLogo struct {
+	AccountID int64  `json:"account_id"`
+	Mime      string `json:"mime"`
+	Data      []byte `json:"data"`
+	UpdatedAt int64  `json:"updated_at"`
 }
 
 type AiChange struct {
@@ -303,6 +312,15 @@ type Rule struct {
 	AddTagID      sql.NullInt64 `json:"add_tag_id"`
 	SetHidden     int64         `json:"set_hidden"`
 	CreatedAt     int64         `json:"created_at"`
+	Direction     string        `json:"direction"`
+	DayMin        sql.NullInt64 `json:"day_min"`
+	DayMax        sql.NullInt64 `json:"day_max"`
+	SetGoalID     sql.NullInt64 `json:"set_goal_id"`
+}
+
+type RuleTag struct {
+	RuleID int64 `json:"rule_id"`
+	TagID  int64 `json:"tag_id"`
 }
 
 type Session struct {
@@ -361,6 +379,7 @@ type Transaction struct {
 	LinkedAt       sql.NullInt64  `json:"linked_at"`
 	GoalID         sql.NullInt64  `json:"goal_id"`
 	OwnerUserID    sql.NullInt64  `json:"owner_user_id"`
+	AiCatTried     int64          `json:"ai_cat_tried"`
 }
 
 type TransactionTag struct {

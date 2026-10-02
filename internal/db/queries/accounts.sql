@@ -198,3 +198,28 @@ SELECT t.account_id, t.date, CAST(SUM(t.amount_cents) AS INTEGER) AS total
 FROM transactions t
 WHERE t.household_id = ? AND t.provisional = 0
 GROUP BY t.account_id, t.date;
+
+-- ---- account look ----
+
+-- name: SetAccountColor :exec
+UPDATE accounts SET color = ?, color_source = ?, updated_at = ? WHERE id = ? AND household_id = ?;
+
+-- name: ListAccountsNeedingColor :many
+SELECT * FROM accounts WHERE household_id = ? AND color_source = '' ORDER BY id;
+
+-- name: ListHouseholdsNeedingColor :many
+SELECT DISTINCT household_id FROM accounts WHERE color_source = '';
+
+-- name: GetAccountLogo :one
+SELECT l.mime, l.data, l.updated_at FROM account_logos l JOIN accounts a ON a.id = l.account_id
+WHERE l.account_id = ? AND a.household_id = ?;
+
+-- name: SetAccountLogo :exec
+INSERT INTO account_logos (account_id, mime, data, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT (account_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, updated_at = excluded.updated_at;
+
+-- name: DeleteAccountLogo :exec
+DELETE FROM account_logos WHERE account_id = ?;
+
+-- name: ListAccountLogoTimes :many
+SELECT l.account_id, l.updated_at FROM account_logos l JOIN accounts a ON a.id = l.account_id WHERE a.household_id = ?;

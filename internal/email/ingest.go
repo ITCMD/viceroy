@@ -246,7 +246,7 @@ func (s *Service) createTransaction(ctx context.Context, q *db.Queries, househol
 	if err != nil {
 		return 0, err
 	}
-	res, err := cat.Apply(ctx, categorize.Txn{ID: id, HouseholdID: householdID, AccountID: acct.ID, AmountCents: amt, Description: p.Merchant, Payee: p.Merchant})
+	res, err := cat.Apply(ctx, categorize.Txn{ID: id, HouseholdID: householdID, AccountID: acct.ID, AmountCents: amt, Date: p.Date, Description: p.Merchant, Payee: p.Merchant})
 	if err != nil {
 		return 0, err
 	}

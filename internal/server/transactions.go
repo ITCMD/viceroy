@@ -23,6 +23,7 @@ import (
 func (s *Server) transactionRoutes(r chi.Router) {
 	r.Get("/transactions", s.handleListTransactions)
 	r.Post("/transactions", s.handleCreateTransaction)
+	r.Post("/transactions/ai-categorize", s.handleAICategorize)
 	r.Get("/transactions/{id}", s.handleGetTransaction)
 	r.Patch("/transactions/{id}", s.handleUpdateTransaction)
 	r.Delete("/transactions/{id}", s.handleDeleteTransaction)
@@ -316,7 +317,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		s.internalError(w, err)
 		return
 	}
-	res, err := cat.Apply(ctx, categorize.Txn{ID: id, HouseholdID: hh, AccountID: in.AccountID, AmountCents: amt, Description: in.Description})
+	res, err := cat.Apply(ctx, categorize.Txn{ID: id, HouseholdID: hh, AccountID: in.AccountID, AmountCents: amt, Date: in.Date, Description: in.Description})
 	if err != nil {
 		s.internalError(w, err)
 		return

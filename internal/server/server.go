@@ -38,6 +38,10 @@ type Server struct {
 	notify  *notify.Service
 	ai      *aisettings.Store
 	models  modelCache
+
+	// Changed, when set, is told about every successful change made through the API (after
+	// the notifier), e.g. to color new accounts.
+	Changed func(householdID int64)
 }
 
 func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger, sync *syncer.Service, mail *email.Service, nt *notify.Service, aiset *aisettings.Store) *Server {
@@ -125,14 +129,19 @@ func requireCSRFHeader(next http.Handler) http.Handler {
 // (a new manual transaction, a recategorization, a lower budget...). Evaluation is debounced.
 func (s *Server) notifyOnChange(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet || r.Method == http.MethodHead || s.notify == nil {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || (s.notify == nil && s.Changed == nil) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
 		if ww.Status() < 400 {
-			s.notify.Changed(HouseholdID(r))
+			if s.notify != nil {
+				s.notify.Changed(HouseholdID(r))
+			}
+			if s.Changed != nil {
+				s.Changed(HouseholdID(r))
+			}
 		}
 	})
 }

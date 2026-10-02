@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"viceroy/internal/accounts"
 	"viceroy/internal/bills"
+	"viceroy/internal/branding"
 	"viceroy/internal/budgetview"
 	"viceroy/internal/db"
 	"viceroy/internal/money"
@@ -28,6 +30,10 @@ func (s *Server) accountRoutes(r chi.Router) {
 	r.Patch("/accounts/{id}", s.handleUpdateAccount)
 	r.Delete("/accounts/{id}", s.handleDeleteAccount)
 	r.Post("/accounts/{id}/resolve", s.handleResolveAccount)
+	r.Post("/accounts/{id}/color/suggest", s.handleSuggestAccountColor)
+	r.Get("/accounts/{id}/logo", s.handleGetAccountLogo)
+	r.Put("/accounts/{id}/logo", s.handlePutAccountLogo)
+	r.Delete("/accounts/{id}/logo", s.handleDeleteAccountLogo)
 	r.Get("/connections", s.handleListConnections)
 	r.Post("/connections", s.handleCreateConnection)
 	r.Post("/connections/{id}/sync", s.handleSyncConnection)
@@ -56,7 +62,10 @@ type accountDTO struct {
 	Builtin           string   `json:"builtin"` // "" or accounts.PaperCash
 	ConnectionID      *int64   `json:"connection_id"`
 	LastSyncedAt      *int64   `json:"last_synced_at"`
-	Bill              *billDTO `json:"bill"` // from bank emails the AI read; nil = nothing known
+	Bill              *billDTO `json:"bill"`         // from bank emails the AI read; nil = nothing known
+	Color             string   `json:"color"`        // #rrggbb, "" until picked
+	ColorSource       string   `json:"color_source"` // ai | auto | user | ""
+	LogoURL           *string  `json:"logo_url"`     // uploaded logo, nil = none
 }
 
 // billDTO is an account's payment state. Amounts are cents; dates YYYY-MM-DD.
@@ -125,6 +134,14 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 		return nil, err
 	}
 	billState := bills.ByAccount(billRows, budgetview.Today().Format(time.DateOnly))
+	logoRows, err := q.ListAccountLogoTimes(ctx, hh)
+	if err != nil {
+		return nil, err
+	}
+	logos := map[int64]int64{}
+	for _, l := range logoRows {
+		logos[l.AccountID] = l.UpdatedAt
+	}
 	out := make([]accountDTO, 0, len(list))
 	for _, a := range list {
 		d := accountDTO{
@@ -133,7 +150,11 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 			BalanceCents: a.BalanceCents, AvailableCents: ptr(a.AvailableCents), BalanceAt: ptr(a.BalanceAt),
 			Status: a.Status, ReviewCandidateID: ptr(a.ReviewCandidateID), IncludeInNetWorth: a.IncludeInNetWorth == 1,
 			Hidden: a.Hidden == 1, IsManual: a.IsManual == 1, ConnectionID: ptr(a.ConnectionID), InstitutionStatus: "ok",
-			Builtin: a.Builtin,
+			Builtin: a.Builtin, Color: a.Color, ColorSource: a.ColorSource,
+		}
+		if v, ok := logos[a.ID]; ok {
+			u := fmt.Sprintf("/api/accounts/%d/logo?v=%d", a.ID, v)
+			d.LogoURL = &u
 		}
 		if a.InstitutionID.Valid {
 			if st, ok := instStatus[a.InstitutionID.Int64]; ok {
@@ -250,6 +271,7 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		Hidden            *bool   `json:"hidden"`
 		Closed            *bool   `json:"closed"`
 		Balance           *string `json:"balance"`
+		Color             *string `json:"color"` // #rrggbb, or "" to let Viceroy pick again
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -292,10 +314,24 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if in.Color != nil && *in.Color != "" && !branding.Valid(*in.Color) {
+		writeError(w, http.StatusBadRequest, "Colors look like #1a2b3c.")
+		return
+	}
 	q := db.New(s.db)
 	if err := q.UpdateAccountSettings(r.Context(), p); err != nil {
 		s.internalError(w, err)
 		return
+	}
+	if in.Color != nil {
+		c, src := strings.ToLower(*in.Color), branding.SourceUser
+		if c == "" {
+			src = "" // picked again in the background
+		}
+		if err := q.SetAccountColor(r.Context(), db.SetAccountColorParams{Color: c, ColorSource: src, UpdatedAt: p.UpdatedAt, ID: a.ID, HouseholdID: a.HouseholdID}); err != nil {
+			s.internalError(w, err)
+			return
+		}
 	}
 	if in.Balance != nil {
 		if a.IsManual != 1 {

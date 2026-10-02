@@ -23,6 +23,7 @@ const (
 	keyEmailModel   = "ai.email_model"
 	keyEmailBaseURL = "ai.email_base_url"
 	keyVisionModel  = "ai.vision_model"
+	keyCategorize   = "ai.categorize" // "off" turns automatic categorization off
 )
 
 type Store struct {
@@ -40,6 +41,7 @@ type Settings struct {
 	EmailModel   string // "" = ChatModel
 	EmailBaseURL string // self-hosted endpoint for email reading; "" = OpenRouter
 	VisionModel  string // multimodal model for budget imports; "" = ChatModel
+	Categorize   bool   // categorize new transactions with the email (light) model
 
 	// What viceroy.toml would give, shown as placeholders.
 	ConfigChatModel string
@@ -49,6 +51,7 @@ func (s *Store) Load(ctx context.Context, hh int64) (Settings, error) {
 	out := Settings{
 		APIKey: s.Config.OpenRouterKey, ChatModel: s.Config.ChatModel, EmailModel: s.Config.EmailModel,
 		EmailBaseURL: s.Config.EmailBaseURL, VisionModel: s.Config.VisionModel, ConfigChatModel: s.Config.ChatModel,
+		Categorize: true,
 	}
 	if out.APIKey != "" {
 		out.KeySource = "config"
@@ -77,6 +80,8 @@ func (s *Store) Load(ctx context.Context, hh int64) (Settings, error) {
 			out.EmailBaseURL = r.Value
 		case keyVisionModel:
 			out.VisionModel = r.Value
+		case keyCategorize:
+			out.Categorize = r.Value != "off"
 		}
 	}
 	return out, nil
@@ -90,6 +95,7 @@ type Patch struct {
 	EmailModel   *string `json:"email_model"`
 	EmailBaseURL *string `json:"email_base_url"`
 	VisionModel  *string `json:"vision_model"`
+	Categorize   *bool   `json:"categorize"`
 }
 
 var ErrBadURL = errors.New("the self-hosted endpoint must start with http:// or https://")
@@ -118,6 +124,15 @@ func (s *Store) Save(ctx context.Context, hh int64, p Patch) error {
 			v = base64.StdEncoding.EncodeToString(sealed)
 		}
 		if err := set(keyAPIKey, v); err != nil {
+			return err
+		}
+	}
+	if p.Categorize != nil {
+		v := "on"
+		if !*p.Categorize {
+			v = "off"
+		}
+		if err := set(keyCategorize, v); err != nil {
 			return err
 		}
 	}

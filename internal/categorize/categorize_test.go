@@ -29,7 +29,7 @@ func TestMerchant(t *testing.T) {
 }
 
 func TestRuleMatches(t *testing.T) {
-	txn := Txn{AccountID: 1, AmountCents: -4500, Description: "SHELL OIL 5774"}
+	txn := Txn{AccountID: 1, AmountCents: -4500, Date: "2026-10-03", Description: "SHELL OIL 5774"}
 	cases := []struct {
 		rule db.Rule
 		want bool
@@ -42,6 +42,13 @@ func TestRuleMatches(t *testing.T) {
 		{db.Rule{MatchField: "merchant", MatchOp: "contains", MatchValue: "shell", AmountMin: sql.NullInt64{Int64: 5000, Valid: true}}, false},
 		{db.Rule{MatchField: "merchant", MatchOp: "contains", MatchValue: "shell", AmountMax: sql.NullInt64{Int64: 5000, Valid: true}}, true},
 		{db.Rule{MatchField: "merchant", MatchOp: "contains", MatchValue: " "}, false},
+		{db.Rule{MatchField: "merchant", MatchOp: "equals", MatchValue: "SHELL-OIL"}, true}, // letters and digits only
+		{db.Rule{MatchField: "merchant", MatchOp: "contains", MatchValue: "shell", Direction: "in"}, false},
+		{db.Rule{MatchField: "merchant", MatchOp: "contains", MatchValue: "shell", Direction: "out"}, true},
+		{db.Rule{MatchField: "merchant", MatchOp: "contains", MatchValue: "shell", DayMin: sql.NullInt64{Int64: 1, Valid: true}, DayMax: sql.NullInt64{Int64: 7, Valid: true}}, true},
+		{db.Rule{MatchField: "merchant", MatchOp: "contains", MatchValue: "shell", DayMin: sql.NullInt64{Int64: 10, Valid: true}, DayMax: sql.NullInt64{Int64: 20, Valid: true}}, false},
+		{db.Rule{MatchField: "merchant", MatchOp: "contains", MatchValue: "shell", DayMin: sql.NullInt64{Int64: 28, Valid: true}, DayMax: sql.NullInt64{Int64: 5, Valid: true}}, true}, // wraps
+		{db.Rule{MatchField: "merchant", MatchOp: "contains", AccountID: sql.NullInt64{Int64: 1, Valid: true}}, true},                                                                  // account only
 	}
 	for i, c := range cases {
 		if got := RuleMatches(c.rule, txn, "Shell Oil"); got != c.want {

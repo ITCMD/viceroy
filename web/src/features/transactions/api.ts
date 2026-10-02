@@ -153,6 +153,6 @@ export type TxnEmail = { id: number; from_addr: string; from_name: string; subje
 
 /** Badge text for a pending row: email alerts and manual pending entries are stand-ins. */
 export function pendingLabel(t: { source: string; provisional: boolean }) {
-  if (t.source === "email") return "Email alert";
+  if (t.source === "email") return "Email";
   return t.provisional ? "Pending entry" : "Pending";
 }

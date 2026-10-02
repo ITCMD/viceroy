@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"viceroy/internal/accounts"
+	"viceroy/internal/aicat"
 	"viceroy/internal/aisettings"
 	"viceroy/internal/auth"
+	"viceroy/internal/branding"
 	"viceroy/internal/categorize"
 	"viceroy/internal/config"
 	"viceroy/internal/db"
@@ -111,11 +113,23 @@ func runServe(path string) error {
 		subject = cfg.PublicURL
 	}
 	notifier := notify.New(conn, log, keys, subject)
-	sync := syncer.New(conn, box, log)
-	sync.Changed = notifier.Changed
-	mail := email.New(conn, box, log)
-	mail.Changed = notifier.Changed
 	aiset := &aisettings.Store{DB: conn, Box: box, Config: cfg.AI, Referer: cfg.PublicURL}
+	cat := &aicat.Service{DB: conn, Log: log, Client: func(ctx context.Context, hh int64) (aicat.Client, bool, error) {
+		st, err := aiset.Load(ctx, hh)
+		return st.Email(cfg.AI.BaseURL, cfg.PublicURL), st.Categorize, err
+	}}
+	colors := &branding.Service{DB: conn, Log: log, Client: func(ctx context.Context, hh int64) (branding.Client, error) {
+		return aiset.EmailClient(ctx, hh)
+	}}
+	changed := func(hh int64) {
+		notifier.Changed(hh)
+		cat.Changed(hh)
+		colors.Changed(hh)
+	}
+	sync := syncer.New(conn, box, log)
+	sync.Changed = changed
+	mail := email.New(conn, box, log)
+	mail.Changed = changed
 	mail.AI = email.LLMReader{Client: aiset.EmailClient}
 	mail.Notice = func(ctx context.Context, hh int64, n email.Notice) {
 		a := notify.Alert{Kind: n.Kind, Key: n.Key, Title: n.Title, Body: n.Body, URL: n.URL}
@@ -129,15 +143,18 @@ func runServe(path string) error {
 	if err != nil {
 		return err
 	}
+	api := server.New(cfg, conn, webFS, log, sync, mail, notifier, aiset)
+	api.Changed = colors.Changed // new manual accounts; synced ones come through sync.Changed
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           server.New(cfg, conn, webFS, log, sync, mail, notifier, aiset).Handler(),
+		Handler:           api.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go pruneSessions(ctx, auth.New(conn), log)
+	go colors.Sweep(ctx) // accounts from before colors existed
 	go sync.Run(ctx)
 	go mail.Run(ctx)
 	go notifier.Run(ctx)
