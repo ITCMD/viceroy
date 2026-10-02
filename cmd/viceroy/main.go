@@ -149,6 +149,8 @@ func runServe(path string) error {
 		Addr:              cfg.Listen,
 		Handler:           api.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute, // drop idle keep-alive connections
+		// No Read/WriteTimeout: chat answers stream for minutes, and imports upload screenshots.
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

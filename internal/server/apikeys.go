@@ -63,7 +63,7 @@ func apiEnabled(ctx context.Context, q *db.Queries, hh int64) (bool, error) {
 
 // authAPIKey authenticates a bearer key. status/msg describe a rejection.
 func (s *Server) authAPIKey(r *http.Request, token string) (u db.User, key db.ApiKey, status int, msg string, err error) {
-	ip := ClientIP(r).String()
+	ip := limitKey(r)
 	if !s.limiter.allow(ip) {
 		return u, key, http.StatusTooManyRequests, "Too many bad API keys. Try again in a few minutes.", nil
 	}

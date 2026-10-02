@@ -3,13 +3,16 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -34,13 +37,15 @@ type Server struct {
 	auth    *auth.Service
 	web     fs.FS
 	limiter *loginLimiter
-	log     *slog.Logger
-	sync    *syncer.Service
-	mail    *email.Service
-	notify  *notify.Service
-	ai      *aisettings.Store
-	models  modelCache
-	wish    *wishlist.Fetcher
+	// accountLimiter counts sign-in attempts per email, whatever IP they come from.
+	accountLimiter *loginLimiter
+	log            *slog.Logger
+	sync           *syncer.Service
+	mail           *email.Service
+	notify         *notify.Service
+	ai             *aisettings.Store
+	models         modelCache
+	wish           *wishlist.Fetcher
 
 	// Changed, when set, is told about every successful change made through the API (after
 	// the notifier), e.g. to color new accounts.
@@ -50,7 +55,7 @@ type Server struct {
 func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger, sync *syncer.Service, mail *email.Service, nt *notify.Service, aiset *aisettings.Store) *Server {
 	return &Server{
 		cfg: cfg, db: conn, auth: auth.New(conn), web: web,
-		limiter: newLoginLimiter(10, 15*time.Minute), log: log, sync: sync, mail: mail, notify: nt, ai: aiset,
+		limiter: newLoginLimiter(10, 15*time.Minute), accountLimiter: newLoginLimiter(20, 15*time.Minute), log: log, sync: sync, mail: mail, notify: nt, ai: aiset,
 		// VICEROY_ALLOW_PRIVATE_FETCH=1 lets wishlist links reach private addresses (e2e fake store).
 		wish: &wishlist.Fetcher{AllowPrivate: os.Getenv("VICEROY_ALLOW_PRIVATE_FETCH") == "1"},
 	}
@@ -60,7 +65,7 @@ func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(IPAllow(s.cfg.Allowed, s.cfg.Proxies))
 	r.Use(middleware.Recoverer)
-	r.Use(securityHeaders)
+	r.Use(s.securityHeaders)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(requireCSRFHeader)
@@ -104,14 +109,38 @@ func (s *Server) Handler() http.Handler {
 
 // ---- middleware ----
 
-func securityHeaders(next http.Handler) http.Handler {
+// securityHeaders sets a Content-Security-Policy that only runs the app's own scripts
+// (plus the inline ones in index.html, by hash), and HSTS when served over https.
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	csp := contentSecurityPolicy(s.web)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Content-Security-Policy", csp)
+		if s.secureCookies(r) {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+var inlineScript = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+
+// contentSecurityPolicy allows images from anywhere (bank logos, wishlist pictures) but
+// scripts, styles, fonts and requests only from this server.
+func contentSecurityPolicy(web fs.FS) string {
+	scripts := "'self'"
+	if index, err := fs.ReadFile(web, "index.html"); err == nil {
+		for _, m := range inlineScript.FindAllSubmatch(index, -1) {
+			sum := sha256.Sum256(m[1])
+			scripts += " 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+		}
+	}
+	return "default-src 'self'; script-src " + scripts + "; style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; " +
+		"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 }
 
 // requireCSRFHeader forces unsafe API requests to carry a custom header. Browsers
@@ -285,14 +314,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
-	ip := ClientIP(r).String()
-	if !s.limiter.allow(ip) {
+	ip, acct := limitKey(r), accountKey(in.Email)
+	if !s.limiter.take(ip) {
 		writeError(w, http.StatusTooManyRequests, "Too many attempts. Try again in a few minutes.")
+		return
+	}
+	// Many IPs guessing one account's password are limited by the account.
+	if !s.accountLimiter.take(acct) {
+		s.log.Warn("sign-in attempts limited for account", "email", acct, "ip", ip)
+		writeError(w, http.StatusTooManyRequests, "Too many attempts for this account. Try again in a few minutes.")
 		return
 	}
 	u, err := s.auth.Login(r.Context(), in.Email, in.Password)
 	if errors.Is(err, auth.ErrInvalidCredentials) {
-		s.limiter.fail(ip)
 		writeError(w, http.StatusUnauthorized, "Invalid email or password.")
 		return
 	}
@@ -301,6 +335,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.limiter.reset(ip)
+	s.accountLimiter.reset(acct)
 	s.startSession(w, r, u)
 }
 
@@ -362,6 +397,11 @@ func readJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) b
 }
 
 func (s *Server) internalError(w http.ResponseWriter, err error) {
+	if errors.Is(err, auth.ErrBusy) {
+		s.log.Warn("password check queue full")
+		writeError(w, http.StatusServiceUnavailable, "Too many sign-in attempts right now. Try again in a minute.")
+		return
+	}
 	s.log.Error("request failed", "err", err)
 	writeError(w, http.StatusInternalServerError, "internal error")
 }

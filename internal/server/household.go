@@ -222,7 +222,7 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 // lookupInvite resolves the {token} URL param, counting bad tokens toward the login limiter
 // so links can't be guessed.
 func (s *Server) lookupInvite(w http.ResponseWriter, r *http.Request) (db.GetOpenInviteByHashRow, bool) {
-	ip := ClientIP(r).String()
+	ip := limitKey(r)
 	if !s.limiter.allow(ip) {
 		writeError(w, http.StatusTooManyRequests, "Too many attempts. Try again in a few minutes.")
 		return db.GetOpenInviteByHashRow{}, false
@@ -301,7 +301,7 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": toUserDTO(u)})
 }
 
-// handleChangePassword needs the current password. Wrong ones count toward the login
+// handleChangePassword needs the current password. Attempts count toward the login
 // limiter. Other sessions are signed out; this one stays.
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	var in struct {
@@ -311,8 +311,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
-	ip := ClientIP(r).String()
-	if !s.limiter.allow(ip) {
+	ip := limitKey(r)
+	if !s.limiter.take(ip) {
 		writeError(w, http.StatusTooManyRequests, "Too many attempts. Try again in a few minutes.")
 		return
 	}
@@ -321,7 +321,6 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	var ve auth.ValidationError
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials):
-		s.limiter.fail(ip)
 		writeError(w, http.StatusBadRequest, "Your current password isn't right.")
 	case errors.As(err, &ve):
 		writeError(w, http.StatusBadRequest, ve.Msg)
@@ -342,8 +341,8 @@ func (s *Server) handleChangeEmail(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
-	ip := ClientIP(r).String()
-	if !s.limiter.allow(ip) {
+	ip := limitKey(r)
+	if !s.limiter.take(ip) {
 		writeError(w, http.StatusTooManyRequests, "Too many attempts. Try again in a few minutes.")
 		return
 	}
@@ -352,7 +351,6 @@ func (s *Server) handleChangeEmail(w http.ResponseWriter, r *http.Request) {
 	var ve auth.ValidationError
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials):
-		s.limiter.fail(ip)
 		writeError(w, http.StatusBadRequest, "Your current password isn't right.")
 	case errors.As(err, &ve):
 		writeError(w, http.StatusBadRequest, ve.Msg)

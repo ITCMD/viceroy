@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexedwards/argon2id"
-
 	"viceroy/internal/db"
 )
 
@@ -92,7 +90,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token string, in AcceptInput
 	} else if err := validateUser(in.Name, in.Email, in.Password); err != nil {
 		return db.User{}, err
 	}
-	hash, err := argon2id.CreateHash(in.Password, argon2id.DefaultParams)
+	hash, err := hashPassword(ctx, in.Password)
 	if err != nil {
 		return db.User{}, err
 	}
@@ -207,7 +205,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, current, nex
 	if err != nil {
 		return err
 	}
-	if ok, err := argon2id.ComparePasswordAndHash(current, u.PasswordHash); err != nil {
+	if ok, err := checkPassword(ctx, current, u.PasswordHash); err != nil {
 		return err
 	} else if !ok {
 		return ErrInvalidCredentials
@@ -215,7 +213,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, current, nex
 	if len(next) < MinPasswordLength {
 		return ValidationError{"Password must be at least 10 characters."}
 	}
-	hash, err := argon2id.CreateHash(next, argon2id.DefaultParams)
+	hash, err := hashPassword(ctx, next)
 	if err != nil {
 		return err
 	}
@@ -242,7 +240,7 @@ func (s *Service) ChangeEmail(ctx context.Context, userID int64, current, email 
 	if err != nil {
 		return err
 	}
-	if ok, err := argon2id.ComparePasswordAndHash(current, u.PasswordHash); err != nil {
+	if ok, err := checkPassword(ctx, current, u.PasswordHash); err != nil {
 		return err
 	} else if !ok {
 		return ErrInvalidCredentials

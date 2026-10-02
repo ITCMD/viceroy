@@ -69,7 +69,7 @@ func (s *Service) Setup(ctx context.Context, in SetupInput) (db.User, error) {
 	if err := validateUser(in.Name, in.Email, in.Password); err != nil {
 		return db.User{}, err
 	}
-	hash, err := argon2id.CreateHash(in.Password, argon2id.DefaultParams)
+	hash, err := hashPassword(ctx, in.Password)
 	if err != nil {
 		return db.User{}, err
 	}
@@ -127,13 +127,15 @@ var dummyHash, _ = argon2id.CreateHash("viceroy-timing-equalizer", argon2id.Defa
 func (s *Service) Login(ctx context.Context, email, password string) (db.User, error) {
 	u, err := s.q().GetUserByEmail(ctx, strings.TrimSpace(email))
 	if errors.Is(err, sql.ErrNoRows) {
-		argon2id.ComparePasswordAndHash(password, dummyHash)
+		if _, err := checkPassword(ctx, password, dummyHash); err != nil {
+			return db.User{}, err
+		}
 		return db.User{}, ErrInvalidCredentials
 	}
 	if err != nil {
 		return db.User{}, err
 	}
-	ok, err := argon2id.ComparePasswordAndHash(password, u.PasswordHash)
+	ok, err := checkPassword(ctx, password, u.PasswordHash)
 	if err != nil {
 		return db.User{}, err
 	}
