@@ -20,7 +20,7 @@ function addMonths(start: string, n: number) {
   return iso(new Date(Date.UTC(y, m - 1 + n, 1)));
 }
 
-/** Recurring: what's due before the next paycheck, suggestions, a month calendar and every
+/** Recurring: what's due before the next paycheck, a month calendar, suggestions and every
  * tracked item. */
 export function RecurringPage() {
   const { data: now } = useQuery(recurringQuery());
@@ -51,23 +51,6 @@ export function RecurringPage() {
       />
       <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 md:p-6">
         {now && <BeforePayday data={now} onOpen={open} />}
-        {now && now.suggestions.length > 0 && (
-          <Card title={<span className="flex items-center gap-1.5"><Sparkles size={15} className="text-accent" /> Looks recurring</span>}>
-            <p className="-mt-1 mb-2 text-[13px] text-muted">Viceroy spotted these repeating. Track the ones that are real so they show up as upcoming and can be edited.</p>
-            <ul className="-mx-1 divide-y divide-border" data-testid="recurring-suggestions">
-              {now.suggestions.map((s) => (
-                <SeriesRow key={s.key} s={s} today={now.today} onClick={() => setDraft({ kind: "suggestion", s })}>
-                  <Button size="sm" variant="secondary" onClick={() => setDraft({ kind: "suggestion", s })}>
-                    Track
-                  </Button>
-                  <Button size="sm" variant="ghost" disabled={dismiss.isPending} onClick={() => dismiss.mutate({ key: s.key, dismissed: true })}>
-                    Not recurring
-                  </Button>
-                </SeriesRow>
-              ))}
-            </ul>
-          </Card>
-        )}
         {shown && (
           <Card
             title={new Date(shown + "T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}
@@ -88,6 +71,23 @@ export function RecurringPage() {
             }
           >
             <Calendar month={shown} today={now?.today ?? ""} payday={now?.next_payday ?? ""} occurrences={calData?.occurrences ?? []} onOpen={open} />
+          </Card>
+        )}
+        {now && now.suggestions.length > 0 && (
+          <Card title={<span className="flex items-center gap-1.5"><Sparkles size={15} className="text-accent" /> Looks recurring</span>}>
+            <p className="-mt-1 mb-2 text-[13px] text-muted">Viceroy spotted these repeating. Track the ones that are real so they show up as upcoming and can be edited.</p>
+            <ul className="-mx-1 divide-y divide-border" data-testid="recurring-suggestions">
+              {now.suggestions.map((s) => (
+                <SeriesRow key={s.key} s={s} today={now.today} onClick={() => setDraft({ kind: "suggestion", s })}>
+                  <Button size="sm" variant="secondary" onClick={() => setDraft({ kind: "suggestion", s })}>
+                    Track
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={dismiss.isPending} onClick={() => dismiss.mutate({ key: s.key, dismissed: true })}>
+                    Not recurring
+                  </Button>
+                </SeriesRow>
+              ))}
+            </ul>
           </Card>
         )}
         <Card title="All recurring">

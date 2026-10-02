@@ -31,6 +31,8 @@ export type Transaction = {
   linked_source: "" | "manual" | "email";
   linked_txn_id: number | null;
   goal_id: number | null;
+  owner_id: number | null; // the transaction's owner, else its account's; null = shared
+  owner_set: boolean;
   /** Money spent from the goal (e.g. a wishlist purchase) rather than put into it. */
   goal_withdrawal: boolean;
   tags: Tag[];
@@ -55,6 +57,7 @@ export type TxnLink = { category?: number; goal?: number; from?: string; to?: st
 
 export type TxnFilters = TxnLink & {
   account?: number;
+  owner?: number; // member id, 0 = shared
   q?: string;
   view?: "all" | "review" | "uncategorized";
   hidden?: boolean;
@@ -78,6 +81,7 @@ export const sourceLabels: Record<string, string> = {
 function filterParams(f: TxnFilters, cursor: string) {
   const p = new URLSearchParams();
   if (f.account) p.set("account", String(f.account));
+  if (f.owner !== undefined) p.set("owner", String(f.owner));
   if (f.category) p.set("category", String(f.category));
   if (f.goal) p.set("goal", String(f.goal));
   if (f.from) p.set("from", f.from);

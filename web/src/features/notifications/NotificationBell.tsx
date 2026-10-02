@@ -64,7 +64,7 @@ export function NotificationBell({ className }: { className?: string }) {
               className="text-[13px] font-medium text-accent hover:underline"
               onClick={() => {
                 setOpen(false);
-                navigate({ to: "/settings" as string, hash: "notifications" });
+                navigate({ to: "/settings" as string, search: { tab: "notifications" } as never });
               }}
             >
               Settings

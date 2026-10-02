@@ -72,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/setup", s.handleSetup)
 		r.Post("/auth/login", s.handleLogin)
 		r.Post("/auth/logout", s.handleLogout)
+		s.publicInviteRoutes(r)
 
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireUser)
@@ -91,6 +92,7 @@ func (s *Server) Handler() http.Handler {
 			s.importRoutes(r)
 			s.aiSettingsRoutes(r)
 			s.apiKeyRoutes(r)
+			s.householdRoutes(r)
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")

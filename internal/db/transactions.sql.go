@@ -463,7 +463,8 @@ SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.am
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
-    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source
+    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source,
+    CAST(COALESCE(t.owner_user_id, a.owner_user_id, 0) AS INTEGER) AS owner_id
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id
@@ -510,6 +511,7 @@ type GetTransactionViewRow struct {
 	CategoryIcon   string         `json:"category_icon"`
 	HasLinked      bool           `json:"has_linked"`
 	LinkedSource   string         `json:"linked_source"`
+	OwnerID        int64          `json:"owner_id"`
 }
 
 func (q *Queries) GetTransactionView(ctx context.Context, arg GetTransactionViewParams) (GetTransactionViewRow, error) {
@@ -549,6 +551,7 @@ func (q *Queries) GetTransactionView(ctx context.Context, arg GetTransactionView
 		&i.CategoryIcon,
 		&i.HasLinked,
 		&i.LinkedSource,
+		&i.OwnerID,
 	)
 	return i, err
 }
@@ -1257,7 +1260,8 @@ SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.am
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
-    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source
+    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source,
+    CAST(COALESCE(t.owner_user_id, a.owner_user_id, 0) AS INTEGER) AS owner_id
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id
@@ -1268,17 +1272,18 @@ WHERE t.household_id = ?1
   AND (?2 IS NULL OR t.account_id = ?2)
   AND (?3 IS NULL OR t.category_id = ?3)
   AND (?4 IS NULL OR t.goal_id = ?4)
-  AND (?5 = '' OR t.date >= ?5)
-  AND (?6 = '' OR t.date <= ?6)
-  AND (?7 = 0 OR t.category_id IS NULL)
-  AND (?8 = 0 OR t.needs_review = 1)
-  AND (?9 = 1 OR t.hidden = 0)
-  AND (?10 = '' OR t.description LIKE '%' || ?10 || '%' OR m.name LIKE '%' || ?10 || '%'
-       OR t.notes LIKE '%' || ?10 || '%' OR t.payee LIKE '%' || ?10 || '%')
-  AND (?11 = '' OR t.date < ?11
-       OR (t.date = ?11 AND t.id < ?12))
+  AND (?5 IS NULL OR COALESCE(t.owner_user_id, a.owner_user_id, 0) = ?5)
+  AND (?6 = '' OR t.date >= ?6)
+  AND (?7 = '' OR t.date <= ?7)
+  AND (?8 = 0 OR t.category_id IS NULL)
+  AND (?9 = 0 OR t.needs_review = 1)
+  AND (?10 = 1 OR t.hidden = 0)
+  AND (?11 = '' OR t.description LIKE '%' || ?11 || '%' OR m.name LIKE '%' || ?11 || '%'
+       OR t.notes LIKE '%' || ?11 || '%' OR t.payee LIKE '%' || ?11 || '%')
+  AND (?12 = '' OR t.date < ?12
+       OR (t.date = ?12 AND t.id < ?13))
 ORDER BY t.date DESC, t.id DESC
-LIMIT ?13
+LIMIT ?14
 `
 
 type ListTransactionsParams struct {
@@ -1286,6 +1291,7 @@ type ListTransactionsParams struct {
 	AccountID     interface{} `json:"account_id"`
 	CategoryID    interface{} `json:"category_id"`
 	GoalID        interface{} `json:"goal_id"`
+	OwnerID       interface{} `json:"owner_id"`
 	FromDate      interface{} `json:"from_date"`
 	ToDate        interface{} `json:"to_date"`
 	Uncategorized interface{} `json:"uncategorized"`
@@ -1331,6 +1337,7 @@ type ListTransactionsRow struct {
 	CategoryIcon   string         `json:"category_icon"`
 	HasLinked      bool           `json:"has_linked"`
 	LinkedSource   string         `json:"linked_source"`
+	OwnerID        int64          `json:"owner_id"`
 }
 
 // ---- transactions (user side) ----
@@ -1340,6 +1347,7 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 		arg.AccountID,
 		arg.CategoryID,
 		arg.GoalID,
+		arg.OwnerID,
 		arg.FromDate,
 		arg.ToDate,
 		arg.Uncategorized,
@@ -1391,6 +1399,7 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 			&i.CategoryIcon,
 			&i.HasLinked,
 			&i.LinkedSource,
+			&i.OwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -1621,6 +1630,21 @@ func (q *Queries) SetTransactionAuto(ctx context.Context, arg SetTransactionAuto
 		arg.Hidden,
 		arg.ID,
 	)
+	return err
+}
+
+const setTransactionOwner = `-- name: SetTransactionOwner :exec
+UPDATE transactions SET owner_user_id = ? WHERE id = ? AND household_id = ?
+`
+
+type SetTransactionOwnerParams struct {
+	OwnerUserID sql.NullInt64 `json:"owner_user_id"`
+	ID          int64         `json:"id"`
+	HouseholdID int64         `json:"household_id"`
+}
+
+func (q *Queries) SetTransactionOwner(ctx context.Context, arg SetTransactionOwnerParams) error {
+	_, err := q.db.ExecContext(ctx, setTransactionOwner, arg.OwnerUserID, arg.ID, arg.HouseholdID)
 	return err
 }
 

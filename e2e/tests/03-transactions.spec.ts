@@ -115,7 +115,8 @@ test("pending entry warns on duplicates and links when it posts", async ({ page,
 
 test("rules page creates and applies a rule", async ({ page }) => {
   await login(page);
-  await page.getByRole("link", { name: "Settings" }).first().click();
+  await page.getByRole("link", { name: "Rules" }).first().click();
+  await expect(page.getByRole("heading", { name: "Rules", level: 1 })).toBeVisible();
   await expect(page.getByText("No rules yet")).toBeVisible();
   await page.getByRole("button", { name: "Add rule" }).click();
   const dlg = page.getByRole("dialog");

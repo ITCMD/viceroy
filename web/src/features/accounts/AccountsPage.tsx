@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { householdQuery, ownerName } from "@/features/household/api";
 import clsx from "clsx";
 import { AlertTriangle, ChevronRight, Landmark, Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
@@ -173,6 +174,7 @@ function GroupSummary({ accounts, label }: { accounts: Account[]; label: string 
 }
 
 function AccountGroupCard({ label, accounts, onSelect }: { label: string; accounts: Account[]; onSelect: (id: number) => void }) {
+  const members = useQuery(householdQuery).data?.members ?? [];
   const total = accounts.filter((a) => a.include_in_net_worth && a.status !== "ignored").reduce((s, a) => s + a.balance_cents, 0);
   return (
     <section className="rounded-xl border border-border bg-surface">
@@ -191,7 +193,7 @@ function AccountGroupCard({ label, accounts, onSelect }: { label: string; accoun
                   <StatusBadge account={a} />
                   <BillBadges bill={a.bill} />
                 </span>
-                <span className="block truncate text-xs text-muted">{accountSubtitle(a)}</span>
+                <span className="block truncate text-xs text-muted">{[accountSubtitle(a), members.length > 1 && a.owner_id !== null && ownerName(members, a.owner_id)].filter(Boolean).join(" · ")}</span>
               </span>
               <span className="text-right">
                 <MoneyText cents={a.balance_cents} className={clsx("block text-sm font-medium", !a.include_in_net_worth && "text-muted")} />

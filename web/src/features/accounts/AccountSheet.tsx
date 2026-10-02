@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Sparkles, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, FormError, Field, MoneyText, Select, Sheet, Switch } from "@/components/ui";
@@ -8,6 +9,7 @@ import { AccountAvatar } from "./AccountAvatar";
 import { AccountHistory } from "./AccountHistory";
 import { BillBadges } from "./BillBadges";
 import { StatusBadge } from "./StatusBadge";
+import { householdQuery } from "@/features/household/api";
 import { accountSubtitle, typeLabels, useAccountsMutation, type Account } from "./api";
 
 const typeOptions = Object.entries(typeLabels).map(([value, label]) => ({ value, label }));
@@ -34,6 +36,7 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
   }, [account]);
 
   const patch = useAccountsMutation((body: Record<string, unknown>) => api.patch(`/accounts/${account!.id}`, body));
+  const members = useQuery(householdQuery).data?.members ?? [];
   const merge = useAccountsMutation(() => api.post("/accounts/merge", { from: account!.id, into: Number(mergeInto) }), onClose);
   const replace = useAccountsMutation(
     () => api.post<{ warning?: string }>(`/accounts/${account!.id}/replace`, { with: Number(replaceWith) }),
@@ -97,6 +100,14 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
         <Appearance account={account} />
 
         <div className="flex flex-col gap-3 border-t border-border pt-5">
+          {members.length > 1 && (
+            <Select
+              label="Owner"
+              value={String(account.owner_id ?? "")}
+              onChange={(e) => patch.mutate({ owner_id: e.target.value ? Number(e.target.value) : null })}
+              options={[{ value: "", label: "Shared" }, ...members.map((m) => ({ value: String(m.id), label: m.name }))]}
+            />
+          )}
           <Switch
             label="Include in net worth"
             checked={account.include_in_net_worth}

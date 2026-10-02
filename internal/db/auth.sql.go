@@ -7,21 +7,40 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const addHouseholdMember = `-- name: AddHouseholdMember :exec
-INSERT INTO household_members (household_id, user_id, role) VALUES (?, ?, ?)
+INSERT INTO household_members (household_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)
 `
 
 type AddHouseholdMemberParams struct {
 	HouseholdID int64  `json:"household_id"`
 	UserID      int64  `json:"user_id"`
 	Role        string `json:"role"`
+	JoinedAt    int64  `json:"joined_at"`
 }
 
 func (q *Queries) AddHouseholdMember(ctx context.Context, arg AddHouseholdMemberParams) error {
-	_, err := q.db.ExecContext(ctx, addHouseholdMember, arg.HouseholdID, arg.UserID, arg.Role)
+	_, err := q.db.ExecContext(ctx, addHouseholdMember,
+		arg.HouseholdID,
+		arg.UserID,
+		arg.Role,
+		arg.JoinedAt,
+	)
 	return err
+}
+
+const countHouseholdAdmins = `-- name: CountHouseholdAdmins :one
+SELECT COUNT(*) FROM users u JOIN household_members m ON m.user_id = u.id
+WHERE m.household_id = ? AND u.is_admin = 1
+`
+
+func (q *Queries) CountHouseholdAdmins(ctx context.Context, householdID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countHouseholdAdmins, householdID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countUsers = `-- name: CountUsers :one
@@ -131,6 +150,75 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash []byte) error {
 	return err
 }
 
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, id)
+	return err
+}
+
+const deleteUserSessions = `-- name: DeleteUserSessions :exec
+DELETE FROM sessions WHERE user_id = ?
+`
+
+func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUserSessions, userID)
+	return err
+}
+
+const getOpenInviteByHash = `-- name: GetOpenInviteByHash :one
+SELECT i.id, i.household_id, i.user_id, i.label, i.token_hash, i.created_by, i.created_at, i.expires_at, i.used_at, i.revoked_at, h.name AS household_name, COALESCE(c.name, '') AS created_by_name, COALESCE(t.email, '') AS user_email
+FROM household_invites i
+JOIN households h ON h.id = i.household_id
+LEFT JOIN users c ON c.id = i.created_by
+LEFT JOIN users t ON t.id = i.user_id
+WHERE i.token_hash = ? AND i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > ?
+`
+
+type GetOpenInviteByHashParams struct {
+	TokenHash []byte `json:"token_hash"`
+	ExpiresAt int64  `json:"expires_at"`
+}
+
+type GetOpenInviteByHashRow struct {
+	ID            int64         `json:"id"`
+	HouseholdID   int64         `json:"household_id"`
+	UserID        sql.NullInt64 `json:"user_id"`
+	Label         string        `json:"label"`
+	TokenHash     []byte        `json:"token_hash"`
+	CreatedBy     sql.NullInt64 `json:"created_by"`
+	CreatedAt     int64         `json:"created_at"`
+	ExpiresAt     int64         `json:"expires_at"`
+	UsedAt        sql.NullInt64 `json:"used_at"`
+	RevokedAt     sql.NullInt64 `json:"revoked_at"`
+	HouseholdName string        `json:"household_name"`
+	CreatedByName string        `json:"created_by_name"`
+	UserEmail     string        `json:"user_email"`
+}
+
+func (q *Queries) GetOpenInviteByHash(ctx context.Context, arg GetOpenInviteByHashParams) (GetOpenInviteByHashRow, error) {
+	row := q.db.QueryRowContext(ctx, getOpenInviteByHash, arg.TokenHash, arg.ExpiresAt)
+	var i GetOpenInviteByHashRow
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.UserID,
+		&i.Label,
+		&i.TokenHash,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.RevokedAt,
+		&i.HouseholdName,
+		&i.CreatedByName,
+		&i.UserEmail,
+	)
+	return i, err
+}
+
 const getSession = `-- name: GetSession :one
 SELECT token_hash, user_id, created_at, expires_at, last_seen_at, user_agent, ip FROM sessions WHERE token_hash = ? AND expires_at > ?
 `
@@ -206,6 +294,248 @@ func (q *Queries) GetUserHousehold(ctx context.Context, userID int64) (Household
 	return i, err
 }
 
+const insertInvite = `-- name: InsertInvite :one
+INSERT INTO household_invites (household_id, user_id, label, token_hash, created_by, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, household_id, user_id, label, token_hash, created_by, created_at, expires_at, used_at, revoked_at
+`
+
+type InsertInviteParams struct {
+	HouseholdID int64         `json:"household_id"`
+	UserID      sql.NullInt64 `json:"user_id"`
+	Label       string        `json:"label"`
+	TokenHash   []byte        `json:"token_hash"`
+	CreatedBy   sql.NullInt64 `json:"created_by"`
+	CreatedAt   int64         `json:"created_at"`
+	ExpiresAt   int64         `json:"expires_at"`
+}
+
+func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) (HouseholdInvite, error) {
+	row := q.db.QueryRowContext(ctx, insertInvite,
+		arg.HouseholdID,
+		arg.UserID,
+		arg.Label,
+		arg.TokenHash,
+		arg.CreatedBy,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+	)
+	var i HouseholdInvite
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.UserID,
+		&i.Label,
+		&i.TokenHash,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const listHouseholdMembers = `-- name: ListHouseholdMembers :many
+SELECT u.id, u.name, u.email, u.is_admin, m.role, m.joined_at
+FROM users u JOIN household_members m ON m.user_id = u.id
+WHERE m.household_id = ? ORDER BY m.joined_at, u.id
+`
+
+type ListHouseholdMembersRow struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	IsAdmin  int64  `json:"is_admin"`
+	Role     string `json:"role"`
+	JoinedAt int64  `json:"joined_at"`
+}
+
+func (q *Queries) ListHouseholdMembers(ctx context.Context, householdID int64) ([]ListHouseholdMembersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listHouseholdMembers, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListHouseholdMembersRow
+	for rows.Next() {
+		var i ListHouseholdMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Email,
+			&i.IsAdmin,
+			&i.Role,
+			&i.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOpenInvites = `-- name: ListOpenInvites :many
+SELECT i.id, i.household_id, i.user_id, i.label, i.token_hash, i.created_by, i.created_at, i.expires_at, i.used_at, i.revoked_at, COALESCE(c.name, '') AS created_by_name, COALESCE(t.name, '') AS user_name
+FROM household_invites i
+LEFT JOIN users c ON c.id = i.created_by
+LEFT JOIN users t ON t.id = i.user_id
+WHERE i.household_id = ? AND i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > ?
+ORDER BY i.id
+`
+
+type ListOpenInvitesParams struct {
+	HouseholdID int64 `json:"household_id"`
+	ExpiresAt   int64 `json:"expires_at"`
+}
+
+type ListOpenInvitesRow struct {
+	ID            int64         `json:"id"`
+	HouseholdID   int64         `json:"household_id"`
+	UserID        sql.NullInt64 `json:"user_id"`
+	Label         string        `json:"label"`
+	TokenHash     []byte        `json:"token_hash"`
+	CreatedBy     sql.NullInt64 `json:"created_by"`
+	CreatedAt     int64         `json:"created_at"`
+	ExpiresAt     int64         `json:"expires_at"`
+	UsedAt        sql.NullInt64 `json:"used_at"`
+	RevokedAt     sql.NullInt64 `json:"revoked_at"`
+	CreatedByName string        `json:"created_by_name"`
+	UserName      string        `json:"user_name"`
+}
+
+func (q *Queries) ListOpenInvites(ctx context.Context, arg ListOpenInvitesParams) ([]ListOpenInvitesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenInvites, arg.HouseholdID, arg.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOpenInvitesRow
+	for rows.Next() {
+		var i ListOpenInvitesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.HouseholdID,
+			&i.UserID,
+			&i.Label,
+			&i.TokenHash,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.UsedAt,
+			&i.RevokedAt,
+			&i.CreatedByName,
+			&i.UserName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const renameHousehold = `-- name: RenameHousehold :exec
+
+UPDATE households SET name = ? WHERE id = ?
+`
+
+type RenameHouseholdParams struct {
+	Name string `json:"name"`
+	ID   int64  `json:"id"`
+}
+
+// ---- household management ----
+func (q *Queries) RenameHousehold(ctx context.Context, arg RenameHouseholdParams) error {
+	_, err := q.db.ExecContext(ctx, renameHousehold, arg.Name, arg.ID)
+	return err
+}
+
+const revokeInvite = `-- name: RevokeInvite :execrows
+UPDATE household_invites SET revoked_at = ? WHERE id = ? AND household_id = ? AND used_at IS NULL AND revoked_at IS NULL
+`
+
+type RevokeInviteParams struct {
+	RevokedAt   sql.NullInt64 `json:"revoked_at"`
+	ID          int64         `json:"id"`
+	HouseholdID int64         `json:"household_id"`
+}
+
+func (q *Queries) RevokeInvite(ctx context.Context, arg RevokeInviteParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeInvite, arg.RevokedAt, arg.ID, arg.HouseholdID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeUserResets = `-- name: RevokeUserResets :exec
+UPDATE household_invites SET revoked_at = ? WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL
+`
+
+type RevokeUserResetsParams struct {
+	RevokedAt sql.NullInt64 `json:"revoked_at"`
+	UserID    sql.NullInt64 `json:"user_id"`
+}
+
+func (q *Queries) RevokeUserResets(ctx context.Context, arg RevokeUserResetsParams) error {
+	_, err := q.db.ExecContext(ctx, revokeUserResets, arg.RevokedAt, arg.UserID)
+	return err
+}
+
+const setMemberRole = `-- name: SetMemberRole :exec
+UPDATE household_members SET role = ? WHERE household_id = ? AND user_id = ?
+`
+
+type SetMemberRoleParams struct {
+	Role        string `json:"role"`
+	HouseholdID int64  `json:"household_id"`
+	UserID      int64  `json:"user_id"`
+}
+
+func (q *Queries) SetMemberRole(ctx context.Context, arg SetMemberRoleParams) error {
+	_, err := q.db.ExecContext(ctx, setMemberRole, arg.Role, arg.HouseholdID, arg.UserID)
+	return err
+}
+
+const setUserAdmin = `-- name: SetUserAdmin :exec
+UPDATE users SET is_admin = ? WHERE id = ?
+`
+
+type SetUserAdminParams struct {
+	IsAdmin int64 `json:"is_admin"`
+	ID      int64 `json:"id"`
+}
+
+func (q *Queries) SetUserAdmin(ctx context.Context, arg SetUserAdminParams) error {
+	_, err := q.db.ExecContext(ctx, setUserAdmin, arg.IsAdmin, arg.ID)
+	return err
+}
+
+const setUserPassword = `-- name: SetUserPassword :exec
+UPDATE users SET password_hash = ? WHERE id = ?
+`
+
+type SetUserPasswordParams struct {
+	PasswordHash string `json:"password_hash"`
+	ID           int64  `json:"id"`
+}
+
+func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
+	return err
+}
+
 const touchSession = `-- name: TouchSession :exec
 UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?
 `
@@ -219,4 +549,21 @@ type TouchSessionParams struct {
 func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) error {
 	_, err := q.db.ExecContext(ctx, touchSession, arg.LastSeenAt, arg.ExpiresAt, arg.TokenHash)
 	return err
+}
+
+const useInvite = `-- name: UseInvite :execrows
+UPDATE household_invites SET used_at = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL
+`
+
+type UseInviteParams struct {
+	UsedAt sql.NullInt64 `json:"used_at"`
+	ID     int64         `json:"id"`
+}
+
+func (q *Queries) UseInvite(ctx context.Context, arg UseInviteParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, useInvite, arg.UsedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

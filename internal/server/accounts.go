@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -66,13 +67,14 @@ type accountDTO struct {
 	Builtin           string   `json:"builtin"` // "" or accounts.PaperCash
 	ConnectionID      *int64   `json:"connection_id"`
 	LastSyncedAt      *int64   `json:"last_synced_at"`
-	Bill              *billDTO `json:"bill"`         // from bank emails the AI read; nil = nothing known
-	Color             string   `json:"color"`        // #rrggbb, "" until picked
-	ColorSource       string   `json:"color_source"` // ai | auto | user | ""
-	LogoURL           *string  `json:"logo_url"`     // uploaded logo, nil = none
+	Bill              *billDTO `json:"bill"`           // from bank emails the AI read; nil = nothing known
+	Color             string   `json:"color"`          // #rrggbb, "" until picked
+	ColorSource       string   `json:"color_source"`   // ai | auto | user | ""
+	LogoURL           *string  `json:"logo_url"`       // uploaded logo, nil = none
 	InvertBalance     bool     `json:"invert_balance"` // the bank's balance sign is flipped on sync
 	Offered           bool     `json:"offered"`        // shared on SimpleFIN after setup; not added yet
 	ReplacedBy        *int64   `json:"replaced_by"`    // replaced by this account (sync duplicate); a hidden tombstone
+	OwnerID           *int64   `json:"owner_id"`       // household member, nil = shared
 }
 
 // billDTO is an account's payment state. Amounts are cents; dates YYYY-MM-DD.
@@ -157,7 +159,7 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 			BalanceCents: a.BalanceCents, AvailableCents: ptr(a.AvailableCents), BalanceAt: ptr(a.BalanceAt),
 			Status: a.Status, ReviewCandidateID: ptr(a.ReviewCandidateID), IncludeInNetWorth: a.IncludeInNetWorth == 1,
 			Hidden: a.Hidden == 1, IsManual: a.IsManual == 1, ConnectionID: ptr(a.ConnectionID), InstitutionStatus: "ok",
-			Builtin: a.Builtin, Color: a.Color, ColorSource: a.ColorSource,
+			Builtin: a.Builtin, Color: a.Color, ColorSource: a.ColorSource, OwnerID: ptr(a.OwnerUserID),
 			InvertBalance: a.InvertBalance == 1, Offered: a.OfferedAt.Valid && a.Status == "ignored", ReplacedBy: ptr(a.ReplacedBy),
 		}
 		if v, ok := logos[a.ID]; ok {
@@ -273,14 +275,15 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Name              *string `json:"name"`
-		Type              *string `json:"type"`
-		IncludeInNetWorth *bool   `json:"include_in_net_worth"`
-		Hidden            *bool   `json:"hidden"`
-		Closed            *bool   `json:"closed"`
-		Balance           *string `json:"balance"`
-		Color             *string `json:"color"` // #rrggbb, or "" to let Viceroy pick again
-		InvertBalance     *bool   `json:"invert_balance"`
+		Name              *string         `json:"name"`
+		Type              *string         `json:"type"`
+		IncludeInNetWorth *bool           `json:"include_in_net_worth"`
+		Hidden            *bool           `json:"hidden"`
+		Closed            *bool           `json:"closed"`
+		Balance           *string         `json:"balance"`
+		Color             *string         `json:"color"` // #rrggbb, or "" to let Viceroy pick again
+		InvertBalance     *bool           `json:"invert_balance"`
+		OwnerID           json.RawMessage `json:"owner_id"` // member id, or null for shared
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -327,10 +330,24 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Colors look like #1a2b3c.")
 		return
 	}
+	var owner sql.NullInt64
+	if len(in.OwnerID) > 0 {
+		var ok bool
+		if owner, ok = s.parseOwner(r.Context(), a.HouseholdID, in.OwnerID); !ok {
+			writeError(w, http.StatusBadRequest, "Unknown household member.")
+			return
+		}
+	}
 	q := db.New(s.db)
 	if err := q.UpdateAccountSettings(r.Context(), p); err != nil {
 		s.internalError(w, err)
 		return
+	}
+	if len(in.OwnerID) > 0 {
+		if err := q.SetAccountOwner(r.Context(), db.SetAccountOwnerParams{OwnerUserID: owner, UpdatedAt: p.UpdatedAt, ID: a.ID, HouseholdID: a.HouseholdID}); err != nil {
+			s.internalError(w, err)
+			return
+		}
 	}
 	if in.Color != nil {
 		c, src := strings.ToLower(*in.Color), branding.SourceUser
@@ -510,9 +527,9 @@ type connectionDTO struct {
 	LastSyncAt        *int64           `json:"last_sync_at"`
 	NextSyncAt        *int64           `json:"next_sync_at"`
 	RequestsRemaining int64            `json:"requests_remaining"`
-	RequestsCap       int64            `json:"requests_cap"`       // Viceroy's own daily limit (the Bridge allows 24)
-	IntervalHours     int64            `json:"interval_hours"`     // scheduled syncs run about this often
-	AutoAddNew        bool             `json:"auto_add_new"`       // accounts shared later are added without asking
+	RequestsCap       int64            `json:"requests_cap"`   // Viceroy's own daily limit (the Bridge allows 24)
+	IntervalHours     int64            `json:"interval_hours"` // scheduled syncs run about this often
+	AutoAddNew        bool             `json:"auto_add_new"`   // accounts shared later are added without asking
 	Institutions      []institutionDTO `json:"institutions"`
 	Events            []syncEventDTO   `json:"events"`
 }

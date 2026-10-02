@@ -106,7 +106,8 @@ SELECT t.*, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
-    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source
+    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source,
+    CAST(COALESCE(t.owner_user_id, a.owner_user_id, 0) AS INTEGER) AS owner_id
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id
@@ -117,6 +118,7 @@ WHERE t.household_id = sqlc.arg(household_id)
   AND (sqlc.narg(account_id) IS NULL OR t.account_id = sqlc.narg(account_id))
   AND (sqlc.narg(category_id) IS NULL OR t.category_id = sqlc.narg(category_id))
   AND (sqlc.narg(goal_id) IS NULL OR t.goal_id = sqlc.narg(goal_id))
+  AND (sqlc.narg(owner_id) IS NULL OR COALESCE(t.owner_user_id, a.owner_user_id, 0) = sqlc.narg(owner_id))
   AND (sqlc.arg(from_date) = '' OR t.date >= sqlc.arg(from_date))
   AND (sqlc.arg(to_date) = '' OR t.date <= sqlc.arg(to_date))
   AND (sqlc.arg(uncategorized) = 0 OR t.category_id IS NULL)
@@ -134,7 +136,8 @@ SELECT t.*, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
-    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source
+    CAST(COALESCE((SELECT p.source FROM transactions p WHERE p.linked_txn_id = t.id ORDER BY p.id LIMIT 1), '') AS TEXT) AS linked_source,
+    CAST(COALESCE(t.owner_user_id, a.owner_user_id, 0) AS INTEGER) AS owner_id
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
 LEFT JOIN merchants m ON m.id = t.merchant_id
@@ -262,3 +265,6 @@ UPDATE rules SET set_category_id = sqlc.arg(to_id) WHERE set_category_id = sqlc.
 
 -- name: CountCategoryTransactions :one
 SELECT COUNT(*) FROM transactions WHERE category_id = ? AND household_id = ?;
+
+-- name: SetTransactionOwner :exec
+UPDATE transactions SET owner_user_id = ? WHERE id = ? AND household_id = ?;

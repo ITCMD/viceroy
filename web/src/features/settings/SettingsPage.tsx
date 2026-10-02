@@ -1,12 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ListFilter, Plus, Trash2, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { Logo } from "@/components/AppLogo";
-import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader, Switch, Tabs } from "@/components/ui";
-import { accountsQuery, useAccountsMutation } from "@/features/accounts/api";
-import { categoriesQuery, useTxnMutation } from "@/features/transactions/api";
-import { goalsQuery } from "@/features/goals/api";
+import { Button, Card, FormError, PageHeader, Switch, Tabs } from "@/components/ui";
+import { useAccountsMutation } from "@/features/accounts/api";
+import { HouseholdSettings } from "@/features/household/HouseholdSettings";
 import { EmailSettings } from "@/features/email/EmailSettings";
 import { MonarchImportDialog } from "@/features/import/MonarchImportDialog";
 import { NotificationSettingsCard } from "@/features/notifications/NotificationSettingsCard";
@@ -15,9 +14,7 @@ import { ApiSettingsCard } from "@/features/api/ApiSettingsCard";
 import { AISettingsCard } from "./AISettingsCard";
 import { BudgetSettingsCard } from "./BudgetSettingsCard";
 import { CategoriesSettings } from "./CategoriesSettings";
-import { RuleDialog } from "./RuleDialog";
 import { settingsQuery, type Settings } from "./settings";
-import { ruleConditions, rulesQuery, type Rule } from "./rules";
 
 
 function AccountsCard() {
@@ -44,11 +41,18 @@ function AccountsCard() {
   );
 }
 
-type SettingsTab = "general" | "categories";
+type SettingsTab = "general" | "household" | "notifications" | "categories";
+const tabs: { value: SettingsTab; label: string }[] = [
+  { value: "general", label: "General" },
+  { value: "household", label: "Household" },
+  { value: "notifications", label: "Notifications" },
+  { value: "categories", label: "Categories" },
+];
 
 export function SettingsPage() {
   const hash = useLocation({ select: (l) => l.hash });
-  const tab: SettingsTab = useLocation({ select: (l) => (l.search as { tab?: string }).tab === "categories" ? "categories" : "general" });
+  const asked = useLocation({ select: (l) => (l.search as { tab?: string }).tab });
+  const tab = tabs.find((t) => t.value === asked)?.value ?? "general";
   const navigate = useNavigate();
   useEffect(() => {
     if (hash) document.getElementById(hash)?.scrollIntoView({ block: "start" });
@@ -60,12 +64,17 @@ export function SettingsPage() {
         <Tabs<SettingsTab>
           value={tab}
           onChange={(t) => navigate({ to: "/settings" as string, search: (t === "general" ? {} : { tab: t }) as never })}
-          items={[
-            { value: "general", label: "General" },
-            { value: "categories", label: "Categories" },
-          ]}
+          items={tabs}
         />
-        {tab === "categories" ? <CategoriesSettings /> : <GeneralSettings />}
+        {tab === "categories" ? (
+          <CategoriesSettings />
+        ) : tab === "household" ? (
+          <HouseholdSettings />
+        ) : tab === "notifications" ? (
+          <NotificationSettingsCard />
+        ) : (
+          <GeneralSettings />
+        )}
       </div>
     </>
   );
@@ -77,11 +86,7 @@ function GeneralSettings() {
       <AccountsCard />
       <AppearanceCard />
       <BudgetSettingsCard />
-      <RulesCard />
       <ImportCard />
-      <div id="notifications" className="scroll-mt-16">
-        <NotificationSettingsCard />
-      </div>
       <div id="ai" className="scroll-mt-16">
         <AISettingsCard />
       </div>
@@ -129,74 +134,6 @@ function ImportCard() {
         Bring in your history from Monarch Money's CSV exports: transactions with their categories, notes and tags, plus account balance history.
       </p>
       <MonarchImportDialog open={open} onOpenChange={setOpen} />
-    </Card>
-  );
-}
-
-function RulesCard() {
-  const qc = useQueryClient();
-  const [editing, setEditing] = useState<Rule | null>(null);
-  const [open, setOpen] = useState(false);
-  const { data } = useQuery(rulesQuery);
-  const { data: acctData } = useQuery(accountsQuery);
-  const { data: cats } = useQuery(categoriesQuery);
-  const { data: goalData } = useQuery(goalsQuery);
-  const del = useTxnMutation((id: number) => api.del(`/rules/${id}`), () => qc.invalidateQueries({ queryKey: ["rules"] }));
-  const rules = data?.rules ?? [];
-  const accounts = acctData?.accounts ?? [];
-  const allCats = (cats?.groups ?? []).flatMap((g) => g.categories);
-  const edit = (r: Rule | null) => {
-    setEditing(r);
-    setOpen(true);
-  };
-
-  return (
-    <Card
-      title="Rules"
-      action={
-        <Button size="sm" variant="secondary" onClick={() => edit(null)}>
-          <Plus size={14} /> Add rule
-        </Button>
-      }
-    >
-      {data && rules.length === 0 ? (
-        <EmptyState icon={ListFilter} title="No rules yet">
-          Rules categorize, rename, tag or hide transactions automatically when they arrive.
-        </EmptyState>
-      ) : (
-        <ul className="-mx-4 -my-4 divide-y divide-border">
-          {rules.map((r) => {
-            const cat = allCats.find((c) => c.id === r.set_category_id);
-            const acct = accounts.find((a) => a.id === r.account_id);
-            const goal = goalData?.goals.find((g) => g.id === r.set_goal_id);
-            const actions = [
-              cat && <CategoryPill key="c" name={cat.name} icon={cat.icon} />,
-              r.set_merchant && <span key="m">rename to “{r.set_merchant}”</span>,
-              r.tags.length > 0 && <span key="t">tag {r.tags.map((t) => `“${t.name}”`).join(" ")}</span>,
-              goal && <span key="g">goal {goal.name}</span>,
-              r.set_hidden && <span key="h">hide</span>,
-            ].filter(Boolean);
-            return (
-              <li key={r.id} className="flex items-center gap-2 pr-2" data-testid="rule-row">
-                <button onClick={() => edit(r)} className="min-w-0 flex-1 px-4 py-3 text-left hover:bg-surface-2">
-                  <span className="block truncate text-sm">
-                    {ruleConditions(r).join(", ") || "Any transaction"}
-                    {acct && <span className="text-muted"> on {acct.name}</span>}
-                  </span>
-                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
-                    → {actions.map((a, i) => <span key={i} className="inline-flex items-center">{a}{i < actions.length - 1 && ","}</span>)}
-                  </span>
-                </button>
-                <Button size="sm" variant="danger-ghost" aria-label="Delete rule" loading={del.isPending && del.variables === r.id} onClick={() => del.mutate(r.id)}>
-                  <Trash2 size={14} />
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      <FormError error={del.error} />
-      <RuleDialog open={open} onOpenChange={setOpen} rule={editing} accounts={accounts} />
     </Card>
   );
 }

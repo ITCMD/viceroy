@@ -96,7 +96,7 @@ func (s *Service) Setup(ctx context.Context, in SetupInput) (db.User, error) {
 	if err != nil {
 		return db.User{}, err
 	}
-	if err := q.AddHouseholdMember(ctx, db.AddHouseholdMemberParams{HouseholdID: h.ID, UserID: u.ID, Role: "owner"}); err != nil {
+	if err := q.AddHouseholdMember(ctx, db.AddHouseholdMemberParams{HouseholdID: h.ID, UserID: u.ID, Role: "owner", JoinedAt: now}); err != nil {
 		return db.User{}, err
 	}
 	if err := categorize.SeedDefaults(ctx, q, h.ID); err != nil {

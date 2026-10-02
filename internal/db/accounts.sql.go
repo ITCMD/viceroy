@@ -1496,6 +1496,27 @@ func (q *Queries) SetAccountOffered(ctx context.Context, arg SetAccountOfferedPa
 	return err
 }
 
+const setAccountOwner = `-- name: SetAccountOwner :exec
+UPDATE accounts SET owner_user_id = ?, updated_at = ? WHERE id = ? AND household_id = ?
+`
+
+type SetAccountOwnerParams struct {
+	OwnerUserID sql.NullInt64 `json:"owner_user_id"`
+	UpdatedAt   int64         `json:"updated_at"`
+	ID          int64         `json:"id"`
+	HouseholdID int64         `json:"household_id"`
+}
+
+func (q *Queries) SetAccountOwner(ctx context.Context, arg SetAccountOwnerParams) error {
+	_, err := q.db.ExecContext(ctx, setAccountOwner,
+		arg.OwnerUserID,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.HouseholdID,
+	)
+	return err
+}
+
 const setAccountReplaced = `-- name: SetAccountReplaced :exec
 UPDATE accounts SET status = 'ignored', hidden = 1, offered_at = NULL, review_candidate_id = NULL,
     replaced_by = ?, updated_at = ?

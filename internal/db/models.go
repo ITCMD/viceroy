@@ -240,10 +240,24 @@ type Household struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+type HouseholdInvite struct {
+	ID          int64         `json:"id"`
+	HouseholdID int64         `json:"household_id"`
+	UserID      sql.NullInt64 `json:"user_id"`
+	Label       string        `json:"label"`
+	TokenHash   []byte        `json:"token_hash"`
+	CreatedBy   sql.NullInt64 `json:"created_by"`
+	CreatedAt   int64         `json:"created_at"`
+	ExpiresAt   int64         `json:"expires_at"`
+	UsedAt      sql.NullInt64 `json:"used_at"`
+	RevokedAt   sql.NullInt64 `json:"revoked_at"`
+}
+
 type HouseholdMember struct {
 	HouseholdID int64  `json:"household_id"`
 	UserID      int64  `json:"user_id"`
 	Role        string `json:"role"`
+	JoinedAt    int64  `json:"joined_at"`
 }
 
 type HouseholdSetting struct {

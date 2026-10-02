@@ -37,6 +37,7 @@ export type Account = {
   offered: boolean;
   /** Replaced by this account (a sync duplicate); kept hidden so its bank link isn't offered again. */
   replaced_by: number | null;
+  owner_id: number | null; // household member, null = shared
 };
 
 /** Payment state read from bank emails by the AI. Cents; dates YYYY-MM-DD. */

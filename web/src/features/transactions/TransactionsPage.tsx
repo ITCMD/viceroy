@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { householdQuery, ownerName } from "@/features/household/api";
 import clsx from "clsx";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { ArrowLeftRight, ChevronDown, EyeOff, Link2, Mail, Plus, Search, Sparkles, X } from "lucide-react";
@@ -22,6 +23,8 @@ export function TransactionsPage() {
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [account, setAccount] = useState(0);
+  const [owner, setOwner] = useState(-1); // -1 = everyone, 0 = shared
+  const members = useQuery(householdQuery).data?.members ?? [];
   const [view, setView] = useState<NonNullable<TxnFilters["view"]>>("all");
   const [hidden, setHidden] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
@@ -39,7 +42,7 @@ export function TransactionsPage() {
   const routerSearch = useRouterState({ select: (s) => s.location.search as Record<string, unknown> });
   const link = useMemo(() => readTxnLink(routerSearch), [routerSearch]);
   const navigate = useNavigate();
-  const filters: TxnFilters = { ...link, account: account || undefined, q: q || undefined, view, hidden };
+  const filters: TxnFilters = { ...link, account: account || undefined, owner: owner >= 0 ? owner : undefined, q: q || undefined, view, hidden };
   const list = useInfiniteQuery(transactionsQuery(filters));
   const txns = useMemo(() => list.data?.pages.flatMap((p) => p.transactions) ?? [], [list.data]);
   const days = useMemo(() => {
@@ -51,7 +54,7 @@ export function TransactionsPage() {
     return out;
   }, [txns]);
   const linked = !!(link.category || link.goal || link.from || link.to);
-  const filtered = !!(q || account || view !== "all" || linked);
+  const filtered = !!(q || account || owner >= 0 || view !== "all" || linked);
 
   return (
     <>
@@ -98,6 +101,25 @@ export function TransactionsPage() {
             </select>
             <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted" />
           </label>
+          {members.length > 1 && (
+            <label className="relative">
+              <span className="sr-only">Owner</span>
+              <select
+                value={owner}
+                onChange={(e) => setOwner(Number(e.target.value))}
+                className="h-9 max-w-40 appearance-none rounded-lg border border-border bg-surface pl-3 pr-8 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              >
+                <option value={-1}>Everyone</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {ownerName(members, m.id)}
+                  </option>
+                ))}
+                <option value={0}>Shared</option>
+              </select>
+              <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted" />
+            </label>
+          )}
         </div>
         {linked && <LinkChip link={link} onClear={() => navigate({ to: "/transactions" as string, search: {} as never, replace: true })} />}
         <div className="flex flex-wrap items-center justify-between gap-2">

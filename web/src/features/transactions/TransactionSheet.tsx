@@ -5,10 +5,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, CategoryPicker, Field, FormError, MoneyText, Select, Sheet, Switch, TagInput, TextArea } from "@/components/ui";
 import { goalsQuery } from "@/features/goals/api";
 import { accountLabel, accountsQuery } from "@/features/accounts/api";
-import { RuleDialog } from "@/features/settings/RuleDialog";
+import { householdQuery, ownerName } from "@/features/household/api";
+import { RuleDialog } from "@/features/rules/RuleDialog";
 import { cadenceLabels, dueLabel } from "@/features/recurring/api";
 import { RecurringItemDialog, type RecurringDraft } from "@/features/recurring/RecurringItemDialog";
-import type { RuleDraft } from "@/features/settings/rules";
+import type { RuleDraft } from "@/features/rules/rules";
 import { EmailViewer } from "@/features/email/EmailSettings";
 import { api } from "@/lib/api";
 import {
@@ -98,6 +99,8 @@ function Details({
   const { data: goalData } = useQuery(goalsQuery);
   const { data: acctData } = useQuery(accountsQuery);
   const goals = (goalData?.goals ?? []).filter((g) => !g.archived || g.id === t.goal_id);
+  const members = useQuery(householdQuery).data?.members ?? [];
+  const acctOwner = acctData?.accounts.find((a) => a.id === t.account_id)?.owner_id ?? null;
   useEffect(() => {
     setMerchant(t.merchant);
     setNotes(t.notes);
@@ -165,6 +168,17 @@ function Details({
           onChange={(tags) => patch.mutate({ tags })}
           suggestions={(tagData?.tags ?? []).map((x) => x.name)}
         />
+        {members.length > 1 && (
+          <Select
+            label="Owner"
+            value={t.owner_set ? String(t.owner_id ?? "") : "account"}
+            onChange={(e) => patch.mutate({ owner_id: e.target.value === "account" ? null : Number(e.target.value) })}
+            options={[
+              { value: "account", label: `Same as account (${ownerName(members, acctOwner)})` },
+              ...members.map((m) => ({ value: String(m.id), label: m.name })),
+            ]}
+          />
+        )}
         {goals.length > 0 && (
           <div className="flex flex-col gap-2">
             <Select

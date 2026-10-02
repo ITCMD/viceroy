@@ -288,3 +288,6 @@ WHERE id = ?;
 
 -- name: ClearAdoptRows :exec
 UPDATE accounts SET adopt_rows = 0 WHERE id = ?;
+
+-- name: SetAccountOwner :exec
+UPDATE accounts SET owner_user_id = ?, updated_at = ? WHERE id = ? AND household_id = ?;

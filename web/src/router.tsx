@@ -5,6 +5,8 @@ import { AppShell } from "@/components/AppShell";
 import { navItems } from "@/components/nav";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { SetupPage } from "@/features/auth/SetupPage";
+import { JoinPage } from "@/features/auth/JoinPage";
+import { RulesPage } from "@/features/rules/RulesPage";
 import { AccountsPage } from "@/features/accounts/AccountsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TransactionsPage } from "@/features/transactions/TransactionsPage";
@@ -42,6 +44,9 @@ const loginRoute = createRoute({
   component: LoginPage,
 });
 
+// Invite and password reset links work whether or not someone is signed in.
+const joinRoute = createRoute({ getParentRoute: () => rootRoute, path: "/join/$token", component: JoinPage });
+
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
@@ -66,6 +71,7 @@ const pages: Record<string, () => React.ReactNode> = {
   "/goals": GoalsPage,
   "/wishlist": WishlistPage,
   "/recurring": RecurringPage,
+  "/rules": RulesPage,
   "/settings": SettingsPage,
 };
 
@@ -80,7 +86,7 @@ const pageRoutes = navItems.map((item) =>
 // Pages that aren't in the navigation.
 const extraRoutes = [createRoute({ getParentRoute: () => appRoute, path: "/settings/api-docs", component: ApiDocsPage })];
 
-const routeTree = rootRoute.addChildren([setupRoute, loginRoute, appRoute.addChildren([...pageRoutes, ...extraRoutes])]);
+const routeTree = rootRoute.addChildren([setupRoute, loginRoute, joinRoute, appRoute.addChildren([...pageRoutes, ...extraRoutes])]);
 
 export function makeRouter(queryClient: QueryClient) {
   return createRouter({ routeTree, context: { queryClient }, defaultPreload: "intent" });

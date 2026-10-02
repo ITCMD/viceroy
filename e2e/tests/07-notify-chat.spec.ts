@@ -23,6 +23,8 @@ const thisMonth = () => {
 test("notification settings, test alert and the bell", async ({ page }) => {
   await login(page);
   await page.goto("/settings");
+  await page.getByRole("tab", { name: "Notifications" }).click();
+  await expect(page).toHaveURL(/tab=notifications/);
   const card = page.locator("section", { has: page.getByRole("heading", { name: "Notifications" }) });
   await expect(card.getByText("Alert me when")).toBeVisible();
 

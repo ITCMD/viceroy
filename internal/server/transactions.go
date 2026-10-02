@@ -79,6 +79,8 @@ type txnDTO struct {
 	GoalID         *int64   `json:"goal_id"`
 	GoalWithdrawal bool     `json:"goal_withdrawal"`
 	Tags           []tagDTO `json:"tags"`
+	OwnerID        *int64   `json:"owner_id"`  // the transaction's owner, else its account's; nil = shared
+	OwnerSet       bool     `json:"owner_set"` // owner chosen on the transaction itself (not inherited)
 }
 
 func toTxnDTO(t db.ListTransactionsRow) txnDTO {
@@ -96,6 +98,7 @@ func toTxnDTO(t db.ListTransactionsRow) txnDTO {
 		Hidden: t.Hidden == 1, NeedsReview: t.NeedsReview == 1, Pending: t.Pending == 1,
 		Provisional: t.Provisional == 1, Source: t.Source, HasLinked: t.HasLinked, LinkedSource: t.LinkedSource,
 		LinkedTxnID: ptr(t.LinkedTxnID), GoalID: ptr(t.GoalID), GoalWithdrawal: t.GoalWithdrawal == 1, Tags: []tagDTO{},
+		OwnerID: nonZero(t.OwnerID), OwnerSet: t.OwnerUserID.Valid,
 	}
 }
 
@@ -140,6 +143,9 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 	}
 	if v, ok := queryInt(r, "goal"); ok {
 		p.GoalID = v
+	}
+	if v, ok := queryInt(r, "owner"); ok { // 0 = shared
+		p.OwnerID = v
 	}
 	// from/to (YYYY-MM-DD, inclusive), e.g. a budget period.
 	p.FromDate, p.ToDate = qs.Get("from"), qs.Get("to")
@@ -412,7 +418,8 @@ type updateTxnIn struct {
 	Hidden      *bool           `json:"hidden"`
 	NeedsReview *bool           `json:"needs_review"`
 	Tags        []string        `json:"tags"`
-	GoalID      json.RawMessage `json:"goal_id"` // number, or null for none
+	GoalID      json.RawMessage `json:"goal_id"`  // number, or null for none
+	OwnerID     json.RawMessage `json:"owner_id"` // member id, or null to follow the account's owner
 	// GoalWithdrawal marks the transaction as money spent from its goal rather than put in.
 	GoalWithdrawal *bool `json:"goal_withdrawal"`
 	// Manual transactions only.
@@ -493,6 +500,17 @@ func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request)
 			t.GoalID = sql.NullInt64{Int64: id, Valid: true}
 		}
 		if err := q.SetTransactionGoal(ctx, db.SetTransactionGoalParams{GoalID: t.GoalID, ID: t.ID, HouseholdID: hh}); err != nil {
+			s.internalError(w, err)
+			return
+		}
+	}
+	if len(in.OwnerID) > 0 {
+		owner, ok := s.parseOwner(ctx, hh, in.OwnerID)
+		if !ok {
+			bad("Unknown household member.")
+			return
+		}
+		if err := q.SetTransactionOwner(ctx, db.SetTransactionOwnerParams{OwnerUserID: owner, ID: t.ID, HouseholdID: hh}); err != nil {
 			s.internalError(w, err)
 			return
 		}
@@ -743,4 +761,27 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 		out[i] = tagDTO{ID: t.ID, Name: t.Name, Color: t.Color}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tags": out})
+}
+
+func nonZero(v int64) *int64 {
+	if v == 0 {
+		return nil
+	}
+	return &v
+}
+
+// parseOwner reads an owner field: a household member's id, or null for none.
+func (s *Server) parseOwner(ctx context.Context, hh int64, raw json.RawMessage) (sql.NullInt64, bool) {
+	if string(raw) == "null" {
+		return sql.NullInt64{}, true
+	}
+	var id int64
+	if json.Unmarshal(raw, &id) != nil {
+		return sql.NullInt64{}, false
+	}
+	h, err := db.New(s.db).GetUserHousehold(ctx, id)
+	if err != nil || h.ID != hh {
+		return sql.NullInt64{}, false
+	}
+	return sql.NullInt64{Int64: id, Valid: true}, true
 }
