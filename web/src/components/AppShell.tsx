@@ -1,7 +1,8 @@
-import { Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { LogOut } from "lucide-react";
+import { DropdownMenu } from "radix-ui";
+import { LogOut, MoreHorizontal } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRefreshSession, useSession } from "@/lib/session";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
@@ -76,7 +77,44 @@ export function AppShell() {
               {label}
             </Link>
           ))}
+        <MoreTab onSignOut={() => logout.mutate()} />
       </nav>
     </div>
+  );
+}
+
+const moreItems = navItems.filter((n) => !n.mobile);
+
+/** Phone tab bar overflow: every page that isn't a tab, plus sign out. */
+function MoreTab({ onSignOut }: { onSignOut: () => void }) {
+  const path = useLocation({ select: (l) => l.pathname });
+  const navigate = useNavigate();
+  const active = moreItems.some((n) => path === n.to || path.startsWith(n.to + "/"));
+  const item = "flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-[14px] outline-none data-[highlighted]:bg-surface-2";
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger className={"flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium outline-none " + (active ? "text-accent" : "text-muted")}>
+        <MoreHorizontal size={20} />
+        More
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content side="top" align="end" sideOffset={6} collisionPadding={8} className="z-[60] min-w-52 rounded-lg border border-border bg-surface p-1 shadow-xl">
+          {moreItems.map(({ to, label, icon: Icon }) => {
+            const on = path === to || path.startsWith(to + "/");
+            return (
+              <DropdownMenu.Item key={to} onSelect={() => navigate({ to })} className={item + (on ? " text-accent" : "")}>
+                <Icon size={18} className={on ? "text-accent" : "text-muted"} />
+                {label}
+              </DropdownMenu.Item>
+            );
+          })}
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <DropdownMenu.Item onSelect={onSignOut} className={item}>
+            <LogOut size={18} className="text-muted" />
+            Sign out
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }

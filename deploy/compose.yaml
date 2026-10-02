@@ -1,0 +1,24 @@
+# docker compose -f deploy/compose.yaml up -d
+# Then open http://<this machine>:8420. Settings live in the viceroy-data volume
+# (/data/viceroy.toml); edit it with: docker compose -f deploy/compose.yaml exec ... (see docs/DEPLOY.md).
+services:
+  viceroy:
+    build:
+      context: ..
+    image: viceroy:latest
+    container_name: viceroy
+    restart: unless-stopped
+    ports:
+      - "8420:8420"
+    environment:
+      # Who may connect. This overrides allowed_cidrs in viceroy.toml. The default allows
+      # private networks only: your LAN, and the host itself (Docker's 172.16.0.0/12 bridge).
+      VICEROY_ALLOWED_CIDRS: "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      # Behind a reverse proxy, also set (and use the proxy's address):
+      # VICEROY_TRUSTED_PROXIES: "172.16.0.0/12"
+      # VICEROY_PUBLIC_URL: "https://viceroy.example.com"
+      TZ: "America/New_York" # dates follow this timezone
+    volumes:
+      - viceroy-data:/data
+volumes:
+  viceroy-data:

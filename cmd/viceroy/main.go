@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,11 +16,13 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // TZ works in minimal containers
 
 	"viceroy/internal/accounts"
 	"viceroy/internal/aicat"
 	"viceroy/internal/aisettings"
 	"viceroy/internal/auth"
+	"viceroy/internal/backup"
 	"viceroy/internal/branding"
 	"viceroy/internal/categorize"
 	"viceroy/internal/config"
@@ -35,9 +38,19 @@ import (
 const usage = `Usage: viceroy [-config path] <command>
 
 Commands:
-  init    write a default viceroy.toml
-  serve   run the server (default)
-`
+  init               write a default viceroy.toml
+  serve [-init]      run the server (default); -init writes viceroy.toml first if it's missing
+  backup [-o file]   write a backup now (default: into the backup dir from the config)
+  restore <file>     restore a backup into data_dir (stop the server first)
+  reset-password <email>
+                     print a one-time link to set a new password for that user
+  version            print the version
+
+Environment overrides (useful in containers): ` + "VICEROY_LISTEN, VICEROY_ALLOWED_CIDRS (comma-separated),\n" +
+	"VICEROY_TRUSTED_PROXIES, VICEROY_PUBLIC_URL, VICEROY_DATA_DIR, VICEROY_BACKUP_KEEP.\n\n"
+
+// version is set at build time with -ldflags "-X main.version=...".
+var version = "dev"
 
 func main() {
 	fl := flag.NewFlagSet("viceroy", flag.ExitOnError)
@@ -45,16 +58,49 @@ func main() {
 	cfgPath := fl.String("config", "viceroy.toml", "path to config file")
 	fl.Parse(os.Args[1:])
 
-	cmd := fl.Arg(0)
+	cmd, args := fl.Arg(0), fl.Args()
 	if cmd == "" {
 		cmd = "serve"
+	} else {
+		args = args[1:]
 	}
 	var err error
 	switch cmd {
 	case "init":
 		err = runInit(*cfgPath)
 	case "serve":
-		err = runServe(*cfgPath)
+		sf := flag.NewFlagSet("serve", flag.ExitOnError)
+		initFirst := sf.Bool("init", false, "write a default config first if it doesn't exist")
+		sf.Parse(args)
+		if *initFirst {
+			if err = config.WriteTemplate(*cfgPath); errors.Is(err, fs.ErrExist) {
+				err = nil
+			} else if err == nil {
+				fmt.Fprintf(os.Stderr, "viceroy: wrote default config to %s\n", *cfgPath)
+			}
+		}
+		if err == nil {
+			err = runServe(*cfgPath)
+		}
+	case "backup":
+		bf := flag.NewFlagSet("backup", flag.ExitOnError)
+		out := bf.String("o", "", "write the backup to this file instead of the backup dir")
+		bf.Parse(args)
+		err = runBackup(*cfgPath, *out)
+	case "restore":
+		if len(args) != 1 {
+			fl.Usage()
+			os.Exit(2)
+		}
+		err = runRestore(*cfgPath, args[0])
+	case "reset-password":
+		if len(args) != 1 {
+			fl.Usage()
+			os.Exit(2)
+		}
+		err = runResetPassword(*cfgPath, args[0])
+	case "version":
+		fmt.Println("viceroy", version)
 	default:
 		fl.Usage()
 		os.Exit(2)
@@ -76,14 +122,100 @@ func runInit(path string) error {
 	return nil
 }
 
-func runServe(path string) error {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+func loadConfig(path string) (config.Config, error) {
 	cfg, err := config.Load(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("%s not found; run `viceroy init` first", path)
+		return cfg, fmt.Errorf("%s not found; run `viceroy init` first", path)
+	}
+	return cfg, err
+}
+
+func runBackup(cfgPath, out string) error {
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+	conn, err := db.OpenExisting(filepath.Join(cfg.DataDir, backup.DBFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("no database in %s yet; nothing to back up", cfg.DataDir)
 	}
 	if err != nil {
 		return err
+	}
+	defer conn.Close()
+	b := &backup.Service{DB: conn, DataDir: cfg.DataDir, Dir: cfg.Backup.Dir, Config: cfgPath}
+	ctx := context.Background()
+	if out != "" {
+		if err := b.WriteTo(ctx, out); err != nil {
+			return err
+		}
+		fmt.Println("Wrote", out)
+		return nil
+	}
+	info, err := b.Create(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Wrote %s (%d KB)\n", info.Path, (info.Size+1023)/1024)
+	return nil
+}
+
+func runRestore(cfgPath, archive string) error {
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+	// A running server would keep writing to the old database file.
+	if ln, err := net.Listen("tcp", cfg.Listen); err != nil {
+		return fmt.Errorf("can't bind %s (%v); stop the server before restoring", cfg.Listen, err)
+	} else {
+		ln.Close()
+	}
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+		return err
+	}
+	files, err := backup.Restore(context.Background(), archive, cfg.DataDir, time.Now())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Restored %s into %s. The previous files were kept with a .before-restore suffix.\n", strings.Join(files, ", "), cfg.DataDir)
+	fmt.Println("Start the server again: viceroy serve")
+	return nil
+}
+
+func runResetPassword(cfgPath, email string) error {
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+	conn, err := db.OpenExisting(filepath.Join(cfg.DataDir, backup.DBFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("no database in %s yet", cfg.DataDir)
+	}
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	inv, u, err := auth.New(conn).ResetLinkFor(context.Background(), email)
+	if err != nil {
+		return err
+	}
+	base := strings.TrimRight(cfg.PublicURL, "/")
+	if base == "" {
+		base = "http://" + cfg.Listen
+	}
+	fmt.Printf("Password reset link for %s (valid %d days, works once):\n%s/join/%s\n", u.Name, int(auth.InviteTTL.Hours()/24), base, inv.Token)
+	return nil
+}
+
+func runServe(path string) error {
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	cfg, err := loadConfig(path)
+	if err != nil {
+		return err
+	}
+	if len(cfg.EnvSet) > 0 {
+		log.Info("environment overrides config file", "vars", strings.Join(cfg.EnvSet, ","))
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return err
@@ -144,6 +276,7 @@ func runServe(path string) error {
 		return err
 	}
 	api := server.New(cfg, conn, webFS, log, sync, mail, notifier, aiset)
+	api.ConfigPath = path
 	api.Changed = colors.Changed // new manual accounts; synced ones come through sync.Changed
 	srv := &http.Server{
 		Addr:              cfg.Listen,
@@ -161,6 +294,7 @@ func runServe(path string) error {
 	go mail.Run(ctx)
 	go notifier.Run(ctx)
 	go mail.RunAI(ctx)
+	go (&backup.Service{DB: conn, DataDir: cfg.DataDir, Dir: cfg.Backup.Dir, Config: path, Keep: cfg.Backup.Keep, Log: log}).Run(ctx)
 
 	errc := make(chan error, 1)
 	go func() {
@@ -168,7 +302,7 @@ func runServe(path string) error {
 		if cfg.TLS.Cert != "" {
 			scheme = "https"
 		}
-		log.Info("viceroy listening", "url", fmt.Sprintf("%s://%s", scheme, cfg.Listen), "allowed", cfg.AllowedCIDRs)
+		log.Info("viceroy listening", "version", version, "url", fmt.Sprintf("%s://%s", scheme, cfg.Listen), "allowed", cfg.AllowedCIDRs)
 		if cfg.TLS.Cert != "" {
 			errc <- srv.ListenAndServeTLS(cfg.TLS.Cert, cfg.TLS.Key)
 		} else {

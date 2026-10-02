@@ -12,6 +12,7 @@ import { NotificationSettingsCard } from "@/features/notifications/NotificationS
 import { api } from "@/lib/api";
 import { ApiSettingsCard } from "@/features/api/ApiSettingsCard";
 import { AISettingsCard } from "./AISettingsCard";
+import { BackupsCard } from "./BackupsCard";
 import { BudgetSettingsCard } from "./BudgetSettingsCard";
 import { CategoriesSettings } from "./CategoriesSettings";
 import { settingsQuery, type Settings } from "./settings";
@@ -94,6 +95,9 @@ function GeneralSettings() {
         <ApiSettingsCard />
       </div>
       <EmailSettings />
+      <div id="backups" className="scroll-mt-16">
+        <BackupsCard />
+      </div>
     </>
   );
 }

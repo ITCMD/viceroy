@@ -41,6 +41,8 @@ var apiDocs = []apiDoc{
 	only("public", doc("General", "GET", "/invites/{token}", "What a join or password reset link is for (household, who sent it, email for resets).", "")),
 	only("public", doc("General", "POST", "/invites/{token}/accept", "Use a link: join the household (name, email, password) or set a new password (password). Signs in.", "name, email, password")),
 	doc("Household", "GET", "/household", "Household name, members, and open links (admins only see links).", ""),
+	only("session", doc("Settings", "GET", "/settings/backups", "Backup folder, how many are kept, and the backups there, newest first (admin).", "")),
+	only("session", doc("Settings", "POST", "/settings/backups", "Back up the database and keys now; returns the updated list (admin).", "")),
 	only("session", doc("Household", "PATCH", "/household", "Rename the household (admin).", "name")),
 	only("session", doc("Household", "POST", "/household/invites", "Create a one-time link valid for 7 days; the token is returned once (admin). With user_id it's a password reset link for that member.", "label, user_id")),
 	only("session", doc("Household", "DELETE", "/household/invites/{id}", "Cancel a link (admin).", "")),

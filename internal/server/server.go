@@ -47,6 +47,9 @@ type Server struct {
 	models         modelCache
 	wish           *wishlist.Fetcher
 
+	// ConfigPath is the config file, included in backups made from Settings.
+	ConfigPath string
+
 	// Changed, when set, is told about every successful change made through the API (after
 	// the notifier), e.g. to color new accounts.
 	Changed func(householdID int64)
@@ -98,6 +101,7 @@ func (s *Server) Handler() http.Handler {
 			s.aiSettingsRoutes(r)
 			s.apiKeyRoutes(r)
 			s.householdRoutes(r)
+			s.backupRoutes(r)
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")

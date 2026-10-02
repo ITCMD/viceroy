@@ -1,0 +1,56 @@
+# systemd unit for Viceroy. Install (see docs/DEPLOY.md):
+#   sudo useradd --system --home-dir /var/lib/viceroy --shell /usr/sbin/nologin viceroy
+#   sudo install -m 755 bin/viceroy /usr/local/bin/viceroy
+#   sudo install -d -m 750 -g viceroy /etc/viceroy
+#   sudo viceroy -config /etc/viceroy/viceroy.toml init && sudo chgrp viceroy /etc/viceroy/viceroy.toml && sudo chmod 640 /etc/viceroy/viceroy.toml
+#   sudo install -m 644 deploy/viceroy.service /etc/systemd/system/ && sudo systemctl enable --now viceroy
+[Unit]
+Description=Viceroy budgeting server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=viceroy
+Group=viceroy
+ExecStart=/usr/local/bin/viceroy -config /etc/viceroy/viceroy.toml serve
+Restart=on-failure
+RestartSec=5
+# The database, keys and daily backups live in /var/lib/viceroy (created by systemd).
+Environment=VICEROY_DATA_DIR=/var/lib/viceroy
+StateDirectory=viceroy
+StateDirectoryMode=0700
+UMask=0077
+# If backup.dir points elsewhere, let the service write there:
+# ReadWritePaths=/mnt/backups/viceroy
+
+# Sandboxing
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Listening on a port below 1024 (e.g. 443 with built-in TLS) needs instead:
+# CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

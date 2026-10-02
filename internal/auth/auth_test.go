@@ -94,3 +94,25 @@ func TestLoginAndSessions(t *testing.T) {
 		t.Fatalf("after logout err = %v", err)
 	}
 }
+
+func TestResetLinkFor(t *testing.T) {
+	ctx := context.Background()
+	s := newService(t)
+	u, err := s.Setup(ctx, validSetup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.ResetLinkFor(ctx, "nobody@example.com"); err == nil {
+		t.Error("made a link for an unknown email")
+	}
+	inv, got, err := s.ResetLinkFor(ctx, " lucas@example.com ")
+	if err != nil || got.ID != u.ID {
+		t.Fatalf("ResetLinkFor = %v, %v", got.ID, err)
+	}
+	if _, err := s.AcceptInvite(ctx, inv.Token, AcceptInput{Password: "a brand new password"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Login(ctx, validSetup.Email, "a brand new password"); err != nil {
+		t.Errorf("login with the new password: %v", err)
+	}
+}

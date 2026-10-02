@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -19,8 +20,12 @@ type Config struct {
 	DataDir        string   `toml:"data_dir"`
 	PublicURL      string   `toml:"public_url"`
 
-	TLS TLSConfig `toml:"tls"`
-	AI  AIConfig  `toml:"ai"`
+	TLS    TLSConfig    `toml:"tls"`
+	AI     AIConfig     `toml:"ai"`
+	Backup BackupConfig `toml:"backup"`
+
+	// EnvSet lists the VICEROY_* variables that overrode the file.
+	EnvSet []string `toml:"-"`
 
 	// Parsed forms, filled by Validate.
 	Allowed []netip.Prefix `toml:"-"`
@@ -30,6 +35,11 @@ type Config struct {
 type TLSConfig struct {
 	Cert string `toml:"cert"`
 	Key  string `toml:"key"`
+}
+
+type BackupConfig struct {
+	Dir  string `toml:"dir"`  // "" = data_dir/backups
+	Keep int    `toml:"keep"` // daily backups kept; 0 = no automatic backups
 }
 
 type AIConfig struct {
@@ -49,6 +59,7 @@ func Default() Config {
 		TrustedProxies: []string{},
 		DataDir:        "./data",
 		AI:             AIConfig{ChatModel: "anthropic/claude-sonnet-5.5", LocalCategorizer: true},
+		Backup:         BackupConfig{Keep: 14},
 	}
 }
 
@@ -67,10 +78,65 @@ func Load(path string) (Config, error) {
 		}
 		return cfg, fmt.Errorf("%s: unknown keys: %s", path, strings.Join(keys, ", "))
 	}
+	if err := cfg.applyEnv(); err != nil {
+		return cfg, err
+	}
+	base := filepath.Dir(path)
 	if !filepath.IsAbs(cfg.DataDir) {
-		cfg.DataDir = filepath.Join(filepath.Dir(path), cfg.DataDir)
+		cfg.DataDir = filepath.Join(base, cfg.DataDir)
+	}
+	if abs, err := filepath.Abs(cfg.DataDir); err == nil {
+		cfg.DataDir = abs
+	}
+	if cfg.Backup.Dir == "" {
+		cfg.Backup.Dir = filepath.Join(cfg.DataDir, "backups")
+	} else if !filepath.IsAbs(cfg.Backup.Dir) {
+		cfg.Backup.Dir, _ = filepath.Abs(filepath.Join(base, cfg.Backup.Dir))
 	}
 	return cfg, cfg.Validate()
+}
+
+// Env lists the environment variables that override the file (handy in containers).
+var Env = []string{"VICEROY_LISTEN", "VICEROY_ALLOWED_CIDRS", "VICEROY_TRUSTED_PROXIES", "VICEROY_PUBLIC_URL", "VICEROY_DATA_DIR", "VICEROY_BACKUP_KEEP"}
+
+func (c *Config) applyEnv() error {
+	for _, k := range Env {
+		if _, ok := os.LookupEnv(k); ok {
+			c.EnvSet = append(c.EnvSet, k)
+		}
+	}
+	list := func(v string) []string {
+		var out []string
+		for _, s := range strings.Split(v, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	if v, ok := os.LookupEnv("VICEROY_LISTEN"); ok {
+		c.Listen = v
+	}
+	if v, ok := os.LookupEnv("VICEROY_ALLOWED_CIDRS"); ok {
+		c.AllowedCIDRs = list(v)
+	}
+	if v, ok := os.LookupEnv("VICEROY_TRUSTED_PROXIES"); ok {
+		c.TrustedProxies = list(v)
+	}
+	if v, ok := os.LookupEnv("VICEROY_PUBLIC_URL"); ok {
+		c.PublicURL = v
+	}
+	if v, ok := os.LookupEnv("VICEROY_DATA_DIR"); ok {
+		c.DataDir = v
+	}
+	if v, ok := os.LookupEnv("VICEROY_BACKUP_KEEP"); ok {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return fmt.Errorf("VICEROY_BACKUP_KEEP: %w", err)
+		}
+		c.Backup.Keep = n
+	}
+	return nil
 }
 
 func (c *Config) Validate() error {
@@ -90,6 +156,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Proxies, err = parsePrefixes(c.TrustedProxies); err != nil {
 		errs = append(errs, fmt.Errorf("trusted_proxies: %w", err))
+	}
+	if c.Backup.Keep < 0 {
+		errs = append(errs, errors.New("backup.keep must be 0 or more"))
 	}
 	if (c.TLS.Cert == "") != (c.TLS.Key == "") {
 		errs = append(errs, errors.New("tls.cert and tls.key must be set together"))
@@ -143,6 +212,13 @@ data_dir = "./data"
 
 # Public HTTPS URL, e.g. "https://viceroy.example.com". Needed for PWA install and push.
 public_url = ""
+
+[backup]
+# Daily backups of the database and keys (the server makes one when the last is a day old).
+# Empty dir = <data_dir>/backups. Put it on another disk if you can.
+dir = ""
+# How many daily backups to keep. 0 turns automatic backups off (viceroy backup still works).
+keep = 14
 
 [tls]
 # Optional built-in TLS. Leave empty when using a reverse proxy.

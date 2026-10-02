@@ -1,4 +1,6 @@
-.PHONY: all web build test run dev clean
+.PHONY: all web build test run dev clean docker
+
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 all: build
 
@@ -6,7 +8,7 @@ web:
 	cd web && npm ci && npm run build
 
 build: web
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/viceroy ./cmd/viceroy
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" -o bin/viceroy ./cmd/viceroy
 	CGO_ENABLED=0 go build -o bin/fakesimplefin ./cmd/fakesimplefin
 	CGO_ENABLED=0 go build -o bin/fakeimap ./cmd/fakeimap
 	CGO_ENABLED=0 go build -o bin/fakeopenrouter ./cmd/fakeopenrouter
@@ -22,6 +24,9 @@ run: build
 
 dev-web:
 	cd web && npm run dev
+
+docker:
+	docker build --build-arg VERSION=$(VERSION) -t viceroy:$(VERSION) -t viceroy:latest .
 
 sqlc:
 	go tool sqlc generate

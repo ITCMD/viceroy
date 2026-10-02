@@ -1,0 +1,9 @@
+.git
+bin
+data
+e2e
+**/node_modules
+web/dist
+web/.vite
+viceroy.toml
+*.db*

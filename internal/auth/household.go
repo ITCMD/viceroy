@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/mail"
 	"strings"
 	"time"
@@ -257,4 +258,23 @@ func (s *Service) ChangeEmail(ctx context.Context, userID int64, current, email 
 		return ErrEmailTaken // lost a race with another signup
 	}
 	return err
+}
+
+// ResetLinkFor makes a password reset link for the user with this email. It backs the
+// `viceroy reset-password` command, for when no other admin can make one in the app.
+func (s *Service) ResetLinkFor(ctx context.Context, email string) (Invite, db.User, error) {
+	q := s.q()
+	u, err := q.GetUserByEmail(ctx, strings.TrimSpace(email))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Invite{}, u, fmt.Errorf("no user with email %q", strings.TrimSpace(email))
+	}
+	if err != nil {
+		return Invite{}, u, err
+	}
+	h, err := q.GetUserHousehold(ctx, u.ID)
+	if err != nil {
+		return Invite{}, u, err
+	}
+	inv, err := s.CreateInvite(ctx, h.ID, u.ID, u.ID, "Reset from the command line")
+	return inv, u, err
 }

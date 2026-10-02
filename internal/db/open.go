@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
@@ -16,8 +17,7 @@ var migrations embed.FS
 
 // Open opens (creating if needed) the SQLite database at path and applies migrations.
 func Open(path string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)", path)
-	conn, err := sql.Open("sqlite", dsn)
+	conn, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
 		return nil, err
 	}
@@ -26,6 +26,19 @@ func Open(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	return conn, nil
+}
+
+// OpenExisting opens the database at path without creating or migrating it,
+// for tools (like backup) that run next to a live server.
+func OpenExisting(path string) (*sql.DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	return sql.Open("sqlite", dsn(path))
+}
+
+func dsn(path string) string {
+	return fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)", path)
 }
 
 func Migrate(conn *sql.DB) error {
