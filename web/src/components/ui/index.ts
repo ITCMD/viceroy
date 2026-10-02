@@ -17,3 +17,4 @@ export { TextArea } from "./TextArea";
 export { Segmented } from "./Segmented";
 export { StatTile } from "./StatTile";
 export { Markdown } from "./Markdown";
+export { Menu } from "./Menu";

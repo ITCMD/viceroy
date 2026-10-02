@@ -5,6 +5,7 @@ import { useState, type ClipboardEvent } from "react";
 import { Badge, Button, CategoryIcon, Dialog, Field, FormError, Select, Tabs, TextArea } from "@/components/ui";
 import { aiSettingsQuery } from "@/features/settings/ai";
 import { api } from "@/lib/api";
+import { shrinkImage } from "@/lib/image";
 import { formatMoney } from "@/lib/format";
 import { budgetQuery, centsToInput, chunkLabel, monthLabel, useBudgetMutation, type Chunk } from "./api";
 
@@ -32,27 +33,6 @@ const sources: { value: Source; label: string }[] = [
   { value: "text", label: "Paste text" },
   { value: "image", label: "Screenshot" },
 ];
-
-/** Screenshots are scaled to at most 2000px and re-encoded as JPEG so uploads stay small. */
-async function shrinkImage(file: File): Promise<string> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    const scale = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(img.naturalWidth * scale);
-    canvas.height = Math.round(img.naturalHeight * scale);
-    const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = "#fff"; // transparent PNGs would turn black in JPEG
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.85);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 const toCents = (s: string) => {
   const v = Number(s.replace(/[$,\s]/g, ""));
@@ -119,7 +99,7 @@ export function BudgetImportDialog({ open, onOpenChange, month }: { open: boolea
     const imgs = files.filter((f) => f.type.startsWith("image/"));
     if (images.length + imgs.length > MAX_IMAGES) setFileError(`Up to ${MAX_IMAGES} screenshots.`);
     try {
-      const added = await Promise.all(imgs.slice(0, MAX_IMAGES - images.length).map(shrinkImage));
+      const added = await Promise.all(imgs.slice(0, MAX_IMAGES - images.length).map((f) => shrinkImage(f, 2000)));
       setImages((prev) => [...prev, ...added].slice(0, MAX_IMAGES));
     } catch {
       setFileError("Couldn't read that image.");

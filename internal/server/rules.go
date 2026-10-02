@@ -359,7 +359,7 @@ func (s *Server) handleApplyRule(w http.ResponseWriter, r *http.Request) {
 		}
 		merchantID = sql.NullInt64{Int64: m.ID, Valid: true}
 	}
-	changed, kept := 0, 0
+	changed, kept, onlyKept := 0, 0, 0
 	now := time.Now().Unix()
 	for _, t := range targets {
 		txn := categorize.Txn{ID: t.ID, HouseholdID: hh, AccountID: t.AccountID, AmountCents: t.AmountCents, Date: t.Date, Description: t.Description, Payee: t.Payee}
@@ -372,13 +372,13 @@ func (s *Server) handleApplyRule(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, err)
 			return
 		}
-		next, dirty := cur, false
+		next, dirty, blocked := cur, false, false
 		if merchantID.Valid && cur.MerchantID != merchantID {
 			next.MerchantID, dirty = merchantID, true
 		}
 		if rl.SetCategoryID.Valid && cur.CategoryID != rl.SetCategoryID {
 			if cur.CategorySource == categorize.SourceUser && !in.OverrideUser {
-				kept++
+				kept, blocked = kept+1, true
 			} else {
 				next.CategoryID, next.CategorySource, next.NeedsReview, dirty = rl.SetCategoryID, categorize.SourceRule, 0, true
 			}
@@ -399,6 +399,9 @@ func (s *Server) handleApplyRule(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !dirty && !goal && len(addTags) == 0 {
+			if blocked {
+				onlyKept++
+			}
 			continue
 		}
 		changed++
@@ -429,7 +432,8 @@ func (s *Server) handleApplyRule(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if in.DryRun {
-		writeJSON(w, http.StatusOK, map[string]int{"matches": changed, "hand_picked": kept})
+		// with_hand_picked = what override_user would change.
+		writeJSON(w, http.StatusOK, map[string]int{"matches": changed, "hand_picked": kept, "with_hand_picked": changed + onlyKept})
 		return
 	}
 	if err := tx.Commit(); err != nil {

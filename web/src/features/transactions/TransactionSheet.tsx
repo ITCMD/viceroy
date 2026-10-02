@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { Landmark, Link2, Mail, PencilLine, Sparkles, Undo2, Unlink, Upload, type LucideIcon } from "lucide-react";
+import { Landmark, Link2, Mail, PencilLine, Sparkles, Undo2, Unlink, Upload, Wand2, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, CategoryPicker, Field, FormError, MoneyText, Select, Sheet, Switch, TagInput, TextArea } from "@/components/ui";
 import { goalsQuery } from "@/features/goals/api";
-import { accountLabel } from "@/features/accounts/api";
+import { accountLabel, accountsQuery } from "@/features/accounts/api";
+import { RuleDialog } from "@/features/settings/RuleDialog";
+import type { RuleDraft } from "@/features/settings/rules";
 import { EmailViewer } from "@/features/email/EmailSettings";
 import { api } from "@/lib/api";
 import {
@@ -80,17 +82,26 @@ function Details({
   const [merchant, setMerchant] = useState(t.merchant);
   const [notes, setNotes] = useState(t.notes);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // What the user changed while the sheet is open, as rule actions ("Create rule" offers them).
+  const [edits, setEdits] = useState<RuleDraft>({});
+  const [ruleDraft, setRuleDraft] = useState<RuleDraft | null>(null);
   const { data: cats } = useQuery(categoriesQuery);
   const { data: tagData } = useQuery(tagsQuery);
   const { data: goalData } = useQuery(goalsQuery);
+  const { data: acctData } = useQuery(accountsQuery);
   const goals = (goalData?.goals ?? []).filter((g) => !g.archived || g.id === t.goal_id);
   useEffect(() => {
     setMerchant(t.merchant);
     setNotes(t.notes);
     setConfirmDelete(false);
   }, [t.id, t.merchant, t.notes]);
+  useEffect(() => setEdits({}), [t.id]);
 
-  const patch = useTxnMutation((body: Record<string, unknown>) => api.patch<Transaction>(`/transactions/${t.id}`, body));
+  const patchTxn = useTxnMutation((body: Record<string, unknown>) => api.patch<Transaction>(`/transactions/${t.id}`, body));
+  const patch = {
+    ...patchTxn,
+    mutate: (body: Record<string, unknown>) => patchTxn.mutate(body, { onSuccess: () => setEdits((e) => ({ ...e, ...ruleActions(body) })) }),
+  };
   const unlink = useTxnMutation((provId: number) => api.post(`/transactions/${provId}/unlink`));
   const del = useTxnMutation(() => api.del(`/transactions/${t.id}`), onClose);
   const source = sourceLabels[t.category_source];
@@ -168,6 +179,37 @@ function Details({
         />
       </div>
 
+      {Object.keys(edits).length > 0 && (
+        <section className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3" data-testid="rule-suggestion">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
+              <Wand2 size={14} className="text-accent" /> Do this automatically?
+            </h3>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setRuleDraft({ match_field: "merchant", match_op: "contains", match_value: t.bank_merchant || t.merchant, account_id: t.account_id, ...edits })}
+            >
+              Create rule
+            </Button>
+          </div>
+          <p className="text-xs text-muted">
+            Make a rule so future {t.bank_merchant || t.merchant} transactions on {t.account_name} get the same changes, including pending and email ones.
+          </p>
+        </section>
+      )}
+      <RuleDialog
+        open={ruleDraft !== null}
+        onOpenChange={(o) => {
+          if (o) return;
+          setRuleDraft(null);
+          setEdits({});
+        }}
+        rule={null}
+        draft={ruleDraft ?? undefined}
+        accounts={acctData?.accounts ?? []}
+        title="Create rule"
+      />
       {aiChanges.length > 0 && <AIChangesSection t={t} changes={aiChanges} />}
       <LinkSection t={t} linked={linked} unlink={(id) => unlink.mutate(id)} unlinking={unlink.isPending} onSelect={onSelect} />
       <FormError error={unlink.error} />
@@ -198,6 +240,17 @@ function Details({
       )}
     </div>
   );
+}
+
+/** Turns a transaction edit into the matching rule actions; edits a rule can't make are dropped. */
+function ruleActions(body: Record<string, unknown>): RuleDraft {
+  const out: RuleDraft = {};
+  if (typeof body.merchant === "string") out.set_merchant = body.merchant;
+  if (typeof body.category_id === "number") out.set_category_id = body.category_id;
+  if (Array.isArray(body.tags) && body.tags.length > 0) out.tags = body.tags as string[];
+  if (typeof body.goal_id === "number") out.set_goal_id = body.goal_id;
+  if (body.hidden === true) out.set_hidden = true;
+  return out;
 }
 
 function Section({ title, children }: { title: ReactNode; children: ReactNode }) {

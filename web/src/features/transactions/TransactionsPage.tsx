@@ -1,10 +1,11 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ArrowLeftRight, ChevronDown, EyeOff, Link2, Mail, Plus, Search } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, EyeOff, Link2, Mail, Plus, Search, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader, Segmented } from "@/components/ui";
+import { Badge, Button, Card, CategoryIcon, EmptyState, Menu, MoneyText, PageHeader, Segmented } from "@/components/ui";
 import { accountLabel, accountsQuery, canAddTo } from "@/features/accounts/api";
 import { AddTransactionDialog } from "./AddTransactionDialog";
+import { AICategorizeDialog } from "./AICategorizeDialog";
 import { TransactionSheet } from "./TransactionSheet";
 import { dayLabel, pendingLabel, transactionsQuery, type Transaction, type TxnFilters } from "./api";
 import { EmailReviewBanner } from "@/features/email/EmailReviewBanner";
@@ -23,6 +24,7 @@ export function TransactionsPage() {
   const [hidden, setHidden] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  const [categorizing, setCategorizing] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setQ(search.trim()), 250);
@@ -50,11 +52,14 @@ export function TransactionsPage() {
       <PageHeader
         title="Transactions"
         actions={
-          <Button size="sm" onClick={() => setAdding(true)} disabled={addable.length === 0}>
-            <Plus size={15} />
-            <span className="hidden sm:inline">Add transaction</span>
-            <span className="sm:hidden">Add</span>
-          </Button>
+          <>
+            <Menu label="More transaction actions" items={[{ label: "Categorize with AI…", icon: Sparkles, onSelect: () => setCategorizing(true) }]} />
+            <Button size="sm" onClick={() => setAdding(true)} disabled={addable.length === 0}>
+              <Plus size={15} />
+              <span className="hidden sm:inline">Add transaction</span>
+              <span className="sm:hidden">Add</span>
+            </Button>
+          </>
         }
       />
       <div className="mx-auto flex max-w-4xl flex-col gap-4 p-4 md:p-6">
@@ -122,6 +127,7 @@ export function TransactionsPage() {
         )}
       </div>
 
+      <AICategorizeDialog open={categorizing} onOpenChange={setCategorizing} />
       <AddTransactionDialog
         open={adding}
         onOpenChange={setAdding}

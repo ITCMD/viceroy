@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { Sparkles, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Badge, Button, FormError, Field, MoneyText, Select, Sheet, Switch } from "@/components/ui";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
+import { shrinkImage } from "@/lib/image";
+import { AccountAvatar } from "./AccountAvatar";
 import { BillBadges } from "./BillBadges";
 import { StatusBadge } from "./StatusBadge";
 import { accountSubtitle, typeLabels, useAccountsMutation, type Account } from "./api";
@@ -76,6 +79,8 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
           </div>
         </form>
 
+        <Appearance account={account} />
+
         <div className="flex flex-col gap-3 border-t border-border pt-5">
           <Switch
             label="Include in net worth"
@@ -137,5 +142,71 @@ export function AccountSheet({ account, accounts, onClose }: { account: Account 
         </div>}
       </div>
     </Sheet>
+  );
+}
+
+const colorNotes: Record<Account["color_source"], string> = {
+  ai: "Picked by AI from the bank's brand.",
+  auto: "Picked automatically.",
+  user: "Your color.",
+  "": "Picking a color…",
+};
+
+/** Color and logo: the AI picks the bank's color when the account is added; both can be changed. */
+function Appearance({ account }: { account: Account }) {
+  const file = useRef<HTMLInputElement>(null);
+  const [color, setColor] = useState(account.color || "#888888");
+  useEffect(() => setColor(account.color || "#888888"), [account.color]);
+  const patch = useAccountsMutation((body: Record<string, unknown>) => api.patch(`/accounts/${account.id}`, body));
+  const suggest = useAccountsMutation(
+    () => api.post<{ color: string }>(`/accounts/${account.id}/color/suggest`),
+    (r) => setColor(r.color),
+  );
+  const upload = useAccountsMutation(async (f: File) => api.put(`/accounts/${account.id}/logo`, { image: await shrinkImage(f, 160, "image/png") }));
+  const removeLogo = useAccountsMutation(() => api.del(`/accounts/${account.id}/logo`));
+  const changed = color.toLowerCase() !== account.color.toLowerCase();
+  return (
+    <div className="flex flex-col gap-3 border-t border-border pt-5" data-testid="account-appearance">
+      <h3 className="text-[13px] font-semibold">Appearance</h3>
+      <div className="flex items-center gap-3">
+        <AccountAvatar account={{ ...account, color }} size={40} />
+        <label className="flex items-center gap-2 text-[13px]">
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-10 cursor-pointer rounded border border-border bg-surface" aria-label="Account color" />
+          <span className="font-mono text-xs text-muted">{color}</span>
+        </label>
+        {changed && (
+          <Button size="sm" loading={patch.isPending} onClick={() => patch.mutate({ color })}>
+            Save color
+          </Button>
+        )}
+      </div>
+      <p className="text-xs text-muted">{changed ? "Not saved yet." : colorNotes[account.color_source]}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary" loading={suggest.isPending} onClick={() => suggest.mutate(undefined)}>
+          <Sparkles size={14} /> Suggest bank color
+        </Button>
+        <Button size="sm" variant="secondary" loading={upload.isPending} onClick={() => file.current?.click()}>
+          <Upload size={14} /> {account.logo_url ? "Replace logo" : "Upload logo"}
+        </Button>
+        {account.logo_url && (
+          <Button size="sm" variant="ghost" loading={removeLogo.isPending} onClick={() => removeLogo.mutate(undefined)}>
+            Remove logo
+          </Button>
+        )}
+        <input
+          ref={file}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          className="hidden"
+          data-testid="logo-file"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload.mutate(f);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      <FormError error={patch.error ?? suggest.error ?? upload.error ?? removeLogo.error} />
+    </div>
   );
 }

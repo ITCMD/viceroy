@@ -27,6 +27,10 @@ export type Account = {
   connection_id: number | null;
   last_synced_at: number | null;
   bill: Bill | null;
+  /** #rrggbb: the bank's color (picked by AI, or by the user); "" until picked. */
+  color: string;
+  color_source: "" | "ai" | "auto" | "user";
+  logo_url: string | null;
 };
 
 /** Payment state read from bank emails by the AI. Cents; dates YYYY-MM-DD. */

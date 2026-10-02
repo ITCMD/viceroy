@@ -48,7 +48,7 @@ func TestRuleFromEdit(t *testing.T) {
 	rule := strconv.FormatInt(int64(out["id"].(float64)), 10)
 	// The source row already has everything; the pending one changes; the hand-picked one only
 	// gets the merchant and tags (its category is counted as hand-picked).
-	if code, out := c.do("POST", "/api/rules/"+rule+"/apply", `{"dry_run":true}`, true); code != 200 || out["matches"].(float64) != 2 || out["hand_picked"].(float64) != 1 {
+	if code, out := c.do("POST", "/api/rules/"+rule+"/apply", `{"dry_run":true}`, true); code != 200 || out["matches"].(float64) != 2 || out["hand_picked"].(float64) != 1 || out["with_hand_picked"].(float64) != 2 {
 		t.Fatalf("dry run = %d %v", code, out)
 	}
 	if code, out := c.do("POST", "/api/rules/"+rule+"/apply", `{"override_user":true}`, true); code != 200 || out["updated"].(float64) != 2 {

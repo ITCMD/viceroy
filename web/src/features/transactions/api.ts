@@ -12,6 +12,8 @@ export type Transaction = {
   amount_cents: number;
   description: string;
   merchant: string;
+  /** Merchant cleaned from the bank text before any rename; rules match on it. */
+  bank_merchant: string;
   merchant_id: number | null;
   category_id: number | null;
   category_name: string;

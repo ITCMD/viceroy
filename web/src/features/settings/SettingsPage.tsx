@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import type { Logo } from "@/components/AppLogo";
 import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader, Switch } from "@/components/ui";
 import { accountsQuery, useAccountsMutation } from "@/features/accounts/api";
-import { categoriesQuery, tagsQuery, useTxnMutation } from "@/features/transactions/api";
+import { categoriesQuery, useTxnMutation } from "@/features/transactions/api";
+import { goalsQuery } from "@/features/goals/api";
 import { EmailSettings } from "@/features/email/EmailSettings";
 import { MonarchImportDialog } from "@/features/import/MonarchImportDialog";
 import { NotificationSettingsCard } from "@/features/notifications/NotificationSettingsCard";
@@ -15,7 +16,7 @@ import { AISettingsCard } from "./AISettingsCard";
 import { BudgetSettingsCard } from "./BudgetSettingsCard";
 import { RuleDialog } from "./RuleDialog";
 import { settingsQuery, type Settings } from "./settings";
-import { fieldLabels, opLabels, rulesQuery, type Rule } from "./rules";
+import { ruleConditions, rulesQuery, type Rule } from "./rules";
 
 
 function AccountsCard() {
@@ -118,7 +119,7 @@ function RulesCard() {
   const { data } = useQuery(rulesQuery);
   const { data: acctData } = useQuery(accountsQuery);
   const { data: cats } = useQuery(categoriesQuery);
-  const { data: tagData } = useQuery(tagsQuery);
+  const { data: goalData } = useQuery(goalsQuery);
   const del = useTxnMutation((id: number) => api.del(`/rules/${id}`), () => qc.invalidateQueries({ queryKey: ["rules"] }));
   const rules = data?.rules ?? [];
   const accounts = acctData?.accounts ?? [];
@@ -146,18 +147,19 @@ function RulesCard() {
           {rules.map((r) => {
             const cat = allCats.find((c) => c.id === r.set_category_id);
             const acct = accounts.find((a) => a.id === r.account_id);
-            const tag = tagData?.tags.find((t) => t.id === r.add_tag_id);
+            const goal = goalData?.goals.find((g) => g.id === r.set_goal_id);
             const actions = [
               cat && <CategoryPill key="c" name={cat.name} icon={cat.icon} />,
               r.set_merchant && <span key="m">rename to “{r.set_merchant}”</span>,
-              tag && <span key="t">tag “{tag.name}”</span>,
+              r.tags.length > 0 && <span key="t">tag {r.tags.map((t) => `“${t.name}”`).join(" ")}</span>,
+              goal && <span key="g">goal {goal.name}</span>,
               r.set_hidden && <span key="h">hide</span>,
             ].filter(Boolean);
             return (
               <li key={r.id} className="flex items-center gap-2 pr-2" data-testid="rule-row">
                 <button onClick={() => edit(r)} className="min-w-0 flex-1 px-4 py-3 text-left hover:bg-surface-2">
                   <span className="block truncate text-sm">
-                    {fieldLabels[r.match_field]} {opLabels[r.match_op]} <span className="font-medium">“{r.match_value}”</span>
+                    {ruleConditions(r).join(", ") || "Any transaction"}
                     {acct && <span className="text-muted"> on {acct.name}</span>}
                   </span>
                   <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-muted">

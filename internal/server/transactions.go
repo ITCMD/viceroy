@@ -56,6 +56,7 @@ type txnDTO struct {
 	AmountCents    int64    `json:"amount_cents"`
 	Description    string   `json:"description"`
 	Merchant       string   `json:"merchant"`
+	BankMerchant   string   `json:"bank_merchant"` // merchant cleaned from the bank text, before any rename (rules match it)
 	MerchantID     *int64   `json:"merchant_id"`
 	CategoryID     *int64   `json:"category_id"`
 	CategoryName   string   `json:"category_name"`
@@ -79,8 +80,10 @@ func toTxnDTO(t db.ListTransactionsRow) txnDTO {
 	if merchant == "" {
 		merchant = t.Description
 	}
+	bank, _ := categorize.Merchant(t.Payee, t.Description)
 	return txnDTO{
-		ID: t.ID, AccountID: t.AccountID, AccountName: t.AccountName, AccountMask: t.AccountMask,
+		BankMerchant: bank,
+		ID:           t.ID, AccountID: t.AccountID, AccountName: t.AccountName, AccountMask: t.AccountMask,
 		Date: t.Date, AmountCents: t.AmountCents, Description: t.Description, Merchant: merchant,
 		MerchantID: ptr(t.MerchantID), CategoryID: ptr(t.CategoryID), CategoryName: t.CategoryName,
 		CategoryIcon: t.CategoryIcon, CategorySource: t.CategorySource, Notes: t.Notes,

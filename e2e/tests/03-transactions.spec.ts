@@ -122,7 +122,9 @@ test("rules page creates and applies a rule", async ({ page }) => {
   await dlg.getByLabel("Text").fill("uber");
   await pickCategory(page, dlg, "Set category", "Taxi & Ride Shares");
   await dlg.getByRole("button", { name: "Save rule" }).click();
-  await expect(dlg.getByTestId("rule-applied")).toContainText("applied to 1 existing transaction");
+  await expect(dlg.getByTestId("rule-apply")).toContainText("Apply it to 1 earlier transaction too?");
+  await dlg.getByRole("button", { name: "Apply to earlier transactions" }).click();
+  await expect(dlg.getByTestId("rule-applied")).toContainText("applied to 1 earlier transaction");
   await dlg.getByRole("button", { name: "Done" }).click();
   await expect(page.getByTestId("rule-row")).toContainText("Taxi & Ride Shares");
   await shot(page, "24-rules");

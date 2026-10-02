@@ -10,6 +10,7 @@ import { AccountSheet } from "./AccountSheet";
 import { AddAccountDialog } from "./AddAccountDialog";
 import { ReviewDialog } from "./ReviewDialog";
 import { BillBadges } from "./BillBadges";
+import { AccountAvatar } from "./AccountAvatar";
 import { StatusBadge } from "./StatusBadge";
 import {
   accountsQuery,
@@ -38,7 +39,8 @@ export function AccountsPage() {
   const [reviewing, setReviewing] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [showHidden, setShowHidden] = useState(false);
-  const { data } = useQuery(accountsQuery);
+  // New accounts get their bank color in the background; check back until they have one.
+  const { data } = useQuery({ ...accountsQuery, refetchInterval: (q) => (q.state.data?.accounts.some((a) => !a.color) ? 3000 : false) });
   const { data: connData } = useQuery(connectionsQuery);
   const accounts = data?.accounts ?? [];
   const connections = connData?.connections ?? [];
@@ -163,9 +165,7 @@ function AccountGroupCard({ label, accounts, onSelect }: { label: string; accoun
         {accounts.map((a) => (
           <li key={a.id}>
             <button onClick={() => onSelect(a.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-surface-2" data-testid="account-row">
-              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-surface-2 text-xs font-semibold text-muted">
-                {(a.institution_name || a.name).slice(0, 1).toUpperCase()}
-              </span>
+              <AccountAvatar account={a} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">{a.name}</span>

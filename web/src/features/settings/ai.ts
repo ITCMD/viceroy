@@ -9,6 +9,7 @@ export type AISettings = {
   email_model: string;
   email_base_url: string;
   vision_model: string;
+  categorize: boolean;
   config_chat_model: string;
   chat_ready: boolean;
   email_ready: boolean;

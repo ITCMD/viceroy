@@ -1,14 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, CircleSlash, Mail, Plus } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Badge, Button, Card, Field, FormError } from "@/components/ui";
+import { Badge, Button, Card, Field, FormError, Switch } from "@/components/ui";
 import { mailboxesQuery, type Mailbox } from "@/features/email/api";
 import { MailboxDialog } from "@/features/email/MailboxDialog";
 import { api } from "@/lib/api";
 import { aiSettingsQuery, modelsQuery, type AISettings } from "./ai";
 import { ModelPicker } from "./ModelPicker";
 
-type Patch = Partial<{ openrouter_key: string; chat_model: string; email_model: string; email_base_url: string; vision_model: string }>;
+type Patch = Partial<{ openrouter_key: string; chat_model: string; email_model: string; email_base_url: string; vision_model: string; categorize: boolean }>;
 type Target = "chat" | "email" | "vision";
 type TestResult = { ok: boolean; model?: string; error?: string };
 
@@ -149,7 +149,10 @@ export function AISettingsCard() {
               models={(s?.email_base_url ? localModels : models).data?.models}
               error={(s?.email_base_url ? localModels : models).error?.message}
               emptyLabel="Same as chat model"
-              hint={s?.email_base_url ? "Models served by your self-hosted endpoint." : "A cheap, fast model is plenty (e.g. a DeepSeek flash model)."}
+              hint={
+                (s?.email_base_url ? "Models served by your self-hosted endpoint." : "A cheap, fast model is plenty (e.g. a DeepSeek flash model).") +
+                " Also categorizes transactions and picks bank colors."
+              }
               disabled={!canEdit}
             />
             <ModelPicker
@@ -176,6 +179,13 @@ export function AISettingsCard() {
               className="mt-2"
             />
           </details>
+          <Switch
+            label="Categorize new transactions with AI"
+            hint="Uses the cheaper model above, once per new merchant. Its picks are marked for review, and later transactions from that merchant follow them."
+            checked={s?.categorize ?? true}
+            onCheckedChange={(v) => save.mutate({ categorize: v })}
+            disabled={!canEdit}
+          />
           <div className="flex flex-wrap items-center gap-2">
             {dirty && (
               <Button size="sm" loading={save.isPending && !save.variables?.openrouter_key} onClick={() => save.mutate({ chat_model: chatModel, email_model: emailModel, email_base_url: baseURL, vision_model: visionModel })}>
