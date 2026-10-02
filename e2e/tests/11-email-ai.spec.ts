@@ -93,8 +93,16 @@ test("AI reads unmatched bank emails: payment due, security alert, purchase hint
   await expect(async () => {
     for (const m of await (await req.get("/api/email/mailboxes")).json()) await req.post(`/api/email/mailboxes/${m.id}/check`, { headers: { "X-Viceroy-CSRF": "1" } });
     await page.goto("/settings");
-    await expect(row.getByTestId("email-ai-note")).toContainText("looks like a purchase alert", { timeout: 3000 });
+    await expect(row.getByTestId("email-ai-note")).toContainText("looks like a transaction", { timeout: 3000 });
   }).toPass({ timeout: 30_000 });
+  // No merchant in it, so the AI couldn't set up a filter; the dialog starts from its reading.
+  await expect(row.getByTestId("email-ai-note")).toContainText("no clear merchant");
+  await row.getByRole("button", { name: "Create filter" }).click();
+  const filterDialog = page.getByRole("dialog");
+  await expect(filterDialog.getByTestId("filter-ai-reading")).toContainText("$9.99");
+  await expect(filterDialog.getByTestId("filter-ai-reading")).toContainText("couldn't finish on its own because no clear merchant");
+  await expect(filterDialog.getByLabel("Account", { exact: true }).locator("option:checked")).toHaveText(/Quicksilver/);
+  await filterDialog.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByTestId("review-email-row").filter({ hasText: "Unusual activity" })).toHaveCount(0);
 
   // An order email: the AI finds the $60.00 Luna Trattoria charge (from the email + SimpleFIN spec)
@@ -122,4 +130,37 @@ test("AI reads unmatched bank emails: payment due, security alert, purchase hint
   await changes.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByTestId("ai-changes")).toHaveCount(0);
   await expect(page.getByRole("dialog").getByLabel("Notes")).not.toHaveValue(/Order #Q7/);
+});
+
+test("AI sets up a filter for a withdrawal notice, checked by Viceroy", async ({ page }) => {
+  await login(page);
+  const req = page.request;
+  await req.post(`${fakeImap}/deliver`, {
+    data: email(
+      "wd-1",
+      "Withdrawal notice",
+      `CITY GYM has initiated the following withdrawal from your account ending in 3333:\n\nAmount: $23.45\n\nSubmitted on: ${longDate(0)}\n\nThank you for banking with us.`,
+    ),
+  });
+  // The AI reads it, proposes a filter, Viceroy checks it, and the filter books the transaction.
+  const filterRow = page.getByTestId("email-filter-row").filter({ hasText: "Made by AI" });
+  await expect(async () => {
+    for (const m of await (await req.get("/api/email/mailboxes")).json()) await req.post(`/api/email/mailboxes/${m.id}/check`, { headers: { "X-Viceroy-CSRF": "1" } });
+    await page.goto("/settings#email-filters");
+    await expect(filterRow).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(filterRow).toContainText("Withdrawal notice");
+  await expect(filterRow).toContainText("ending in 3333");
+  await expect(page.getByTestId("review-email-row").filter({ hasText: "Withdrawal notice" })).toHaveCount(0);
+
+  // Opening it explains where it came from; saving would make it the user's.
+  await filterRow.getByRole("button").first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("The AI wrote this filter");
+  await dialog.screenshot({ path: `${shots}/11-ai-filter.png` });
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  await page.goto("/transactions");
+  const txn = page.getByTestId("txn-row").filter({ hasText: /City Gym/i });
+  await expect(txn).toContainText("-$23.45");
 });

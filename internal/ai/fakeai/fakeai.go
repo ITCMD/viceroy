@@ -201,7 +201,7 @@ func classify(text string) string {
 		kind = "payment_due"
 	case strings.Contains(low, "statement is ready"):
 		kind = "statement_ready"
-	case strings.Contains(low, "purchase") || strings.Contains(low, "transaction"):
+	case strings.Contains(low, "purchase") || strings.Contains(low, "transaction") || strings.Contains(low, "withdrawal") || strings.Contains(low, "deposit"):
 		kind = "transaction_alert"
 	}
 	out := map[string]any{"kind": kind, "summary": nil, "account_last4": nil, "amount": nil, "minimum_due": nil, "date": nil}
@@ -229,6 +229,9 @@ func classify(text string) string {
 		summary += " Amount $" + a + "."
 	}
 	out["summary"] = summary
+	if kind == "transaction_alert" {
+		out["transaction"] = recipe(text)
+	}
 	b, _ := json.Marshal(out)
 	return "```json\n" + string(b) + "\n```" // models often fence JSON; the reader must cope
 }
@@ -340,4 +343,42 @@ func budgetRows(m ai.Message) string {
 	}
 	b, _ := json.Marshal(map[string]any{"rows": rows, "notes": notes})
 	return string(b)
+}
+
+var (
+	initiatedRe = regexp.MustCompile(`(?m)^(.+?) has initiated the following (withdrawal|deposit)`)
+	labeledAmt  = regexp.MustCompile(`Amount: \$([\d,]+\.\d{2})`)
+	submittedRe = regexp.MustCompile(`Submitted on: ([A-Z][a-z]+ \d{1,2}, \d{4})`)
+	subjectRe   = regexp.MustCompile(`Subject: ([^\n]+)`)
+)
+
+// recipe plays the AI's "transaction" reading for withdrawal/deposit notices; other alerts get
+// one without a merchant (which Viceroy then refuses to build a filter from).
+func recipe(text string) map[string]any {
+	r := map[string]any{"direction": "out", "amount": nil, "merchant": nil, "date": nil, "account_text": nil, "subject_contains": "",
+		"amount_rule": map[string]string{"before": "Amount:"}, "merchant_rule": map[string]string{"regex": `^(.+?) has initiated the following`},
+		"date_rule": map[string]string{"before": "Submitted on:"}}
+	if m := initiatedRe.FindStringSubmatch(text); m != nil {
+		r["merchant"] = strings.TrimSpace(m[1])
+		if m[2] == "deposit" {
+			r["direction"] = "in"
+		}
+	}
+	if m := labeledAmt.FindStringSubmatch(text); m != nil {
+		r["amount"] = strings.ReplaceAll(m[1], ",", "")
+	} else if m := moneyRe.FindStringSubmatch(text); m != nil {
+		r["amount"] = strings.ReplaceAll(m[1], ",", "")
+	}
+	if m := submittedRe.FindStringSubmatch(text); m != nil {
+		if d, err := time.Parse("January 2, 2006", m[1]); err == nil {
+			r["date"] = d.Format(time.DateOnly)
+		}
+	}
+	if m := last4Re.FindStringSubmatch(text); m != nil {
+		r["account_text"] = m[0]
+	}
+	if m := subjectRe.FindStringSubmatch(text); m != nil {
+		r["subject_contains"] = strings.TrimSpace(m[1])
+	}
+	return r
 }

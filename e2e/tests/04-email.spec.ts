@@ -72,18 +72,27 @@ test("custom parser filter turns an email into a final transaction", async ({ pa
   await reviewRow(page, "Debit card purchase alert").getByRole("button", { name: "Create filter" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("From")).toHaveValue("mycu.org");
-  await expect(dialog.getByLabel("Subject contains")).toHaveValue("Debit card purchase alert");
-  // The generic parser already reads the sample...
-  await expect(dialog.getByTestId("sample-result")).toContainText("SHELL OIL 57442");
-  // ...but build a custom one against it.
-  await dialog.getByLabel("Parser").selectOption("custom");
-  await dialog.getByLabel("Amount: text before").fill("Amount:");
-  await dialog.getByLabel("Merchant: text before").fill("Merchant:");
-  await dialog.getByLabel("Merchant: text after").fill("5744");
-  await expect(dialog.getByTestId("sample-result")).toContainText("$48.10");
-  await expect(dialog.getByTestId("sample-result")).toContainText("SHELL OIL");
-  await expect(dialog.getByTestId("sample-result")).not.toContainText("57442");
+  await expect(dialog.getByLabel("Subject includes")).toHaveValue("Debit card purchase alert");
+  // Regular expressions are tucked away under Advanced.
+  await expect(dialog.getByRole("switch", { name: /Match patterns/ })).toBeHidden();
+  // The automatic parser already reads the sample...
+  await dialog.getByRole("button", { name: "Test on this email" }).click();
+  const result = dialog.getByTestId("filter-test-result");
+  await expect(result).toContainText("This email matches the filter");
+  await expect(result).toContainText("SHELL OIL 57442");
+  await expect(result).toContainText("Choose an account above");
+  // ...but point to the values by hand.
+  await dialog.getByLabel("Read the amount, merchant and date").selectOption("custom");
+  await dialog.getByLabel("Amount: text right before it").fill("Amount:");
+  await dialog.getByLabel("Merchant: text right before it").fill("Merchant:");
+  await dialog.getByLabel("Merchant: text right after it").fill("5744");
+  await expect(dialog.getByText("Changed since the last test.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Test again" }).click();
+  await expect(result).toContainText("$48.10");
+  await expect(result).toContainText("SHELL OIL");
+  await expect(result).not.toContainText("57442");
   await chooseAccount(page, dialog, "Wallet");
+  await expect(result).toContainText("Goes to Wallet");
   await expect(dialog.getByText("Email-only account")).toBeVisible();
   await shot(page, "email-filter-dialog");
   await dialog.getByRole("button", { name: "Save filter" }).click();
@@ -104,8 +113,9 @@ test("template filter on a synced account creates a pending email alert", async 
   await reviewRow(page, "A new transaction was charged").getByRole("button", { name: "Create filter" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("From")).toHaveValue("notification.capitalone.com");
-  await dialog.getByLabel("Parser").selectOption("capital_one");
-  await expect(dialog.getByTestId("sample-result")).toContainText("TRADER JOE'S #552");
+  await dialog.getByLabel("Read the amount, merchant and date").selectOption("capital_one");
+  await dialog.getByRole("button", { name: "Test on this email" }).click();
+  await expect(dialog.getByTestId("filter-test-result")).toContainText("TRADER JOE'S #552");
   await chooseAccount(page, dialog, "Quicksilver");
   await expect(dialog.getByText("Synced account")).toBeVisible();
   await dialog.getByRole("button", { name: "Save filter" }).click();

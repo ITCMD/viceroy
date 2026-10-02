@@ -219,6 +219,11 @@ export function AISettingsCard() {
                 <li>It can change at most 3 of those transactions per email: set the category (never one you chose), add a short note (links are removed) and tags.</li>
                 <li>It can't change amounts, dates, accounts or merchants, delete anything, see other emails, or reach your settings or keys.</li>
                 <li>Every change is flagged for review and listed on the transaction with an Undo button.</li>
+                <li>
+                  For a purchase, withdrawal or deposit email no filter caught, it can propose a filter. Viceroy only saves it after checking it: the
+                  amount and merchant must be in the email, the account is picked by its last 4 digits (exactly one must match), and the filter must
+                  read the same values back. Its transactions are marked for review, and it never changes a filter you made.
+                </li>
               </ul>
             </details>
           </div>

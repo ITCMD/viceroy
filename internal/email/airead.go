@@ -3,8 +3,8 @@ package email
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -44,6 +44,8 @@ type AIResult struct {
 	Amount  sql.NullInt64 // cents
 	Minimum sql.NullInt64 // cents
 	Date    string        // YYYY-MM-DD or ""
+	// Recipe is the AI's reading of a transaction_alert (values and where they sit), or nil.
+	Recipe *Recipe
 }
 
 // AIReader reads one email for a household with the sandbox's tools (see sandbox.go). The real
@@ -70,6 +72,14 @@ const aiPrompt = `You read emails that a bank, credit card issuer or other finan
 "amount": for payment_due the statement balance (or amount due); for a payment the payment amount; as a plain number string like "245.10", or null.
 "minimum_due": for payment_due the minimum payment as a number string, else null.
 "date": for payment_due the due date, for payment_scheduled the date it will be paid, for payment_received the payment date, as YYYY-MM-DD, or null.
+"transaction": for transaction_alert only (else null): the one transaction and where its values sit in the email text, so the app can read the next email like it without AI. An object with:
+  "direction": "out" (purchase, withdrawal, debit, payment or transfer out of the account) or "in" (deposit, refund, credit, transfer in).
+  "amount": the amount as a plain number string like "17.08".
+  "merchant": who was paid, or who paid, exactly as written in the email (e.g. "MOUNT WASHINGTON").
+  "date": the transaction date as YYYY-MM-DD, or null.
+  "account_text": the short exact phrase in the email body that names the account by its last 4 digits (e.g. "ending in 2080"), or null.
+  "subject_contains": a short exact part of the subject that every email of this kind would share (e.g. "Withdrawal notice"), or "".
+  "amount_rule", "merchant_rule", "date_rule": where each value sits, each either {"before": the exact text right before the value on its line, "after": the exact text right after it, or ""} or {"regex": a regular expression (RE2 syntax, case-insensitive, ^ and $ match at line breaks) whose first group is the value}. Use "before"/"after" when the value has a label like "Amount:"; use "regex" when it doesn't, e.g. "^(.+?) has initiated the following". "date_rule" may be null.
 
 Kinds:
 - payment_due: a bill or statement says a payment is due by a date (includes "statement ready" emails that state a due date).
@@ -150,12 +160,13 @@ var jsonObject = regexp.MustCompile(`(?s)\{.*\}`)
 func ParseAIResult(reply string, received time.Time) (AIResult, error) {
 	raw := jsonObject.FindString(reply) // tolerate code fences or chatter around the object
 	var v struct {
-		Kind    string `json:"kind"`
-		Summary string `json:"summary"`
-		Last4   any    `json:"account_last4"`
-		Amount  any    `json:"amount"`
-		Minimum any    `json:"minimum_due"`
-		Date    any    `json:"date"`
+		Kind    string          `json:"kind"`
+		Summary string          `json:"summary"`
+		Last4   any             `json:"account_last4"`
+		Amount  any             `json:"amount"`
+		Minimum any             `json:"minimum_due"`
+		Date    any             `json:"date"`
+		Txn     json.RawMessage `json:"transaction"`
 	}
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
 		return AIResult{}, fmt.Errorf("the AI reply wasn't JSON: %w", err)
@@ -175,6 +186,9 @@ func ParseAIResult(reply string, received time.Time) (AIResult, error) {
 		res.Last4 = s[len(s)-4:]
 	}
 	res.Amount, res.Minimum = cents(v.Amount), cents(v.Minimum)
+	if res.Kind == KindTransactionAlert {
+		res.Recipe = parseRecipe(v.Txn)
+	}
 	if d, err := time.Parse(time.DateOnly, str(v.Date)); err == nil {
 		day := received.Truncate(24 * time.Hour)
 		if !received.IsZero() && d.After(day.AddDate(0, 0, -60)) && d.Before(day.AddDate(0, 0, 120)) {
@@ -363,9 +377,15 @@ func (s *Service) ReadPendingAI(ctx context.Context, limit int64) (int, error) {
 			}
 			continue
 		}
-		notice, err := s.applyAI(ctx, m, res)
+		notice, learned, err := s.applyAI(ctx, m, res)
 		if err != nil {
 			return 0, err
+		}
+		if learned {
+			// Other waiting emails like this one now have a filter too.
+			if _, err := s.Reroute(ctx, m.HouseholdID); err != nil {
+				return 0, err
+			}
 		}
 		if notice != nil && s.Notice != nil {
 			s.Notice(ctx, m.HouseholdID, *notice)
@@ -384,26 +404,26 @@ func trimErr(err error) string {
 
 var billKinds = map[string]string{KindPaymentDue: bills.Due, KindPaymentScheduled: bills.Scheduled, KindPaymentReceived: bills.Paid}
 
-// applyAI stores what the AI found and returns the notice to send, if any.
-func (s *Service) applyAI(ctx context.Context, m db.EmailMessage, res AIResult) (*Notice, error) {
+// applyAI stores what the AI found and returns the notice to send, if any. learned reports
+// that a transaction email produced (or fixed) a filter.
+func (s *Service) applyAI(ctx context.Context, m db.EmailMessage, res AIResult) (notice *Notice, learned bool, err error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer tx.Rollback()
 	q := db.New(tx)
 	status := m.Status
-	var notice *Notice
 	acctName := ""
 	switch res.Kind {
 	case KindIgnore, KindTransactionAlert:
-		// Stays in "Emails to review": a purchase alert there wants a filter.
+		// Stays in "Emails to review" unless a filter can be built from the reading (below).
 	default:
 		status = StatusNoticed
 		var acct sql.NullInt64
 		if res.Last4 != "" {
 			if a, ok, err := accountByLast4(ctx, q, m.HouseholdID, res.Last4); err != nil {
-				return nil, err
+				return nil, false, err
 			} else if ok {
 				acct, acctName = sql.NullInt64{Int64: a.ID, Valid: true}, a.Name
 			}
@@ -414,7 +434,7 @@ func (s *Service) applyAI(ctx context.Context, m db.EmailMessage, res AIResult) 
 				HouseholdID: m.HouseholdID, AccountID: acct, Kind: kind, AmountCents: res.Amount, MinimumCents: res.Minimum,
 				Date: date, Summary: res.Summary, EmailMessageID: sql.NullInt64{Int64: m.ID, Valid: true}, CreatedAt: s.Now().Unix(),
 			}); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		}
 		notice = &Notice{Kind: "bank_notice", Key: fmt.Sprintf("email:%d", m.ID), Title: noticeTitle(res, m, acctName), Body: res.Summary}
@@ -423,9 +443,99 @@ func (s *Service) applyAI(ctx context.Context, m db.EmailMessage, res AIResult) 
 		}
 	}
 	if err := q.SetEmailAIResult(ctx, db.SetEmailAIResultParams{AiStatus: "done", AiKind: res.Kind, AiSummary: res.Summary, Status: status, ID: m.ID}); err != nil {
+		return nil, false, err
+	}
+	if res.Kind == KindTransactionAlert && res.Recipe != nil {
+		if notice, err = s.learnFilter(ctx, q, m, *res.Recipe); err != nil {
+			return nil, false, err
+		}
+		learned = notice != nil
+	}
+	return notice, learned, tx.Commit()
+}
+
+// learnFilter checks the AI's recipe and, when it holds up, creates a filter for emails like m
+// (or, when m failed to parse with a filter the AI made, fixes only that filter's reading
+// rules), then routes m through it. The AI never writes transactions or filters itself, and
+// never touches a filter the user made. The verdict is kept on the email either way.
+func (s *Service) learnFilter(ctx context.Context, q *db.Queries, m db.EmailMessage, r Recipe) (*Notice, error) {
+	var fix *db.EmailFilter
+	if m.Status == StatusParseFailed {
+		if !m.FilterID.Valid {
+			return nil, nil
+		}
+		f, err := q.GetEmailFilter(ctx, db.GetEmailFilterParams{ID: m.FilterID.Int64, HouseholdID: m.HouseholdID})
+		if err != nil || f.Source != "ai" {
+			return nil, nil
+		}
+		fix = &f
+	}
+	chk, err := CheckRecipe(ctx, q, m.HouseholdID, FromRow(m), r)
+	if err != nil {
 		return nil, err
 	}
-	return notice, tx.Commit()
+	if chk.Problem == "" && fix != nil && (chk.AccountID != fix.AccountID || chk.Sign != fix.Sign) {
+		chk.Problem = "it doesn't agree with the filter's account or direction"
+	}
+	b, _ := json.Marshal(chk)
+	if err := q.SetEmailAIRecipe(ctx, db.SetEmailAIRecipeParams{AiRecipe: string(b), ID: m.ID}); err != nil {
+		return nil, err
+	}
+	if chk.Problem != "" {
+		return nil, nil
+	}
+	acct, err := q.GetAccount(ctx, db.GetAccountParams{ID: chk.AccountID, HouseholdID: m.HouseholdID})
+	if err != nil {
+		return nil, err
+	}
+	what := m.Subject
+	if chk.SubjectMatch != "" {
+		what = chk.SubjectMatch
+	}
+	if fix != nil {
+		if err := q.UpdateAIEmailFilterParser(ctx, db.UpdateAIEmailFilterParserParams{
+			Parser: chk.Parser, CustomParser: chk.CustomParser, ID: fix.ID, HouseholdID: m.HouseholdID,
+		}); err != nil {
+			return nil, err
+		}
+	} else {
+		prio, err := q.NextEmailFilterPriority(ctx, m.HouseholdID)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := q.InsertAIEmailFilter(ctx, db.InsertAIEmailFilterParams{
+			HouseholdID: m.HouseholdID, Name: clip(what, 60) + " → " + acct.Name, Priority: prio,
+			Sender: chk.Sender, SubjectMatch: chk.SubjectMatch, BodyMatch: chk.BodyMatch, AccountID: acct.ID,
+			Parser: chk.Parser, CustomParser: chk.CustomParser, Sign: chk.Sign, CreatedAt: s.Now().Unix(),
+		}); err != nil {
+			return nil, err
+		}
+	}
+	filters, err := q.ListEmailFilters(ctx, m.HouseholdID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := q.GetEmailMessage(ctx, db.GetEmailMessageParams{ID: m.ID, HouseholdID: m.HouseholdID})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.route(ctx, q, row, filters); err != nil {
+		return nil, err
+	}
+	verb := "will now read"
+	if fix != nil {
+		verb = "fixed how it reads"
+	}
+	dir := "from"
+	if chk.Sign == "credit" {
+		dir = "to"
+	}
+	return &Notice{
+		Kind: "bank_notice", Key: fmt.Sprintf("filter:%d", m.ID), URL: "/settings#email-filters",
+		Title: "New email filter · " + acct.Name,
+		Body: fmt.Sprintf("Viceroy %s “%s” emails without AI. Added %s %s %s %s; it's marked for review.",
+			verb, clip(what, 60), "$"+r.Amount, r.Merchant, dir, acct.Name),
+	}, nil
 }
 
 func noticeTitle(res AIResult, m db.EmailMessage, acct string) string {

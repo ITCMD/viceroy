@@ -37,7 +37,9 @@ export function EmailSettings() {
   return (
     <>
       <MailboxesCard />
-      <FiltersCard onEdit={(f) => openFilter(f)} accounts={accounts} />
+      <div id="email-filters" className="scroll-mt-16">
+        <FiltersCard onEdit={(f) => openFilter(f)} accounts={accounts} />
+      </div>
       <ReviewEmailsCard onCreateFilter={(m) => openFilter(null, m)} />
       <FilterDialog open={filterOpen} onOpenChange={setFilterOpen} filter={editingFilter} fromMessage={fromMessage} accounts={accounts} />
     </>
@@ -141,6 +143,11 @@ function FiltersCard({ onEdit, accounts }: { onEdit: (f: EmailFilter | null) => 
                   <span className="flex items-center gap-2 text-sm">
                     <span className="truncate font-medium">{f.name}</span>
                     {!f.enabled && <Badge>Off</Badge>}
+                    {f.source === "ai" && (
+                      <Badge tone="accent">
+                        <Sparkles size={10} /> Made by AI
+                      </Badge>
+                    )}
                   </span>
                   <span className="mt-0.5 block truncate text-[13px] text-muted">
                     {conditions(f)} → {acct ? accountLabel(acct) : "missing account"} · {parser}

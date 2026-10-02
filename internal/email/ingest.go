@@ -197,7 +197,13 @@ func (s *Service) route(ctx context.Context, q *db.Queries, row db.EmailMessage,
 	filterID := sql.NullInt64{Int64: f.ID, Valid: true}
 	p, err := Parse(f.Parser, f.CustomParser, m)
 	if err != nil {
-		return q.SetEmailMessageResult(ctx, db.SetEmailMessageResultParams{Status: StatusParseFailed, FilterID: filterID, Error: err.Error(), ID: row.ID})
+		if err := q.SetEmailMessageResult(ctx, db.SetEmailMessageResultParams{Status: StatusParseFailed, FilterID: filterID, Error: err.Error(), ID: row.ID}); err != nil {
+			return err
+		}
+		if f.Source == "ai" { // the AI may fix the reading rules of a filter it made
+			return s.queueAI(ctx, q, row)
+		}
+		return nil
 	}
 	txnID, err := s.createTransaction(ctx, q, row.HouseholdID, f, p)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -243,6 +249,11 @@ func (s *Service) createTransaction(ctx context.Context, q *db.Queries, househol
 	res, err := cat.Apply(ctx, categorize.Txn{ID: id, HouseholdID: householdID, AccountID: acct.ID, AmountCents: amt, Description: p.Merchant, Payee: p.Merchant})
 	if err != nil {
 		return 0, err
+	}
+	if f.Source == "ai" { // a filter the AI wrote: have the user look at what it booked
+		if err := q.FlagTransactionForReview(ctx, db.FlagTransactionForReviewParams{ID: id, HouseholdID: householdID}); err != nil {
+			return 0, err
+		}
 	}
 	if provisional == 1 {
 		_, err = linking.LinkProvisional(ctx, q, linking.Provisional{

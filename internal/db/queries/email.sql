@@ -44,8 +44,23 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
 
 -- name: UpdateEmailFilter :exec
 UPDATE email_filters SET name = ?, priority = ?, enabled = ?, sender = ?, subject_match = ?, body_match = ?,
-    use_regex = ?, account_id = ?, parser = ?, custom_parser = ?, sign = ?
+    use_regex = ?, account_id = ?, parser = ?, custom_parser = ?, sign = ?, source = 'user'
 WHERE id = ? AND household_id = ?;
+
+-- name: InsertAIEmailFilter :one
+INSERT INTO email_filters (household_id, name, priority, enabled, sender, subject_match, body_match, use_regex,
+    account_id, parser, custom_parser, sign, source, created_at)
+VALUES (?, ?, ?, 1, ?, ?, ?, 0, ?, ?, ?, ?, 'ai', ?) RETURNING *;
+
+-- The AI may only rewrite how its own filters read values.
+-- name: UpdateAIEmailFilterParser :exec
+UPDATE email_filters SET parser = ?, custom_parser = ? WHERE id = ? AND household_id = ? AND source = 'ai';
+
+-- name: SetEmailAIRecipe :exec
+UPDATE email_messages SET ai_recipe = ? WHERE id = ?;
+
+-- name: FlagTransactionForReview :exec
+UPDATE transactions SET needs_review = 1 WHERE id = ? AND household_id = ?;
 
 -- name: DeleteEmailFilter :exec
 DELETE FROM email_filters WHERE id = ? AND household_id = ?;
@@ -68,7 +83,7 @@ UPDATE email_messages SET status = ?, filter_id = ?, transaction_id = ?, error =
 
 -- name: ListEmailMessages :many
 SELECT m.id, m.mailbox_id, m.from_addr, m.from_name, m.subject, m.received_at, m.status, m.filter_id,
-    m.transaction_id, m.error, m.ai_status, m.ai_kind, m.ai_summary, COALESCE(f.name, '') AS filter_name
+    m.transaction_id, m.error, m.ai_status, m.ai_kind, m.ai_summary, m.ai_recipe, COALESCE(f.name, '') AS filter_name
 FROM email_messages m LEFT JOIN email_filters f ON f.id = m.filter_id
 WHERE m.household_id = sqlc.arg(household_id) AND (sqlc.arg(status) = '' OR m.status = sqlc.arg(status))
 ORDER BY m.received_at DESC, m.id DESC
@@ -124,7 +139,7 @@ UPDATE email_messages SET ai_status = ?, ai_kind = ?, ai_summary = ?, status = ?
 
 -- Unrouted messages waiting for the AI, oldest first.
 -- name: ListPendingAIEmails :many
-SELECT * FROM email_messages WHERE ai_status = 'pending' AND status = 'unrouted'
+SELECT * FROM email_messages WHERE ai_status = 'pending' AND status IN ('unrouted', 'parse_failed')
 ORDER BY received_at, id LIMIT ?;
 
 -- name: InsertAccountBill :one

@@ -157,6 +157,7 @@ type EmailFilter struct {
 	CustomParser string `json:"custom_parser"`
 	Sign         string `json:"sign"`
 	CreatedAt    int64  `json:"created_at"`
+	Source       string `json:"source"`
 }
 
 type EmailMailbox struct {
@@ -199,6 +200,7 @@ type EmailMessage struct {
 	AiStatus      string        `json:"ai_status"`
 	AiKind        string        `json:"ai_kind"`
 	AiSummary     string        `json:"ai_summary"`
+	AiRecipe      string        `json:"ai_recipe"`
 }
 
 type Goal struct {

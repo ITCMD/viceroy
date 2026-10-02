@@ -81,7 +81,7 @@ func (b *sandbox) Tools() []ai.Tool {
 			Run:         b.schedule,
 		},
 		{
-			Name: "update_transaction",
+			Name:        "update_transaction",
 			Description: fmt.Sprintf("Update one transaction found with search_transactions that this email clearly describes: set its category, add a short factual note (items, order number), add tags. At most %d transactions per email. A category the user chose is never replaced.", MaxUpdates),
 			Parameters: schema(`{"type":"object","required":["id"],"properties":{
 				"id":{"type":"integer"},

@@ -76,15 +76,18 @@ var (
 	labeledAmount   = `(?im)^(?:transaction |purchase |charge )?amount[ \t:]*\n?[ \t]*` + amountRe
 	labeledMerchant = `(?im)^(?:merchant(?: name)?|where|description|payee|at)[ \t:]*\n?[ \t]*([^\n$]{2,80}?)[ \t]*$`
 	labeledDate     = `(?im)^(?:transaction |purchase )?date[ \t:]*\n?[ \t]*([^\n]{6,40}?)[ \t]*$`
+	// "MOUNT WASHINGTON has initiated the following withdrawal from your ... account"
+	initiatedMerchant = `(?im)^[ \t]*([^\n]{2,80}?)\s+(?:has|have)\s+(?:initiated|made|sent|requested)\s+(?:the following|a|an)\s+(?:withdrawal|deposit|debit|payment|transfer|charge|credit)`
+	initiatedDate     = `(?im)^(?:submitted|initiated|posted|processed|sent)(?: on)?[ \t:]*\n?[ \t]*([^\n]{6,40}?)[ \t]*$`
 )
 
 // Templates are the built-in parsers. They're best effort until checked against real alerts.
 var Templates = []Template{
 	{Name: "generic", Label: "Generic (auto-detect)", p: parser{
 		amount: mustAll(labeledAmount, `(?i)(?:amount of|for|charge of|purchase of|transaction of)\s+`+amountRe, amountRe),
-		merchant: mustAll(labeledMerchant,
+		merchant: mustAll(labeledMerchant, initiatedMerchant,
 			`(?i)\b(?:at|with)\s+([A-Za-z0-9][^\n]{1,60}?)(?:\s+(?:on|for|was|has|in the amount)\b|[.,;]\s|[.,;]?$|\n)`),
-		date: mustAll(labeledDate, `(?i)\bon\s+([A-Z][a-z]+\.? \d{1,2},? \d{4}|\d{1,2}/\d{1,2}/\d{2,4})`),
+		date: mustAll(labeledDate, initiatedDate, `(?i)\bon\s+([A-Z][a-z]+\.? \d{1,2},? \d{4}|\d{1,2}/\d{1,2}/\d{2,4})`),
 	}},
 	{Name: "chase", Label: "Chase", p: parser{
 		// Subject: "Your $12.34 transaction with STARBUCKS" / "You made a $12.34 transaction with STARBUCKS"
@@ -95,8 +98,8 @@ var Templates = []Template{
 	{Name: "capital_one", Label: "Capital One", p: parser{
 		// "...on September 30, 2026, at STARBUCKS, a pending authorization or purchase in the amount of $12.34..."
 		amount:   mustAll(`(?i)amount of\s+`+amountRe, labeledAmount),
-		merchant: mustAll(`(?i)\d{4},?\s+at\s+([^\n]+?),\s+a\s+(?:pending|purchase|transaction)`, labeledMerchant),
-		date:     mustAll(`(?i)\bon\s+([A-Z][a-z]+ \d{1,2}, \d{4}),?\s+at\b`, labeledDate),
+		merchant: mustAll(`(?i)\d{4},?\s+at\s+([^\n]+?),\s+a\s+(?:pending|purchase|transaction)`, initiatedMerchant, labeledMerchant),
+		date:     mustAll(`(?i)\bon\s+([A-Z][a-z]+ \d{1,2}, \d{4}),?\s+at\b`, initiatedDate, labeledDate),
 	}},
 }
 
@@ -169,7 +172,7 @@ func Parse(name, custom string, m Message) (Parsed, error) {
 		amt = -amt
 	}
 	out.AmountCents = amt
-	out.Merchant = cleanMerchant(first(p.merchant, text))
+	out.Merchant = firstMerchant(p.merchant, text)
 	if out.Merchant == "" {
 		return out, errors.New("no merchant found")
 	}
@@ -193,6 +196,38 @@ func first(res []*regexp.Regexp, text string) string {
 		}
 	}
 	return ""
+}
+
+// notMerchants are words a loose pattern ("with us", "at your") can catch that are never a
+// merchant; such matches are skipped in favor of the next one.
+var notMerchants = map[string]bool{
+	"us": true, "you": true, "your": true, "me": true, "the": true, "a": true, "an": true, "this": true, "it": true,
+	"our": true, "any": true, "your account": true, "your card": true, "questions": true, "us at": true,
+}
+
+// firstMerchant returns the first plausible merchant any pattern finds, trying every match of
+// each pattern in order.
+func firstMerchant(res []*regexp.Regexp, text string) string {
+	for _, re := range res {
+		for _, sm := range re.FindAllStringSubmatch(text, -1) {
+			v := sm[0]
+			if len(sm) > 1 {
+				v = sm[1]
+			}
+			if v = cleanMerchant(v); ValidMerchant(v) {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+// ValidMerchant rejects values no merchant name could be: too short, a pronoun, or no letters.
+func ValidMerchant(s string) bool {
+	if len([]rune(s)) < 2 || notMerchants[strings.ToLower(s)] {
+		return false
+	}
+	return strings.IndexFunc(s, func(r rune) bool { return r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r > 0x7f }) >= 0
 }
 
 func cleanMerchant(s string) string {

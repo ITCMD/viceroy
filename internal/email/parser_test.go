@@ -131,3 +131,18 @@ func TestFilterMatches(t *testing.T) {
 		t.Error("invalid filters accepted")
 	}
 }
+
+func TestWithdrawalNotice(t *testing.T) {
+	m := load(t, "samples/capital_one_withdrawal.eml")
+	for _, name := range []string{"generic", "capital_one"} {
+		p, err := Parse(name, "", m)
+		if err != nil || p.AmountCents != 1708 || p.Merchant != "MOUNT WASHINGTON" || p.Date != "2026-10-01" {
+			t.Errorf("%s: %+v %v", name, p, err)
+		}
+	}
+	// "with us" in the footer is never taken as the merchant.
+	p, err := Parse("generic", "", Message{Subject: "Card used", Text: "A charge of $5.00 was made.\nThank you for banking with us.", Date: time.Now()})
+	if err == nil {
+		t.Fatalf("junk merchant accepted: %+v", p)
+	}
+}

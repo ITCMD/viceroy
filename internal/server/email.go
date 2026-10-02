@@ -309,12 +309,13 @@ type emailFilterDTO struct {
 	Parser       string              `json:"parser"`
 	CustomParser *email.CustomParser `json:"custom_parser"`
 	Sign         string              `json:"sign"`
+	Source       string              `json:"source"` // user | ai (written by the email AI, checked by Viceroy)
 }
 
 func toEmailFilterDTO(f db.EmailFilter) emailFilterDTO {
 	out := emailFilterDTO{
 		ID: f.ID, Name: f.Name, Priority: f.Priority, Enabled: f.Enabled == 1, Sender: f.Sender, SubjectMatch: f.SubjectMatch,
-		BodyMatch: f.BodyMatch, UseRegex: f.UseRegex == 1, AccountID: f.AccountID, Parser: f.Parser, Sign: f.Sign,
+		BodyMatch: f.BodyMatch, UseRegex: f.UseRegex == 1, AccountID: f.AccountID, Parser: f.Parser, Sign: f.Sign, Source: f.Source,
 	}
 	if f.CustomParser != "" {
 		var c email.CustomParser
@@ -507,6 +508,7 @@ type previewMatch struct {
 	Status     string        `json:"status"`
 	Parsed     *email.Parsed `json:"parsed"`
 	Error      string        `json:"error"`
+	Matches    bool          `json:"matches"` // the draft filter's conditions catch this email
 }
 
 // handlePreviewEmailFilter shows which recent emails a draft filter would match and what its
@@ -546,7 +548,8 @@ func (s *Server) handlePreviewEmailFilter(w http.ResponseWriter, r *http.Request
 		out.ParserError = err.Error()
 	}
 	parse := func(m db.EmailMessage) previewMatch {
-		pm := previewMatch{ID: m.ID, Subject: m.Subject, FromAddr: m.FromAddr, ReceivedAt: m.ReceivedAt, Status: m.Status}
+		pm := previewMatch{ID: m.ID, Subject: m.Subject, FromAddr: m.FromAddr, ReceivedAt: m.ReceivedAt, Status: m.Status,
+			Matches: filterOK && email.FilterOf(f).Matches(email.FromRow(m))}
 		if out.ParserError != "" {
 			return pm
 		}
@@ -619,10 +622,17 @@ func (s *Server) handleListEmailMessages(w http.ResponseWriter, r *http.Request)
 		MailboxID     *int64 `json:"mailbox_id"`
 		FilterID      *int64 `json:"filter_id"`
 		TransactionID *int64 `json:"transaction_id"`
+		AiRecipe      string `json:"-"`
+		// Why no filter could be built from the AI's reading of a transaction email.
+		AIProblem string `json:"ai_problem"`
 	}
 	out := make([]msgDTO, len(rows))
 	for i, m := range rows {
 		out[i] = msgDTO{ListEmailMessagesRow: m, MailboxID: ptr(m.MailboxID), FilterID: ptr(m.FilterID), TransactionID: ptr(m.TransactionID)}
+		var rc email.RecipeCheck
+		if m.AiRecipe != "" && json.Unmarshal([]byte(m.AiRecipe), &rc) == nil {
+			out[i].AIProblem = rc.Problem
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": out, "counts": counts})
 }
@@ -638,13 +648,33 @@ type emailMessageDTO struct {
 	FilterID      *int64 `json:"filter_id"`
 	TransactionID *int64 `json:"transaction_id"`
 	Error         string `json:"error"`
+	AIKind        string `json:"ai_kind"`
+	AISummary     string `json:"ai_summary"`
+	// What the AI read from a transaction email and Viceroy's verdict (null when it wasn't read).
+	AIRecipe *email.RecipeCheck `json:"ai_recipe"`
+	// For the filter editor: the one account whose last 4 digits the email mentions, the phrase
+	// that mentions them, and whether money went out or came in.
+	SuggestedAccountID *int64 `json:"suggested_account_id"`
+	AccountPhrase      string `json:"account_phrase"`
+	SuggestedSign      string `json:"suggested_sign"`
 }
 
 func toEmailMessageDTO(m db.EmailMessage) emailMessageDTO {
-	return emailMessageDTO{
+	out := emailMessageDTO{
 		ID: m.ID, FromAddr: m.FromAddr, FromName: m.FromName, Subject: m.Subject, ReceivedAt: m.ReceivedAt,
 		BodyText: m.BodyText, Status: m.Status, FilterID: ptr(m.FilterID), TransactionID: ptr(m.TransactionID), Error: m.Error,
+		AIKind: m.AiKind, AISummary: m.AiSummary, SuggestedSign: email.GuessSign(email.FromRow(m)),
 	}
+	if m.AiRecipe != "" {
+		var rc email.RecipeCheck
+		if json.Unmarshal([]byte(m.AiRecipe), &rc) == nil {
+			out.AIRecipe = &rc
+			if rc.Sign != "" {
+				out.SuggestedSign = rc.Sign
+			}
+		}
+	}
+	return out
 }
 
 func (s *Server) handleGetEmailMessage(w http.ResponseWriter, r *http.Request) {
@@ -657,7 +687,20 @@ func (s *Server) handleGetEmailMessage(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toEmailMessageDTO(m))
+	out := toEmailMessageDTO(m)
+	if id, phrase, err := email.SuggestAccount(r.Context(), db.New(s.db), HouseholdID(r), email.FromRow(m)); err != nil {
+		s.internalError(w, err)
+		return
+	} else if id != 0 {
+		out.SuggestedAccountID, out.AccountPhrase = &id, phrase
+	}
+	if out.AIRecipe != nil && out.AIRecipe.AccountID != 0 {
+		out.SuggestedAccountID = &out.AIRecipe.AccountID
+		if out.AIRecipe.Recipe.AccountText != "" {
+			out.AccountPhrase = out.AIRecipe.Recipe.AccountText
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleIgnoreEmailMessage(w http.ResponseWriter, r *http.Request) {
