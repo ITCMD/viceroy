@@ -210,4 +210,3 @@ func (s *Server) handleSpendingPace(w http.ResponseWriter, r *http.Request) {
 		"days_in_month": end.Day(), "this": cumulative(month, through), "last": cumulative(prev, end),
 	})
 }
-

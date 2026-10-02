@@ -52,8 +52,24 @@ export type TxnSummary = {
 export type Category = { id: number; name: string; icon: string };
 export type CategoryGroup = { id: number; name: string; kind: string; categories: Category[] };
 
-/** Filters other pages link to (`/transactions?category=…&from=…&to=…`), e.g. a budget line. */
-export type TxnLink = { category?: number; goal?: number; from?: string; to?: string };
+/**
+ * Filters kept in the URL (`/transactions?category=…&from=…`): set from the filter panel or by
+ * links from other pages (a budget line, a report box).
+ */
+export type TxnLink = {
+  category?: number;
+  group?: number;
+  goal?: number;
+  tag?: number;
+  merchant?: string;
+  uncategorized?: boolean;
+  direction?: "in" | "out";
+  /** Size bounds in dollars, either direction. */
+  min?: number;
+  max?: number;
+  from?: string;
+  to?: string;
+};
 
 export type TxnFilters = TxnLink & {
   account?: number;
@@ -66,8 +82,33 @@ export type TxnFilters = TxnLink & {
 /** Reads a TxnLink from router search params, dropping anything malformed. */
 export function readTxnLink(search: Record<string, unknown>): TxnLink {
   const num = (v: unknown) => (Number(v) > 0 ? Number(v) : undefined);
+  const amount = (v: unknown) => (v !== "" && v != null && Number(v) >= 0 ? Number(v) : undefined);
   const date = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
-  return { category: num(search.category), goal: num(search.goal), from: date(search.from), to: date(search.to) };
+  const out: TxnLink = {
+    category: num(search.category),
+    group: num(search.group),
+    goal: num(search.goal),
+    tag: num(search.tag),
+    // The router parses numeric-looking values, so a merchant named "711" arrives as a number.
+    merchant: (typeof search.merchant === "string" || typeof search.merchant === "number") && search.merchant !== "" ? String(search.merchant) : undefined,
+    uncategorized: search.uncategorized === 1 || search.uncategorized === "1" || search.uncategorized === true || undefined,
+    direction: search.direction === "in" || search.direction === "out" ? search.direction : undefined,
+    min: amount(search.min),
+    max: amount(search.max),
+    from: date(search.from),
+    to: date(search.to),
+  };
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)) as TxnLink;
+}
+
+/** Search params for a link to the transactions list (undefined values dropped). */
+export function txnSearch(link: TxnLink): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(link)) {
+    if (v === undefined || v === "" || v === false) continue;
+    out[k] = v === true ? 1 : v;
+  }
+  return out;
 }
 
 export const sourceLabels: Record<string, string> = {
@@ -83,12 +124,18 @@ function filterParams(f: TxnFilters, cursor: string) {
   if (f.account) p.set("account", String(f.account));
   if (f.owner !== undefined) p.set("owner", String(f.owner));
   if (f.category) p.set("category", String(f.category));
+  if (f.group) p.set("group", String(f.group));
   if (f.goal) p.set("goal", String(f.goal));
+  if (f.tag) p.set("tag", String(f.tag));
+  if (f.merchant) p.set("merchant", f.merchant);
+  if (f.direction) p.set("direction", f.direction);
+  if (f.min !== undefined) p.set("min", String(f.min));
+  if (f.max !== undefined) p.set("max", String(f.max));
   if (f.from) p.set("from", f.from);
   if (f.to) p.set("to", f.to);
   if (f.q) p.set("q", f.q);
   if (f.view === "review") p.set("review", "1");
-  if (f.view === "uncategorized") p.set("uncategorized", "1");
+  if (f.view === "uncategorized" || f.uncategorized) p.set("uncategorized", "1");
   if (f.hidden) p.set("hidden", "1");
   if (cursor) p.set("cursor", cursor);
   return p.toString();

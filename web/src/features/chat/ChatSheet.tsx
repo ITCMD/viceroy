@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState, Markdown, Sheet } from "@/components/ui";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
-import { chatInfoQuery, chatThreadQuery, toolLabels, useChatStream, type ChatMessage, type ChatThread } from "./api";
+import { chatInfoQuery, chatThreadQuery, toolLabels, useChatStream, type ChatContext, type ChatMessage, type ChatThread } from "./api";
 
 const suggestions = [
   "How am I doing on my budget this month?",
@@ -18,8 +18,9 @@ const suggestions = [
 
 const headerButton = "grid size-7 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text";
 
-/** "Chat with your budget": a side panel with the conversation and a composer. */
-export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+/** "Chat with your budget": a side panel with the conversation and a composer. With a
+ * context (a page's Discuss button) every opening starts a new chat about that page's data. */
+export function ChatSheet({ open, onOpenChange, context }: { open: boolean; onOpenChange: (v: boolean) => void; context?: ChatContext }) {
   const { data: info } = useQuery({ ...chatInfoQuery, enabled: open });
   const [threadId, setThreadId] = useState<number | null>(null);
   const onThread = useCallback((t: ChatThread) => setThreadId(t.id), []);
@@ -27,6 +28,17 @@ export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
   const { data: thread } = useQuery({ ...chatThreadQuery(threadId ?? 0), enabled: open && !!threadId });
   const [draft, setDraft] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
+  const [discussing, setDiscussing] = useState(false);
+  useEffect(() => {
+    if (open && context && !(pending && !pending.done)) {
+      settle();
+      setThreadId(null);
+      clearError();
+      setDiscussing(true);
+    }
+    // Only on opening: a refreshed context mid-chat doesn't restart it.
+  }, [open]);
+  const pageContext = discussing && context ? JSON.stringify({ page: context.page, ...(context.data as object) }) : undefined;
 
   const messages: ChatMessage[] = thread && thread.thread.id === threadId ? thread.messages : [];
   // While streaming, the server copy of the new question may already be loaded; show it once.
@@ -47,18 +59,19 @@ export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
     const t = text.trim();
     if (!t || (pending && !pending.done)) return;
     setDraft("");
-    send(threadId, t);
+    send(threadId, t, pageContext);
   };
   const newChat = () => {
     if (pending && !pending.done) return;
     settle();
     setThreadId(null);
     clearError();
+    setDiscussing(false);
   };
 
   const actions = info?.configured && (
     <>
-      <ThreadPicker current={threadId} threads={info.threads} onPick={(id) => !(pending && !pending.done) && (settle(), setThreadId(id), clearError())} onDeleted={(id) => id === threadId && newChat()} />
+      <ThreadPicker current={threadId} threads={info.threads} onPick={(id) => !(pending && !pending.done) && (settle(), setThreadId(id), clearError(), setDiscussing(false))} onDeleted={(id) => id === threadId && newChat()} />
       <button className={headerButton} aria-label="New chat" title="New chat" onClick={newChat} disabled={!!pending && !pending.done}>
         <MessageSquarePlus size={16} />
       </button>
@@ -66,7 +79,7 @@ export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
   );
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title="Chat with your budget" actions={actions} className="!max-w-xl" bodyClassName="!p-0 flex flex-col">
+    <Sheet open={open} onOpenChange={onOpenChange} title={discussing && context ? `Discuss ${context.title}` : "Chat with your budget"} actions={actions} className="!max-w-xl" bodyClassName="!p-0 flex flex-col">
       {info && !info.configured ? (
         <EmptyState icon={Sparkles} title="Chat isn't set up">
           Add an OpenRouter API key in{" "}
@@ -84,13 +97,15 @@ export function ChatSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
                   <div className="grid size-11 place-items-center rounded-full bg-accent-soft text-accent">
                     <Sparkles size={20} />
                   </div>
-                  <h3 className="text-[15px] font-semibold">Ask about your money</h3>
+                  <h3 className="text-[15px] font-semibold">{discussing && context ? `Ask about ${context.title}` : "Ask about your money"}</h3>
                   <p className="max-w-sm text-sm text-muted">
-                    Answers come from your budget, transactions, accounts and goals. Chat can read your data but never changes it.
+                    {discussing && context
+                      ? "Chat sees what's on this page and can look up any transaction behind it. It can read your data but never changes it."
+                      : "Answers come from your budget, transactions, accounts and goals. Chat can read your data but never changes it."}
                   </p>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {suggestions.map((s) => (
+                  {(discussing && context ? context.suggestions : suggestions).map((s) => (
                     <button key={s} onClick={() => submit(s)} className="rounded-lg border border-border px-3 py-2 text-left text-[13px] hover:bg-surface-2">
                       {s}
                     </button>

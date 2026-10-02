@@ -44,7 +44,7 @@ func TestBuild(t *testing.T) {
 		{"2026-08-05", 2, "flexible", "Safeway", -8000},
 		{"2026-08-09", 2, "flexible", "Safeway", 1000}, // refund nets against spending
 		{"2026-09-03", 2, "flexible", "Trader Joe's", -6000},
-		{"2026-09-04", 4, "transfer", "Card", -50000}, // left out
+		{"2026-09-04", 4, "transfer", "Card", -50000},  // left out
 		{"2026-09-05", 0, "", "Mystery", -2500},        // uncategorized spending
 		{"2026-09-06", 0, "", "Venmo", 4000},           // uncategorized income
 		{"2026-10-01", 2, "flexible", "Safeway", -999}, // outside buckets

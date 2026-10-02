@@ -38,6 +38,9 @@ export type Account = {
   /** Replaced by this account (a sync duplicate); kept hidden so its bank link isn't offered again. */
   replaced_by: number | null;
   owner_id: number | null; // household member, null = shared
+  /** Debts: yearly rate in basis points (2499 = 24.99%), null = not entered. */
+  apr_bps: number | null;
+  min_payment_cents: number | null;
 };
 
 /** Payment state read from bank emails by the AI. Cents; dates YYYY-MM-DD. */

@@ -55,6 +55,9 @@ test("reports: cash flow, spending, income and net worth", async ({ page }) => {
 
   await page.getByRole("tab", { name: "Cash flow" }).click();
   await expect(page.getByTestId("cashflow-stats")).toContainText("Savings rate");
+  await expect(page.getByRole("img", { name: "Cash flow diagram" })).toBeVisible();
+  await page.getByRole("button", { name: "6M" }).click();
+  await page.getByRole("button", { name: "Over time" }).click();
   await expect(page.getByRole("img", { name: "Cash flow chart" })).toBeVisible();
   await expect(page.getByTestId("breakdown-table").first()).toContainText("Paychecks");
   await expect(page.getByTestId("breakdown-table").nth(1)).toContainText("Rent");
@@ -65,16 +68,16 @@ test("reports: cash flow, spending, income and net worth", async ({ page }) => {
   await expect(page.getByTestId("breakdown-table")).toContainText("Groceries");
   await page.getByRole("button", { name: "Merchant" }).click();
   await expect(page.getByTestId("breakdown-table")).toContainText("Parkside Apartments");
-  await page.getByRole("button", { name: "Breakdown" }).click();
-  await expect(page.getByRole("img", { name: "Spending breakdown chart" })).toBeVisible();
   await shot(page, "61-reports-spending");
 
   await page.getByRole("button", { name: "Group", exact: true }).click();
   await expect(page.getByTestId("breakdown-table")).toContainText("Fixed");
   await page.getByRole("button", { name: "Quarterly" }).click();
   await page.getByRole("button", { name: "12M" }).click();
-  await page.getByRole("button", { name: "Over time" }).click();
   await expect(page.getByRole("img", { name: "Spending over time chart" })).toBeVisible();
+  await page.getByRole("button", { name: "Breakdown" }).click();
+  await expect(page.getByTestId("treemap")).toBeVisible();
+  await page.getByRole("button", { name: "Over time" }).click();
 
   await page.getByRole("tab", { name: "Income" }).click();
   await page.getByRole("button", { name: "Category" }).click();

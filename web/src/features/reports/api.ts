@@ -21,22 +21,119 @@ export const rangeItems: { value: RangeKey; label: string }[] = [
 ];
 
 const pad = (n: number) => String(n).padStart(2, "0");
+const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 /** Start date for a range preset, in whole months ending with the current one. */
 export function rangeFrom(r: RangeKey, now = new Date()): string {
-  if (r === "all") return "all";
-  if (r === "ytd") return `${now.getFullYear()}-01-01`;
-  const back = { "1m": 0, "3m": 2, "6m": 5, "12m": 11 }[r];
-  const d = new Date(now.getFullYear(), now.getMonth() - back, 1);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
+  return rangeWindow(r, 0, now).from;
 }
 
-export const reportQuery = (from: string, interval: Interval, by: By) =>
+export type RangeWindow = { from: string; to: string; label: string };
+
+const monthsIn: Record<string, number> = { "1m": 1, "3m": 3, "6m": 6, "12m": 12 };
+
+/**
+ * The dates a range preset covers, `offset` windows back from the current one (0 = ending
+ * now): 3M with offset 1 is the three months before the last three. YTD steps by whole
+ * years. `to` is empty while the window includes today (the server ends at today).
+ */
+export function rangeWindow(r: RangeKey, offset: number, now = new Date()): RangeWindow {
+  if (r === "all") return { from: "all", to: "", label: "All time" };
+  if (r === "ytd") {
+    const y = now.getFullYear() - offset;
+    return { from: `${y}-01-01`, to: offset ? `${y}-12-31` : "", label: offset ? String(y) : `${y} to date` };
+  }
+  const n = monthsIn[r];
+  const end = new Date(now.getFullYear(), now.getMonth() - offset * n, 1);
+  const start = new Date(end.getFullYear(), end.getMonth() - (n - 1), 1);
+  const last = new Date(end.getFullYear(), end.getMonth() + 1, 0);
+  const mon = (d: Date, year: boolean) => d.toLocaleDateString("en-US", year ? { month: "short", year: "numeric" } : { month: "short" });
+  const label =
+    n === 1
+      ? end.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+      : start.getFullYear() === end.getFullYear()
+        ? `${mon(start, false)} – ${mon(end, true)}`
+        : `${mon(start, true)} – ${mon(end, true)}`;
+  return { from: iso(start), to: offset ? iso(last) : "", label };
+}
+
+const rangeParams = (from: string, to: string) => `from=${from}${to ? `&to=${to}` : ""}`;
+
+export const reportQuery = (from: string, interval: Interval, by: By, to = "") =>
   queryOptions({
-    queryKey: ["reports", from, interval, by],
-    queryFn: () => api.get<Report>(`/reports?from=${from}&interval=${interval}&by=${by}`),
+    queryKey: ["reports", from, to, interval, by],
+    queryFn: () => api.get<Report>(`/reports?${rangeParams(from, to)}&interval=${interval}&by=${by}`),
     placeholderData: keepPreviousData,
   });
+
+/** A box in the spending tree / cash flow diagram (see internal/reports/tree.go). */
+export type TreeNode = {
+  key: string;
+  id: number;
+  name: string;
+  icon: string;
+  kind: "income" | "spending" | "group" | "category" | "goal" | "uncategorized" | "contributions" | "merchant";
+  group: string;
+  total: number;
+  count: number;
+  children?: TreeNode[];
+};
+export type ReportTree = { from: string; to: string; income: TreeNode; spending: TreeNode };
+
+export const treeQuery = (from: string, to = "") =>
+  queryOptions({
+    queryKey: ["reports", "tree", from, to],
+    queryFn: () => api.get<ReportTree>(`/reports/tree?${rangeParams(from, to)}`),
+    placeholderData: keepPreviousData,
+  });
+
+export type Debt = {
+  account_id: number;
+  name: string;
+  type: string;
+  institution_name: string;
+  color: string;
+  logo_url: string | null;
+  balance: number;
+  apr_bps: number;
+  apr_source: "user" | "assumed" | "missing";
+  min_payment: number;
+  min_payment_source: "user" | "bill" | "estimate";
+  monthly_interest: number;
+  interest_paid_12m: number;
+};
+export type DebtPlan = {
+  strategy: "minimum" | "snowball" | "avalanche";
+  months: number;
+  interest: number;
+  payment: number;
+  never: boolean;
+  balances: number[];
+  debts: { id: number; months: number; interest: number; order: number }[];
+};
+export type DebtReport = {
+  debts: Debt[];
+  total: number;
+  monthly_interest: number;
+  interest_paid_12m: number;
+  history: { date: string; total: number; accounts: Record<string, number> }[];
+  start: string;
+  extra: number;
+  plans: Record<DebtPlan["strategy"], DebtPlan>;
+};
+
+export const debtQuery = (extraCents: number) =>
+  queryOptions({
+    queryKey: ["reports", "debt", extraCents],
+    queryFn: () => api.get<DebtReport>(`/reports/debt?extra=${(extraCents / 100).toFixed(2)}`),
+    placeholderData: keepPreviousData,
+  });
+
+/** "Mar 2028" for the month n months after start (YYYY-MM). */
+export function planMonth(start: string, n: number) {
+  const [y, m] = start.split("-").map(Number);
+  return new Date(y, m - 1 + n, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
 
 export type SpendingPace = { month: string; prev_month: string; today: string; days_in_month: number; this: number[]; last: number[] };
 

@@ -3,6 +3,10 @@ import { useCallback, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 
 export type ChatThread = { id: number; title: string; updated_at: number };
+
+/** What a page's Discuss button hands the chat: a title for the panel and the data on screen
+ * (sent as JSON with the first message; money in dollars). */
+export type ChatContext = { title: string; page: string; data: unknown; suggestions: string[] };
 export type ChatMessage = { id: number; role: "user" | "assistant"; content: string; tools?: string[] };
 
 export const chatInfoQuery = queryOptions({
@@ -21,6 +25,7 @@ export const toolLabels: Record<string, string> = {
   spending_report: "Ran a spending report",
   search_transactions: "Searched transactions",
   net_worth: "Looked at net worth",
+  debt_payoff: "Looked at your debts",
   list_accounts: "Looked at your accounts",
   upcoming_recurring: "Checked recurring bills",
   list_goals: "Looked at your goals",
@@ -48,7 +53,7 @@ export function useChatStream(onThread: (t: ChatThread) => void) {
   const abort = useRef<AbortController | null>(null);
 
   const send = useCallback(
-    async (threadId: number | null, content: string) => {
+    async (threadId: number | null, content: string, context?: string) => {
       const ctl = new AbortController();
       abort.current = ctl;
       setError(null);
@@ -60,7 +65,7 @@ export function useChatStream(onThread: (t: ChatThread) => void) {
           method: "POST",
           credentials: "same-origin",
           headers: { "X-Viceroy-CSRF": "1", "Content-Type": "application/json" },
-          body: JSON.stringify({ thread_id: threadId ?? 0, content }),
+          body: JSON.stringify({ thread_id: threadId ?? 0, content, context: threadId ? undefined : context }),
           signal: ctl.signal,
         });
         if (!res.ok || !res.body) {

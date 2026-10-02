@@ -19,6 +19,8 @@ export type Series = {
   /** Bars sharing a stack id are stacked. */
   stack?: string;
   dashed?: boolean;
+  /** Bar width (px or "%" of the category), e.g. a slim bar beside a stack. */
+  barWidth?: number | string;
 };
 
 /**
@@ -31,6 +33,7 @@ export function SeriesChart({
   height = 240,
   label,
   hideZero = false,
+  barMaxWidth = 28,
 }: {
   labels: string[];
   series: Series[];
@@ -38,6 +41,8 @@ export function SeriesChart({
   label: string;
   /** Leave zero values out of the tooltip (useful for many stacked series). */
   hideZero?: boolean;
+  /** Widest a bar may get; raise it when there are few periods so bars fill the space. */
+  barMaxWidth?: number;
 }) {
   const { el, chart } = useEChart();
   const t = useChartTokens();
@@ -97,14 +102,17 @@ export function SeriesChart({
                 name: s.name,
                 stack: s.stack,
                 data: s.values,
-                barMaxWidth: 28,
+                barMaxWidth,
+                barWidth: s.barWidth,
+                barGap: "8%",
+                barCategoryGap: labels.length <= 6 ? "22%" : "30%",
                 itemStyle: { color: s.color, borderColor: t.surface, borderWidth: s.stack ? 1 : 0, borderRadius: s.stack ? 0 : [4, 4, 0, 0] },
               },
         ),
       },
       true,
     );
-  }, [chart, labels, series, hideZero, t]);
+  }, [chart, labels, series, hideZero, barMaxWidth, t]);
 
   return <div ref={el} style={{ height }} role="img" aria-label={label} />;
 }

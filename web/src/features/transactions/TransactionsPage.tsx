@@ -2,15 +2,15 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { householdQuery, ownerName } from "@/features/household/api";
 import clsx from "clsx";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { ArrowLeftRight, ChevronDown, EyeOff, Link2, Mail, Plus, Search, Sparkles, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ArrowLeftRight, ChevronDown, EyeOff, Link2, Mail, Plus, Search, SlidersHorizontal, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CategoryIcon, EmptyState, Menu, MoneyText, PageHeader, Segmented } from "@/components/ui";
 import { accountLabel, accountsQuery, canAddTo } from "@/features/accounts/api";
 import { AddTransactionDialog } from "./AddTransactionDialog";
 import { AICategorizeDialog } from "./AICategorizeDialog";
 import { TransactionSheet } from "./TransactionSheet";
-import { goalsQuery } from "@/features/goals/api";
-import { categoriesQuery, dayLabel, pendingLabel, readTxnLink, shortDate, transactionsQuery, type Transaction, type TxnFilters, type TxnLink } from "./api";
+import { dayLabel, pendingLabel, readTxnLink, transactionsQuery, txnSearch, type Transaction, type TxnFilters, type TxnLink } from "./api";
+import { filterCount, TxnFilterChips, TxnFilterPanel } from "./TxnFilters";
 import { EmailReviewBanner } from "@/features/email/EmailReviewBanner";
 
 const views: { value: NonNullable<TxnFilters["view"]>; label: string }[] = [
@@ -42,6 +42,11 @@ export function TransactionsPage() {
   const routerSearch = useRouterState({ select: (s) => s.location.search as Record<string, unknown> });
   const link = useMemo(() => readTxnLink(routerSearch), [routerSearch]);
   const navigate = useNavigate();
+  const setLink = useCallback(
+    (next: TxnLink) => navigate({ to: "/transactions" as string, search: txnSearch(next) as never, replace: true }),
+    [navigate],
+  );
+  const [showFilters, setShowFilters] = useState(false);
   const filters: TxnFilters = { ...link, account: account || undefined, owner: owner >= 0 ? owner : undefined, q: q || undefined, view, hidden };
   const list = useInfiniteQuery(transactionsQuery(filters));
   const txns = useMemo(() => list.data?.pages.flatMap((p) => p.transactions) ?? [], [list.data]);
@@ -53,7 +58,7 @@ export function TransactionsPage() {
     }
     return out;
   }, [txns]);
-  const linked = !!(link.category || link.goal || link.from || link.to);
+  const linked = Object.keys(link).length > 0;
   const filtered = !!(q || account || owner >= 0 || view !== "all" || linked);
 
   return (
@@ -101,6 +106,18 @@ export function TransactionsPage() {
             </select>
             <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted" />
           </label>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-9"
+            onClick={() => setShowFilters((v) => !v)}
+            aria-expanded={showFilters}
+            data-testid="txn-filters-toggle"
+          >
+            <SlidersHorizontal size={14} />
+            Filters
+            {linked && <span className="grid size-4 place-items-center rounded-full bg-accent text-[10px] font-semibold text-accent-fg">{filterCount(link)}</span>}
+          </Button>
           {members.length > 1 && (
             <label className="relative">
               <span className="sr-only">Owner</span>
@@ -121,7 +138,8 @@ export function TransactionsPage() {
             </label>
           )}
         </div>
-        {linked && <LinkChip link={link} onClear={() => navigate({ to: "/transactions" as string, search: {} as never, replace: true })} />}
+        {showFilters && <TxnFilterPanel link={link} onChange={setLink} />}
+        <TxnFilterChips link={link} onChange={setLink} />
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Segmented label="Show" value={view} onChange={setView} items={views} />
           <label className="flex items-center gap-2 text-[13px] text-muted">
@@ -207,25 +225,5 @@ export function TransactionRow({ txn: t, onClick }: { txn: Transaction; onClick:
         {t.pending && <Badge>{pendingLabel(t)}</Badge>}
       </span>
     </button>
-  );
-}
-
-/** The filter a link brought (a budget line's category and period), with a way to clear it. */
-function LinkChip({ link, onClear }: { link: TxnLink; onClear: () => void }) {
-  const { data: cats } = useQuery({ ...categoriesQuery, enabled: !!link.category });
-  const { data: goals } = useQuery({ ...goalsQuery, enabled: !!link.goal });
-  const cat = cats?.groups.flatMap((g) => g.categories).find((c) => c.id === link.category);
-  const goal = goals?.goals.find((g) => g.id === link.goal);
-  const what = cat ? `${cat.icon} ${cat.name}` : goal ? `${goal.icon} ${goal.name}` : link.category || link.goal ? "…" : "";
-  const when = link.from && link.to ? `${shortDate(link.from)} – ${shortDate(link.to)}` : link.from ? `Since ${shortDate(link.from)}` : link.to ? `Until ${shortDate(link.to)}` : "";
-  return (
-    <div className="flex items-center gap-2 self-start rounded-full border border-accent/40 bg-accent-soft py-1 pl-3 pr-1.5 text-[13px]" data-testid="txn-link-filter">
-      <span className="font-medium">{what}</span>
-      {what && when && <span className="text-muted">·</span>}
-      {when && <span className="text-muted">{when}</span>}
-      <button type="button" onClick={onClear} aria-label="Clear filter" className="grid size-5 place-items-center rounded-full text-muted hover:bg-surface hover:text-text">
-        <X size={13} />
-      </button>
-    </div>
   );
 }

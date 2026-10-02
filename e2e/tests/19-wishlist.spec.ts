@@ -138,7 +138,7 @@ test("budget: Actual and View transactions open the category's transactions; tab
   await expect(page.getByTestId("txn-link-filter")).toContainText("Groceries");
   await expect(page.getByText("Corner Grocer")).toBeVisible();
   await expect(page.getByText("Not Groceries Co")).toHaveCount(0);
-  await page.getByRole("button", { name: "Clear filter" }).click();
+  await page.getByRole("button", { name: /^Remove filter/ }).first().click();
   await expect(page.getByText("Not Groceries Co")).toBeVisible();
 
   // From the editor.
