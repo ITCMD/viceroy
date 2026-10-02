@@ -24,9 +24,46 @@ func (q *Queries) ClearGoalTransactions(ctx context.Context, arg ClearGoalTransa
 	return err
 }
 
+const createBuiltinGoal = `-- name: CreateBuiltinGoal :one
+INSERT INTO goals (household_id, name, icon, builtin, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id, household_id, name, icon, target_cents, target_date, starting_cents, archived, sort, created_at, builtin
+`
+
+type CreateBuiltinGoalParams struct {
+	HouseholdID int64  `json:"household_id"`
+	Name        string `json:"name"`
+	Icon        string `json:"icon"`
+	Builtin     string `json:"builtin"`
+	CreatedAt   int64  `json:"created_at"`
+}
+
+func (q *Queries) CreateBuiltinGoal(ctx context.Context, arg CreateBuiltinGoalParams) (Goal, error) {
+	row := q.db.QueryRowContext(ctx, createBuiltinGoal,
+		arg.HouseholdID,
+		arg.Name,
+		arg.Icon,
+		arg.Builtin,
+		arg.CreatedAt,
+	)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.Name,
+		&i.Icon,
+		&i.TargetCents,
+		&i.TargetDate,
+		&i.StartingCents,
+		&i.Archived,
+		&i.Sort,
+		&i.CreatedAt,
+		&i.Builtin,
+	)
+	return i, err
+}
+
 const createGoal = `-- name: CreateGoal :one
 INSERT INTO goals (household_id, name, icon, target_cents, target_date, starting_cents, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, household_id, name, icon, target_cents, target_date, starting_cents, archived, sort, created_at
+VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, household_id, name, icon, target_cents, target_date, starting_cents, archived, sort, created_at, builtin
 `
 
 type CreateGoalParams struct {
@@ -61,6 +98,7 @@ func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, e
 		&i.Archived,
 		&i.Sort,
 		&i.CreatedAt,
+		&i.Builtin,
 	)
 	return i, err
 }
@@ -116,7 +154,7 @@ const dailyGoalTotals = `-- name: DailyGoalTotals :many
 SELECT t.goal_id AS goal_id, t.date, CAST(SUM(ABS(t.amount_cents)) AS INTEGER) AS total
 FROM transactions t JOIN accounts a ON a.id = t.account_id
 WHERE t.household_id = ?1 AND t.date >= ?2 AND t.date < ?3
-  AND t.goal_id IS NOT NULL AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+  AND t.goal_id IS NOT NULL AND t.goal_withdrawal = 0 AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
 GROUP BY t.goal_id, t.date
 `
 
@@ -132,7 +170,8 @@ type DailyGoalTotalsRow struct {
 	Total  int64         `json:"total"`
 }
 
-// Money put toward each goal per day (absolute amounts) over [from, to).
+// Money put toward each goal per day (absolute amounts) over [from, to). Money spent from a
+// goal (goal_withdrawal) isn't a contribution.
 func (q *Queries) DailyGoalTotals(ctx context.Context, arg DailyGoalTotalsParams) ([]DailyGoalTotalsRow, error) {
 	rows, err := q.db.QueryContext(ctx, dailyGoalTotals, arg.HouseholdID, arg.FromDate, arg.ToDate)
 	if err != nil {
@@ -188,6 +227,34 @@ func (q *Queries) DeleteGoal(ctx context.Context, arg DeleteGoalParams) error {
 	return err
 }
 
+const getBuiltinGoal = `-- name: GetBuiltinGoal :one
+SELECT id, household_id, name, icon, target_cents, target_date, starting_cents, archived, sort, created_at, builtin FROM goals WHERE household_id = ? AND builtin = ? ORDER BY id LIMIT 1
+`
+
+type GetBuiltinGoalParams struct {
+	HouseholdID int64  `json:"household_id"`
+	Builtin     string `json:"builtin"`
+}
+
+func (q *Queries) GetBuiltinGoal(ctx context.Context, arg GetBuiltinGoalParams) (Goal, error) {
+	row := q.db.QueryRowContext(ctx, getBuiltinGoal, arg.HouseholdID, arg.Builtin)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.Name,
+		&i.Icon,
+		&i.TargetCents,
+		&i.TargetDate,
+		&i.StartingCents,
+		&i.Archived,
+		&i.Sort,
+		&i.CreatedAt,
+		&i.Builtin,
+	)
+	return i, err
+}
+
 const getCategoryGroupKind = `-- name: GetCategoryGroupKind :one
 SELECT kind FROM category_groups WHERE id = ?
 `
@@ -200,7 +267,7 @@ func (q *Queries) GetCategoryGroupKind(ctx context.Context, id int64) (string, e
 }
 
 const getGoal = `-- name: GetGoal :one
-SELECT id, household_id, name, icon, target_cents, target_date, starting_cents, archived, sort, created_at FROM goals WHERE id = ? AND household_id = ?
+SELECT id, household_id, name, icon, target_cents, target_date, starting_cents, archived, sort, created_at, builtin FROM goals WHERE id = ? AND household_id = ?
 `
 
 type GetGoalParams struct {
@@ -222,6 +289,7 @@ func (q *Queries) GetGoal(ctx context.Context, arg GetGoalParams) (Goal, error) 
 		&i.Archived,
 		&i.Sort,
 		&i.CreatedAt,
+		&i.Builtin,
 	)
 	return i, err
 }
@@ -291,9 +359,12 @@ func (q *Queries) ListBudgetAmounts(ctx context.Context, householdID int64) ([]B
 
 const listGoals = `-- name: ListGoals :many
 
-SELECT g.id, g.household_id, g.name, g.icon, g.target_cents, g.target_date, g.starting_cents, g.archived, g.sort, g.created_at, CAST(COALESCE((
+SELECT g.id, g.household_id, g.name, g.icon, g.target_cents, g.target_date, g.starting_cents, g.archived, g.sort, g.created_at, g.builtin, CAST(COALESCE((
     SELECT SUM(ABS(t.amount_cents)) FROM transactions t
-    WHERE t.goal_id = g.id AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS contributed_cents
+    WHERE t.goal_id = g.id AND t.goal_withdrawal = 0 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS contributed_cents,
+  CAST(COALESCE((
+    SELECT SUM(ABS(t.amount_cents)) FROM transactions t
+    WHERE t.goal_id = g.id AND t.goal_withdrawal = 1 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS withdrawn_cents
 FROM goals g WHERE g.household_id = ? ORDER BY g.archived, g.sort, g.id
 `
 
@@ -308,7 +379,9 @@ type ListGoalsRow struct {
 	Archived         int64          `json:"archived"`
 	Sort             int64          `json:"sort"`
 	CreatedAt        int64          `json:"created_at"`
+	Builtin          string         `json:"builtin"`
 	ContributedCents int64          `json:"contributed_cents"`
+	WithdrawnCents   int64          `json:"withdrawn_cents"`
 }
 
 // ---- goals ----
@@ -332,7 +405,9 @@ func (q *Queries) ListGoals(ctx context.Context, householdID int64) ([]ListGoals
 			&i.Archived,
 			&i.Sort,
 			&i.CreatedAt,
+			&i.Builtin,
 			&i.ContributedCents,
+			&i.WithdrawnCents,
 		); err != nil {
 			return nil, err
 		}
@@ -428,7 +503,9 @@ func (q *Queries) SetHouseholdSetting(ctx context.Context, arg SetHouseholdSetti
 }
 
 const setTransactionGoal = `-- name: SetTransactionGoal :exec
-UPDATE transactions SET goal_id = ? WHERE id = ? AND household_id = ?
+UPDATE transactions SET goal_withdrawal = CASE WHEN goal_id IS ?1 THEN goal_withdrawal ELSE 0 END,
+    goal_id = ?1
+WHERE id = ?2 AND household_id = ?3
 `
 
 type SetTransactionGoalParams struct {
@@ -437,8 +514,30 @@ type SetTransactionGoalParams struct {
 	HouseholdID int64         `json:"household_id"`
 }
 
+// Moving a transaction to another goal (or none) makes it a contribution again.
 func (q *Queries) SetTransactionGoal(ctx context.Context, arg SetTransactionGoalParams) error {
 	_, err := q.db.ExecContext(ctx, setTransactionGoal, arg.GoalID, arg.ID, arg.HouseholdID)
+	return err
+}
+
+const setTransactionGoalWithdrawal = `-- name: SetTransactionGoalWithdrawal :exec
+UPDATE transactions SET goal_id = ?, goal_withdrawal = ? WHERE id = ? AND household_id = ?
+`
+
+type SetTransactionGoalWithdrawalParams struct {
+	GoalID         sql.NullInt64 `json:"goal_id"`
+	GoalWithdrawal int64         `json:"goal_withdrawal"`
+	ID             int64         `json:"id"`
+	HouseholdID    int64         `json:"household_id"`
+}
+
+func (q *Queries) SetTransactionGoalWithdrawal(ctx context.Context, arg SetTransactionGoalWithdrawalParams) error {
+	_, err := q.db.ExecContext(ctx, setTransactionGoalWithdrawal,
+		arg.GoalID,
+		arg.GoalWithdrawal,
+		arg.ID,
+		arg.HouseholdID,
+	)
 	return err
 }
 

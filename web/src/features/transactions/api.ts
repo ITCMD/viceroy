@@ -31,6 +31,8 @@ export type Transaction = {
   linked_source: "" | "manual" | "email";
   linked_txn_id: number | null;
   goal_id: number | null;
+  /** Money spent from the goal (e.g. a wishlist purchase) rather than put into it. */
+  goal_withdrawal: boolean;
   tags: Tag[];
 };
 
@@ -48,12 +50,22 @@ export type TxnSummary = {
 export type Category = { id: number; name: string; icon: string };
 export type CategoryGroup = { id: number; name: string; kind: string; categories: Category[] };
 
-export type TxnFilters = {
+/** Filters other pages link to (`/transactions?category=…&from=…&to=…`), e.g. a budget line. */
+export type TxnLink = { category?: number; goal?: number; from?: string; to?: string };
+
+export type TxnFilters = TxnLink & {
   account?: number;
   q?: string;
   view?: "all" | "review" | "uncategorized";
   hidden?: boolean;
 };
+
+/** Reads a TxnLink from router search params, dropping anything malformed. */
+export function readTxnLink(search: Record<string, unknown>): TxnLink {
+  const num = (v: unknown) => (Number(v) > 0 ? Number(v) : undefined);
+  const date = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+  return { category: num(search.category), goal: num(search.goal), from: date(search.from), to: date(search.to) };
+}
 
 export const sourceLabels: Record<string, string> = {
   rule: "Categorized by a rule",
@@ -66,6 +78,10 @@ export const sourceLabels: Record<string, string> = {
 function filterParams(f: TxnFilters, cursor: string) {
   const p = new URLSearchParams();
   if (f.account) p.set("account", String(f.account));
+  if (f.category) p.set("category", String(f.category));
+  if (f.goal) p.set("goal", String(f.goal));
+  if (f.from) p.set("from", f.from);
+  if (f.to) p.set("to", f.to);
   if (f.q) p.set("q", f.q);
   if (f.view === "review") p.set("review", "1");
   if (f.view === "uncategorized") p.set("uncategorized", "1");

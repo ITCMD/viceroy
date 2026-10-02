@@ -36,12 +36,13 @@ WHERE t.household_id = sqlc.arg(household_id) AND t.date >= sqlc.arg(from_date) 
   AND t.category_id IS NOT NULL AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
 GROUP BY t.category_id, t.date;
 
--- Money put toward each goal per day (absolute amounts) over [from, to).
+-- Money put toward each goal per day (absolute amounts) over [from, to). Money spent from a
+-- goal (goal_withdrawal) isn't a contribution.
 -- name: DailyGoalTotals :many
 SELECT t.goal_id AS goal_id, t.date, CAST(SUM(ABS(t.amount_cents)) AS INTEGER) AS total
 FROM transactions t JOIN accounts a ON a.id = t.account_id
 WHERE t.household_id = sqlc.arg(household_id) AND t.date >= sqlc.arg(from_date) AND t.date < sqlc.arg(to_date)
-  AND t.goal_id IS NOT NULL AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+  AND t.goal_id IS NOT NULL AND t.goal_withdrawal = 0 AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
 GROUP BY t.goal_id, t.date;
 
 -- ---- goals ----
@@ -49,7 +50,10 @@ GROUP BY t.goal_id, t.date;
 -- name: ListGoals :many
 SELECT g.*, CAST(COALESCE((
     SELECT SUM(ABS(t.amount_cents)) FROM transactions t
-    WHERE t.goal_id = g.id AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS contributed_cents
+    WHERE t.goal_id = g.id AND t.goal_withdrawal = 0 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS contributed_cents,
+  CAST(COALESCE((
+    SELECT SUM(ABS(t.amount_cents)) FROM transactions t
+    WHERE t.goal_id = g.id AND t.goal_withdrawal = 1 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS withdrawn_cents
 FROM goals g WHERE g.household_id = ? ORDER BY g.archived, g.sort, g.id;
 
 -- name: GetGoal :one
@@ -69,8 +73,20 @@ UPDATE transactions SET goal_id = NULL WHERE goal_id = ? AND household_id = ?;
 -- name: DeleteGoal :exec
 DELETE FROM goals WHERE id = ? AND household_id = ?;
 
+-- Moving a transaction to another goal (or none) makes it a contribution again.
 -- name: SetTransactionGoal :exec
-UPDATE transactions SET goal_id = ? WHERE id = ? AND household_id = ?;
+UPDATE transactions SET goal_withdrawal = CASE WHEN goal_id IS sqlc.narg(goal_id) THEN goal_withdrawal ELSE 0 END,
+    goal_id = sqlc.narg(goal_id)
+WHERE id = sqlc.arg(id) AND household_id = sqlc.arg(household_id);
+
+-- name: SetTransactionGoalWithdrawal :exec
+UPDATE transactions SET goal_id = ?, goal_withdrawal = ? WHERE id = ? AND household_id = ?;
+
+-- name: GetBuiltinGoal :one
+SELECT * FROM goals WHERE household_id = ? AND builtin = ? ORDER BY id LIMIT 1;
+
+-- name: CreateBuiltinGoal :one
+INSERT INTO goals (household_id, name, icon, builtin, created_at) VALUES (?, ?, ?, ?, ?) RETURNING *;
 
 -- name: GetCategoryGroupKind :one
 SELECT kind FROM category_groups WHERE id = ?;

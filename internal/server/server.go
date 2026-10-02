@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"viceroy/internal/email"
 	"viceroy/internal/notify"
 	"viceroy/internal/syncer"
+	"viceroy/internal/wishlist"
 )
 
 const sessionCookie = "viceroy_session"
@@ -38,6 +40,7 @@ type Server struct {
 	notify  *notify.Service
 	ai      *aisettings.Store
 	models  modelCache
+	wish    *wishlist.Fetcher
 
 	// Changed, when set, is told about every successful change made through the API (after
 	// the notifier), e.g. to color new accounts.
@@ -48,6 +51,8 @@ func New(cfg config.Config, conn *sql.DB, web fs.FS, log *slog.Logger, sync *syn
 	return &Server{
 		cfg: cfg, db: conn, auth: auth.New(conn), web: web,
 		limiter: newLoginLimiter(10, 15*time.Minute), log: log, sync: sync, mail: mail, notify: nt, ai: aiset,
+		// VICEROY_ALLOW_PRIVATE_FETCH=1 lets wishlist links reach private addresses (e2e fake store).
+		wish: &wishlist.Fetcher{AllowPrivate: os.Getenv("VICEROY_ALLOW_PRIVATE_FETCH") == "1"},
 	}
 }
 
@@ -80,6 +85,7 @@ func (s *Server) Handler() http.Handler {
 			s.reportRoutes(r)
 			s.recurringRoutes(r)
 			s.annotationRoutes(r)
+			s.wishlistRoutes(r)
 			s.notifyRoutes(r)
 			s.chatRoutes(r)
 			s.importRoutes(r)

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Info } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { Info, List as ListIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BarChart } from "@/components/charts/BarChart";
 import { Button, Dialog, Field, FormError, MoneyText, Segmented, Select, Switch } from "@/components/ui";
@@ -49,12 +50,15 @@ export function BudgetEditDialog({
   target,
   line,
   month,
+  period,
   forwardDefault,
   onClose,
 }: {
   target: Target | null;
   line: BudgetLine | null;
   month: string;
+  /** The period the budget page shows; "View transactions" lists this line's within it. */
+  period: { start: string; end: string } | null;
   forwardDefault: boolean;
   onClose: () => void;
 }) {
@@ -102,6 +106,7 @@ export function BudgetEditDialog({
     );
   };
 
+  const navigate = useNavigate();
   const past = hist?.history ?? []; // six months before, then this one
   return (
     <Dialog
@@ -116,6 +121,18 @@ export function BudgetEditDialog({
       description={`${target?.kind === "goal" ? "Contribution" : "Budget"} for ${monthLabel(month)}`}
       footer={
         <>
+          {target && period && (
+            <Button
+              variant="ghost"
+              className="mr-auto"
+              onClick={() => {
+                onClose();
+                navigate({ to: "/transactions" as string, search: { [target.kind]: target.id, from: period.start, to: period.end } as never });
+              }}
+            >
+              <ListIcon size={14} /> View transactions
+            </Button>
+          )}
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>

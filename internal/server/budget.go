@@ -308,8 +308,22 @@ type goalDTO struct {
 	TargetDate  *string `json:"target_date"`
 	Starting    int64   `json:"starting_cents"`
 	Contributed int64   `json:"contributed_cents"`
-	Balance     int64   `json:"balance_cents"` // starting + contributed
+	Withdrawn   int64   `json:"withdrawn_cents"` // spent from the goal (e.g. wishlist purchases)
+	Balance     int64   `json:"balance_cents"`   // starting + contributed − withdrawn
 	Archived    bool    `json:"archived"`
+	Builtin     string  `json:"builtin"` // "wishlist" for the Wishlist goal
+}
+
+func toGoalDTO(g db.ListGoalsRow) goalDTO {
+	d := goalDTO{
+		ID: g.ID, Name: g.Name, Icon: g.Icon, Target: g.TargetCents, Starting: g.StartingCents,
+		Contributed: g.ContributedCents, Withdrawn: g.WithdrawnCents,
+		Balance: g.StartingCents + g.ContributedCents - g.WithdrawnCents, Archived: g.Archived == 1, Builtin: g.Builtin,
+	}
+	if g.TargetDate.Valid {
+		d.TargetDate = &g.TargetDate.String
+	}
+	return d
 }
 
 func (s *Server) handleListGoals(w http.ResponseWriter, r *http.Request) {
@@ -320,13 +334,7 @@ func (s *Server) handleListGoals(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]goalDTO, len(rows))
 	for i, g := range rows {
-		out[i] = goalDTO{
-			ID: g.ID, Name: g.Name, Icon: g.Icon, Target: g.TargetCents, Starting: g.StartingCents,
-			Contributed: g.ContributedCents, Balance: g.StartingCents + g.ContributedCents, Archived: g.Archived == 1,
-		}
-		if g.TargetDate.Valid {
-			out[i].TargetDate = &g.TargetDate.String
-		}
+		out[i] = toGoalDTO(g)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"goals": out})
 }
@@ -451,6 +459,12 @@ func (s *Server) handleDeleteGoal(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	q := db.New(tx)
 	id := txnID(r)
+	if g, err := q.GetGoal(ctx, db.GetGoalParams{ID: id, HouseholdID: hh}); err == nil && g.Builtin == wishlistGoal {
+		if n, err := q.CountOpenWishlistItems(ctx, hh); err != nil || n > 0 {
+			writeError(w, http.StatusConflict, "The Wishlist goal can't be deleted while the wishlist has items.")
+			return
+		}
+	}
 	if err := q.ClearGoalTransactions(ctx, db.ClearGoalTransactionsParams{GoalID: sql.NullInt64{Int64: id, Valid: true}, HouseholdID: hh}); err != nil {
 		s.internalError(w, err)
 		return

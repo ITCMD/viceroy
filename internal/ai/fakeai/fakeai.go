@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -35,6 +37,8 @@ type Request struct {
 type Server struct {
 	mu       sync.Mutex
 	Requests []Request
+	// ShopDir, when set, holds product page fixtures served under /shop/ (see serveShop).
+	ShopDir string
 }
 
 // keywords maps words in the user's message to the tool the fake calls.
@@ -61,6 +65,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/models" || r.URL.Path == "/api/v1/models" {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(models))
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/shop/") && s.ShopDir != "" {
+		s.serveShop(w, r)
 		return
 	}
 	if r.URL.Path != "/chat/completions" && r.URL.Path != "/api/v1/chat/completions" {
@@ -93,6 +101,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if strings.Contains(req.Messages[0].Content, "brand colors") {
 			content = brandColors(last.Content)
+		}
+		if strings.Contains(req.Messages[0].Content, "product pages for a shopping wishlist") {
+			content = productPrice(last.Content)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{
@@ -469,4 +480,44 @@ func brandColors(user string) string {
 	}
 	b, _ := json.Marshal(map[string]any{"items": items})
 	return string(b)
+}
+
+// productPrice plays the wishlist page reader (wishlist.AIFill): the first "$x" on the page.
+func productPrice(user string) string {
+	price := regexp.MustCompile(`\$[0-9][0-9,]*(\.[0-9]{2})?`).FindString(user)
+	out := map[string]any{"price": nil, "title": nil}
+	if price != "" {
+		out["price"] = price
+	}
+	b, _ := json.Marshal(out)
+	return string(b)
+}
+
+// serveShop serves the product page fixtures in ShopDir under /shop/ for the wishlist e2e:
+// /shop/<name> → <name>.html, images as they are. /shop/short/<name> redirects there.
+func (s *Server) serveShop(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/shop/")
+	if rest, ok := strings.CutPrefix(name, "short/"); ok {
+		http.Redirect(w, r, "/shop/"+rest+"?utm_source=share&ref=abc", http.StatusFound)
+		return
+	}
+	if strings.Contains(name, "..") || strings.Contains(name, "/") || name == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if !strings.Contains(name, ".") {
+		name += ".html"
+	}
+	b, err := os.ReadFile(filepath.Join(s.ShopDir, name))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if strings.HasSuffix(name, ".html") {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if strings.HasPrefix(name, "captcha") {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}
+	w.Write(b)
 }

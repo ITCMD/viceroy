@@ -77,6 +77,7 @@ type txnDTO struct {
 	LinkedSource   string   `json:"linked_source"` // source of the pending/email entry linked to this row
 	LinkedTxnID    *int64   `json:"linked_txn_id"`
 	GoalID         *int64   `json:"goal_id"`
+	GoalWithdrawal bool     `json:"goal_withdrawal"`
 	Tags           []tagDTO `json:"tags"`
 }
 
@@ -94,7 +95,7 @@ func toTxnDTO(t db.ListTransactionsRow) txnDTO {
 		CategoryIcon: t.CategoryIcon, CategorySource: t.CategorySource, Notes: t.Notes,
 		Hidden: t.Hidden == 1, NeedsReview: t.NeedsReview == 1, Pending: t.Pending == 1,
 		Provisional: t.Provisional == 1, Source: t.Source, HasLinked: t.HasLinked, LinkedSource: t.LinkedSource,
-		LinkedTxnID: ptr(t.LinkedTxnID), GoalID: ptr(t.GoalID), Tags: []tagDTO{},
+		LinkedTxnID: ptr(t.LinkedTxnID), GoalID: ptr(t.GoalID), GoalWithdrawal: t.GoalWithdrawal == 1, Tags: []tagDTO{},
 	}
 }
 
@@ -136,6 +137,17 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 	}
 	if v, ok := queryInt(r, "category"); ok {
 		p.CategoryID = v
+	}
+	if v, ok := queryInt(r, "goal"); ok {
+		p.GoalID = v
+	}
+	// from/to (YYYY-MM-DD, inclusive), e.g. a budget period.
+	p.FromDate, p.ToDate = qs.Get("from"), qs.Get("to")
+	for _, v := range []string{qs.Get("from"), qs.Get("to")} {
+		if _, err := time.Parse(time.DateOnly, v); v != "" && err != nil {
+			writeError(w, http.StatusBadRequest, "from and to must be YYYY-MM-DD")
+			return
+		}
 	}
 	if v, ok := queryInt(r, "limit"); ok && v > 0 && v <= 500 {
 		p.Lim = v
@@ -401,6 +413,8 @@ type updateTxnIn struct {
 	NeedsReview *bool           `json:"needs_review"`
 	Tags        []string        `json:"tags"`
 	GoalID      json.RawMessage `json:"goal_id"` // number, or null for none
+	// GoalWithdrawal marks the transaction as money spent from its goal rather than put in.
+	GoalWithdrawal *bool `json:"goal_withdrawal"`
 	// Manual transactions only.
 	Date        *string `json:"date"`
 	Amount      *string `json:"amount"`
@@ -479,6 +493,14 @@ func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request)
 			t.GoalID = sql.NullInt64{Int64: id, Valid: true}
 		}
 		if err := q.SetTransactionGoal(ctx, db.SetTransactionGoalParams{GoalID: t.GoalID, ID: t.ID, HouseholdID: hh}); err != nil {
+			s.internalError(w, err)
+			return
+		}
+	}
+	if in.GoalWithdrawal != nil {
+		if err := q.SetTransactionGoalWithdrawal(ctx, db.SetTransactionGoalWithdrawalParams{
+			GoalID: t.GoalID, GoalWithdrawal: b2i(*in.GoalWithdrawal && t.GoalID.Valid), ID: t.ID, HouseholdID: hh,
+		}); err != nil {
 			s.internalError(w, err)
 			return
 		}

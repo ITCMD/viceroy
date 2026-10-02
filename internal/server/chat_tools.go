@@ -343,7 +343,7 @@ func (s *Server) chatTools(hh int64) []ai.Tool {
 					if g.Archived == 1 {
 						continue
 					}
-					m := map[string]any{"name": g.Name, "target": usd(g.TargetCents), "saved": usd(g.StartingCents + g.ContributedCents)}
+					m := map[string]any{"name": g.Name, "target": usd(g.TargetCents), "saved": usd(g.StartingCents + g.ContributedCents - g.WithdrawnCents)}
 					if g.TargetDate.Valid {
 						m["target_date"] = g.TargetDate.String
 					}
@@ -376,7 +376,7 @@ func (s *Server) searchTransactions(ctx context.Context, q *db.Queries, hh int64
 	if err != nil {
 		return nil, err
 	}
-	p := db.ListTransactionsParams{HouseholdID: hh, Uncategorized: 0, NeedsReview: 0, IncludeHidden: 0, Q: strings.TrimSpace(text), BeforeDate: "", Lim: 2000}
+	p := db.ListTransactionsParams{HouseholdID: hh, Uncategorized: 0, NeedsReview: 0, IncludeHidden: 0, Q: strings.TrimSpace(text), BeforeDate: "", FromDate: "", ToDate: "", Lim: 2000}
 	if !to.IsZero() {
 		p.BeforeDate, p.BeforeID = budget.FormatDate(to.AddDate(0, 0, 1)), 0
 	}

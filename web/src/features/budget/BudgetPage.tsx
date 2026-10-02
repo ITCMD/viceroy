@@ -100,7 +100,7 @@ export function BudgetPage() {
           <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
             <div className="order-2 flex flex-col gap-4 lg:order-1">
               {b.groups.map((g) => (
-                <GroupCard key={`${g.kind}-${g.id}`} g={g} showPacing={isCurrent} showHidden={showHidden} onEdit={(line) => setEditing({ target: { kind: g.kind === "goals" ? "goal" : "category", id: line.id }, line })} />
+                <GroupCard key={`${g.kind}-${g.id}`} g={g} period={b} showPacing={isCurrent} showHidden={showHidden} onEdit={(line) => setEditing({ target: { kind: g.kind === "goals" ? "goal" : "category", id: line.id }, line })} />
               ))}
               {(hiddenCount > 0 || showHidden) && (
                 <Button variant="ghost" size="sm" className="self-start text-muted" onClick={() => setShowHidden(!showHidden)}>
@@ -117,6 +117,7 @@ export function BudgetPage() {
         target={editing?.target ?? null}
         line={editing?.line ?? null}
         month={b?.month ?? ""}
+        period={b ? { start: b.start, end: b.end } : null}
         forwardDefault={b?.settings.forward_default ?? false}
         onClose={() => setEditing(null)}
       />
@@ -125,7 +126,26 @@ export function BudgetPage() {
   );
 }
 
-function GroupCard({ g, showPacing, showHidden, onEdit }: { g: BudgetGroup; showPacing: boolean; showHidden: boolean; onEdit: (l: BudgetLine) => void }) {
+type Period = { start: string; end: string };
+
+/** Transactions behind a budget line: its category (or goal) within the period shown. */
+function lineTransactions(kind: "category" | "goal", id: number, period: Period) {
+  return { [kind]: id, from: period.start, to: period.end };
+}
+
+function GroupCard({
+  g,
+  period,
+  showPacing,
+  showHidden,
+  onEdit,
+}: {
+  g: BudgetGroup;
+  period: Period;
+  showPacing: boolean;
+  showHidden: boolean;
+  onEdit: (l: BudgetLine) => void;
+}) {
   const income = g.kind === "income";
   const lines = g.lines.filter((l) => showHidden || !l.hidden || l.actual !== 0);
   if (lines.length === 0 && g.lines.length > 0) return null;
@@ -154,7 +174,13 @@ function GroupCard({ g, showPacing, showHidden, onEdit }: { g: BudgetGroup; show
         <ul className="divide-y divide-border">
           {lines.map((l) => (
             <li key={l.id}>
-              <LineRow l={l} income={income} showPacing={showPacing} onClick={() => onEdit(l)} />
+              <LineRow
+                l={l}
+                income={income}
+                showPacing={showPacing}
+                onClick={() => onEdit(l)}
+                txns={lineTransactions(g.kind === "goals" ? "goal" : "category", l.id, period)}
+              />
             </li>
           ))}
         </ul>
@@ -169,7 +195,19 @@ function GroupCard({ g, showPacing, showHidden, onEdit }: { g: BudgetGroup; show
   );
 }
 
-function LineRow({ l, income, showPacing, onClick }: { l: BudgetLine; income: boolean; showPacing: boolean; onClick: () => void }) {
+function LineRow({
+  l,
+  income,
+  showPacing,
+  onClick,
+  txns,
+}: {
+  l: BudgetLine;
+  income: boolean;
+  showPacing: boolean;
+  onClick: () => void;
+  txns: Record<string, string | number>;
+}) {
   const pct = l.budget > 0 ? Math.min(1, l.actual / l.budget) : l.actual > 0 ? 1 : 0;
   const over = !income && l.actual > l.budget;
   const ahead = !income && showPacing && l.expected > 0 && l.actual > l.expected && !over;
@@ -178,7 +216,20 @@ function LineRow({ l, income, showPacing, onClick }: { l: BudgetLine; income: bo
   const soon = income ? 0 : l.upcoming;
   const soonPct = soon > 0 ? (l.budget > 0 ? Math.min(1 - pct, soon / l.budget) : 1 - pct) : 0;
   return (
-    <button onClick={onClick} className={clsx(cols, "w-full px-4 py-2 text-left text-[13px] hover:bg-surface-2", l.hidden && "opacity-60")} data-testid="budget-line">
+    // A div rather than a button so the Actual amount can be a link of its own.
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={clsx(cols, "w-full cursor-pointer px-4 py-2 text-left text-[13px] outline-none hover:bg-surface-2 focus-visible:bg-surface-2", l.hidden && "opacity-60")}
+      data-testid="budget-line"
+    >
       <span className="flex min-w-0 items-center gap-2.5">
         <CategoryIcon icon={l.icon} size="sm" />
         <span className="min-w-0 flex-1">
@@ -223,9 +274,18 @@ function LineRow({ l, income, showPacing, onClick }: { l: BudgetLine; income: bo
         </span>
       </span>
       <MoneyText cents={l.budget} className="hidden text-right sm:block" />
-      <MoneyText cents={l.actual} className="text-right" />
+      <Link
+        to={"/transactions" as string}
+        search={txns as never}
+        onClick={(e) => e.stopPropagation()}
+        className="justify-self-end rounded text-right hover:text-accent hover:underline"
+        title="View these transactions"
+        data-testid="budget-line-actual"
+      >
+        <MoneyText cents={l.actual} />
+      </Link>
       <Remaining cents={remaining(l)} income={income} />
-    </button>
+    </div>
   );
 }
 

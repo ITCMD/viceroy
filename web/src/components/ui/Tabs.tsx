@@ -13,7 +13,16 @@ export function Tabs<T extends string>({
   className?: string;
 }) {
   return (
-    <div role="tablist" className={clsx("flex gap-5 overflow-x-auto border-b border-border", className)}>
+    // The baseline is an inset shadow rather than a border so the strip can scroll sideways on
+    // narrow screens without the active underline overflowing it (which showed a vertical
+    // scrollbar); the scrollbar itself is hidden.
+    <div
+      role="tablist"
+      className={clsx(
+        "flex gap-5 overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_var(--color-border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        className,
+      )}
+    >
       {items.map((it) => (
         <button
           key={it.value}
@@ -21,7 +30,7 @@ export function Tabs<T extends string>({
           aria-selected={value === it.value}
           onClick={() => onChange(it.value)}
           className={clsx(
-            "-mb-px shrink-0 border-b-2 pb-2.5 pt-1 text-[14px] font-medium transition",
+            "shrink-0 border-b-2 pb-2.5 pt-1 text-[14px] font-medium transition",
             value === it.value ? "border-accent text-text" : "border-transparent text-muted hover:text-text",
           )}
         >

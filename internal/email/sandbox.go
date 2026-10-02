@@ -124,7 +124,7 @@ func (b *sandbox) search(ctx context.Context, raw json.RawMessage) (any, error) 
 	end, _ := time.Parse(time.DateOnly, b.to)
 	rows, err := q.ListTransactions(ctx, db.ListTransactionsParams{
 		HouseholdID: b.hh, Uncategorized: 0, NeedsReview: 0, IncludeHidden: 0, Q: strings.TrimSpace(a.Query),
-		BeforeDate: end.AddDate(0, 0, 1).Format(time.DateOnly), Lim: 500,
+		BeforeDate: end.AddDate(0, 0, 1).Format(time.DateOnly), FromDate: "", ToDate: "", Lim: 500,
 	})
 	if err != nil {
 		return nil, err

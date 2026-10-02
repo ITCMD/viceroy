@@ -166,12 +166,22 @@ function Details({
           suggestions={(tagData?.tags ?? []).map((x) => x.name)}
         />
         {goals.length > 0 && (
-          <Select
-            label="Contribute to goal"
-            value={String(t.goal_id ?? "")}
-            onChange={(e) => patch.mutate({ goal_id: e.target.value ? Number(e.target.value) : null })}
-            options={[{ value: "", label: "None" }, ...goals.map((g) => ({ value: String(g.id), label: `${g.icon} ${g.name}` }))]}
-          />
+          <div className="flex flex-col gap-2">
+            <Select
+              label={t.goal_withdrawal ? "Spent from goal" : "Contribute to goal"}
+              value={String(t.goal_id ?? "")}
+              onChange={(e) => patch.mutate({ goal_id: e.target.value ? Number(e.target.value) : null })}
+              options={[{ value: "", label: "None" }, ...goals.map((g) => ({ value: String(g.id), label: `${g.icon} ${g.name}` }))]}
+            />
+            {t.goal_id !== null && t.amount_cents < 0 && (
+              <Switch
+                label="Spent from this goal"
+                hint="A purchase paid with the goal's savings: lowers its balance instead of adding to it."
+                checked={t.goal_withdrawal}
+                onCheckedChange={(v) => patch.mutate({ goal_withdrawal: v })}
+              />
+            )}
+          </div>
         )}
         <TextArea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== t.notes && patch.mutate({ notes })} rows={2} />
         <FormError error={patch.error} />

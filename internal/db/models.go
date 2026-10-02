@@ -226,6 +226,7 @@ type Goal struct {
 	Archived      int64          `json:"archived"`
 	Sort          int64          `json:"sort"`
 	CreatedAt     int64          `json:"created_at"`
+	Builtin       string         `json:"builtin"`
 }
 
 type Household struct {
@@ -411,6 +412,7 @@ type Transaction struct {
 	GoalID         sql.NullInt64  `json:"goal_id"`
 	OwnerUserID    sql.NullInt64  `json:"owner_user_id"`
 	AiCatTried     int64          `json:"ai_cat_tried"`
+	GoalWithdrawal int64          `json:"goal_withdrawal"`
 }
 
 type TransactionTag struct {
@@ -425,4 +427,35 @@ type User struct {
 	PasswordHash string `json:"password_hash"`
 	IsAdmin      int64  `json:"is_admin"`
 	CreatedAt    int64  `json:"created_at"`
+}
+
+type WishlistImage struct {
+	ItemID    int64  `json:"item_id"`
+	Mime      string `json:"mime"`
+	Data      []byte `json:"data"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+type WishlistItem struct {
+	ID             int64          `json:"id"`
+	HouseholdID    int64          `json:"household_id"`
+	Title          string         `json:"title"`
+	Url            string         `json:"url"`
+	Store          string         `json:"store"`
+	PriceCents     sql.NullInt64  `json:"price_cents"`
+	PriceSource    string         `json:"price_source"`
+	PriceCheckedAt sql.NullInt64  `json:"price_checked_at"`
+	ImageSourceUrl string         `json:"image_source_url"`
+	Stars          int64          `json:"stars"`
+	SavesMoney     int64          `json:"saves_money"`
+	Notes          string         `json:"notes"`
+	AddedBy        sql.NullInt64  `json:"added_by"`
+	CreatedAt      int64          `json:"created_at"`
+	BoughtAt       sql.NullString `json:"bought_at"`
+	BoughtTxnID    sql.NullInt64  `json:"bought_txn_id"`
+}
+
+type WishlistWanter struct {
+	ItemID int64 `json:"item_id"`
+	UserID int64 `json:"user_id"`
 }

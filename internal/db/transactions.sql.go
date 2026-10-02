@@ -378,7 +378,7 @@ func (q *Queries) GetRule(ctx context.Context, arg GetRuleParams) (Rule, error) 
 }
 
 const getTransaction = `-- name: GetTransaction :one
-SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id, ai_cat_tried FROM transactions WHERE id = ? AND household_id = ?
+SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id, ai_cat_tried, goal_withdrawal FROM transactions WHERE id = ? AND household_id = ?
 `
 
 type GetTransactionParams struct {
@@ -415,12 +415,13 @@ func (q *Queries) GetTransaction(ctx context.Context, arg GetTransactionParams) 
 		&i.GoalID,
 		&i.OwnerUserID,
 		&i.AiCatTried,
+		&i.GoalWithdrawal,
 	)
 	return i, err
 }
 
 const getTransactionByID = `-- name: GetTransactionByID :one
-SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id, ai_cat_tried FROM transactions WHERE id = ?
+SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id, ai_cat_tried, goal_withdrawal FROM transactions WHERE id = ?
 `
 
 func (q *Queries) GetTransactionByID(ctx context.Context, id int64) (Transaction, error) {
@@ -452,12 +453,13 @@ func (q *Queries) GetTransactionByID(ctx context.Context, id int64) (Transaction
 		&i.GoalID,
 		&i.OwnerUserID,
 		&i.AiCatTried,
+		&i.GoalWithdrawal,
 	)
 	return i, err
 }
 
 const getTransactionView = `-- name: GetTransactionView :one
-SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, t.ai_cat_tried, a.name AS account_name, a.mask AS account_mask,
+SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, t.ai_cat_tried, t.goal_withdrawal, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
@@ -500,6 +502,7 @@ type GetTransactionViewRow struct {
 	GoalID         sql.NullInt64  `json:"goal_id"`
 	OwnerUserID    sql.NullInt64  `json:"owner_user_id"`
 	AiCatTried     int64          `json:"ai_cat_tried"`
+	GoalWithdrawal int64          `json:"goal_withdrawal"`
 	AccountName    string         `json:"account_name"`
 	AccountMask    string         `json:"account_mask"`
 	MerchantName   string         `json:"merchant_name"`
@@ -538,6 +541,7 @@ func (q *Queries) GetTransactionView(ctx context.Context, arg GetTransactionView
 		&i.GoalID,
 		&i.OwnerUserID,
 		&i.AiCatTried,
+		&i.GoalWithdrawal,
 		&i.AccountName,
 		&i.AccountMask,
 		&i.MerchantName,
@@ -778,7 +782,7 @@ func (q *Queries) ListLinkCandidates(ctx context.Context, arg ListLinkCandidates
 }
 
 const listLinkedProvisional = `-- name: ListLinkedProvisional :many
-SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id, ai_cat_tried FROM transactions WHERE linked_txn_id = ? ORDER BY id
+SELECT id, household_id, account_id, external_id, source, date, amount_cents, description, payee, memo, pending, created_at, updated_at, merchant_id, category_id, category_source, notes, hidden, needs_review, provisional, linked_txn_id, linked_at, goal_id, owner_user_id, ai_cat_tried, goal_withdrawal FROM transactions WHERE linked_txn_id = ? ORDER BY id
 `
 
 func (q *Queries) ListLinkedProvisional(ctx context.Context, linkedTxnID sql.NullInt64) ([]Transaction, error) {
@@ -816,6 +820,7 @@ func (q *Queries) ListLinkedProvisional(ctx context.Context, linkedTxnID sql.Nul
 			&i.GoalID,
 			&i.OwnerUserID,
 			&i.AiCatTried,
+			&i.GoalWithdrawal,
 		); err != nil {
 			return nil, err
 		}
@@ -1248,7 +1253,7 @@ func (q *Queries) ListTransactionTagIDs(ctx context.Context, transactionID int64
 
 const listTransactions = `-- name: ListTransactions :many
 
-SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, t.ai_cat_tried, a.name AS account_name, a.mask AS account_mask,
+SELECT t.id, t.household_id, t.account_id, t.external_id, t.source, t.date, t.amount_cents, t.description, t.payee, t.memo, t.pending, t.created_at, t.updated_at, t.merchant_id, t.category_id, t.category_source, t.notes, t.hidden, t.needs_review, t.provisional, t.linked_txn_id, t.linked_at, t.goal_id, t.owner_user_id, t.ai_cat_tried, t.goal_withdrawal, a.name AS account_name, a.mask AS account_mask,
     COALESCE(m.name, '') AS merchant_name,
     COALESCE(c.name, '') AS category_name, COALESCE(c.icon, '') AS category_icon,
     EXISTS (SELECT 1 FROM transactions p WHERE p.linked_txn_id = t.id) AS has_linked,
@@ -1262,21 +1267,27 @@ WHERE t.household_id = ?1
   AND a.status != 'ignored'
   AND (?2 IS NULL OR t.account_id = ?2)
   AND (?3 IS NULL OR t.category_id = ?3)
-  AND (?4 = 0 OR t.category_id IS NULL)
-  AND (?5 = 0 OR t.needs_review = 1)
-  AND (?6 = 1 OR t.hidden = 0)
-  AND (?7 = '' OR t.description LIKE '%' || ?7 || '%' OR m.name LIKE '%' || ?7 || '%'
-       OR t.notes LIKE '%' || ?7 || '%' OR t.payee LIKE '%' || ?7 || '%')
-  AND (?8 = '' OR t.date < ?8
-       OR (t.date = ?8 AND t.id < ?9))
+  AND (?4 IS NULL OR t.goal_id = ?4)
+  AND (?5 = '' OR t.date >= ?5)
+  AND (?6 = '' OR t.date <= ?6)
+  AND (?7 = 0 OR t.category_id IS NULL)
+  AND (?8 = 0 OR t.needs_review = 1)
+  AND (?9 = 1 OR t.hidden = 0)
+  AND (?10 = '' OR t.description LIKE '%' || ?10 || '%' OR m.name LIKE '%' || ?10 || '%'
+       OR t.notes LIKE '%' || ?10 || '%' OR t.payee LIKE '%' || ?10 || '%')
+  AND (?11 = '' OR t.date < ?11
+       OR (t.date = ?11 AND t.id < ?12))
 ORDER BY t.date DESC, t.id DESC
-LIMIT ?10
+LIMIT ?13
 `
 
 type ListTransactionsParams struct {
 	HouseholdID   int64       `json:"household_id"`
 	AccountID     interface{} `json:"account_id"`
 	CategoryID    interface{} `json:"category_id"`
+	GoalID        interface{} `json:"goal_id"`
+	FromDate      interface{} `json:"from_date"`
+	ToDate        interface{} `json:"to_date"`
 	Uncategorized interface{} `json:"uncategorized"`
 	NeedsReview   interface{} `json:"needs_review"`
 	IncludeHidden interface{} `json:"include_hidden"`
@@ -1312,6 +1323,7 @@ type ListTransactionsRow struct {
 	GoalID         sql.NullInt64  `json:"goal_id"`
 	OwnerUserID    sql.NullInt64  `json:"owner_user_id"`
 	AiCatTried     int64          `json:"ai_cat_tried"`
+	GoalWithdrawal int64          `json:"goal_withdrawal"`
 	AccountName    string         `json:"account_name"`
 	AccountMask    string         `json:"account_mask"`
 	MerchantName   string         `json:"merchant_name"`
@@ -1327,6 +1339,9 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 		arg.HouseholdID,
 		arg.AccountID,
 		arg.CategoryID,
+		arg.GoalID,
+		arg.FromDate,
+		arg.ToDate,
 		arg.Uncategorized,
 		arg.NeedsReview,
 		arg.IncludeHidden,
@@ -1368,6 +1383,7 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 			&i.GoalID,
 			&i.OwnerUserID,
 			&i.AiCatTried,
+			&i.GoalWithdrawal,
 			&i.AccountName,
 			&i.AccountMask,
 			&i.MerchantName,
