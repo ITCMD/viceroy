@@ -6,7 +6,7 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
     <div className="flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <AppLogo logo={cachedLogo()} size={44} />
+          <AppLogo logo={cachedLogo()} size={220} className="max-w-full object-contain" />
           <div>
             <h1 className="text-xl font-semibold">{title}</h1>
             {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
