@@ -71,6 +71,7 @@ func (s *Server) Handler() http.Handler {
 			s.settingsRoutes(r)
 			s.emailRoutes(r)
 			s.budgetRoutes(r)
+			s.budgetIORoutes(r)
 			s.reportRoutes(r)
 			s.notifyRoutes(r)
 			s.chatRoutes(r)

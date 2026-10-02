@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -68,9 +70,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	if req.ResponseFormat != nil && !req.Stream {
+		last := req.Messages[len(req.Messages)-1]
+		content := classify(last.Content)
+		if strings.Contains(req.Messages[0].Content, "imported into Viceroy") {
+			content = budgetRows(last)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{
-			"role": "assistant", "content": classify(req.Messages[len(req.Messages)-1].Content)}}}})
+			"role": "assistant", "content": content}}}})
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -265,4 +272,59 @@ func emailAgent(req Request, send func(any)) {
 	default:
 		answer()
 	}
+}
+
+var budgetLineRe = regexp.MustCompile(`(?i)^\s*([A-Za-z][A-Za-z &']*?)\s*[:\-]?\s*\$?([\d,]+(?:\.\d{1,2})?)\s*(?:/\s*(year|yr|week|wk|month|mo))?\s*$`)
+
+// budgetRows plays the budget-import reader (budgetio.Messages): screenshots get a fixed
+// budget; text lines like "Dining out: $300" or "Vacation 2400/year" become rows.
+func budgetRows(m ai.Message) string {
+	type row struct {
+		Group    string  `json:"group"`
+		Category string  `json:"category"`
+		Amount   string  `json:"amount"`
+		Timing   *string `json:"timing"`
+		Icon     *string `json:"icon"`
+	}
+	var rows []row
+	notes := ""
+	if slices.ContainsFunc(m.Parts, func(p ai.Part) bool { return p.ImageURL != nil }) {
+		rows = []row{
+			{Group: "Fixed", Category: "Rent", Amount: "1850", Timing: ptr("day 1")},
+			{Group: "Flexible", Category: "Groceries", Amount: "620"},
+			{Group: "Flexible", Category: "Restaurants & Bars", Amount: "275"},
+			{Group: "Flexible", Category: "Hobbies", Amount: "80", Icon: ptr("🎨")},
+		}
+		notes = "Read from the screenshot."
+	}
+	for _, line := range strings.Split(m.Content, "\n") {
+		g := budgetLineRe.FindStringSubmatch(line)
+		if g == nil {
+			continue
+		}
+		name, low := strings.TrimSpace(g[1]), strings.ToLower(g[1])
+		cents, _ := strconv.ParseFloat(strings.ReplaceAll(g[2], ",", ""), 64)
+		switch strings.ToLower(g[3]) {
+		case "year", "yr":
+			cents /= 12
+		case "week", "wk":
+			cents = cents * 52 / 12
+		}
+		r := row{Group: "Flexible", Category: name, Amount: strconv.FormatFloat(cents, 'f', 2, 64)}
+		switch {
+		case strings.Contains(low, "dining") || strings.Contains(low, "eating out"):
+			r.Category = "Restaurants & Bars"
+		case strings.Contains(low, "rent"):
+			r.Group, r.Timing = "Fixed", ptr("day 1")
+		case strings.Contains(low, "salary") || strings.Contains(low, "paycheck"):
+			r.Group, r.Category = "Income", "Paychecks"
+		case strings.Contains(low, "vacation") || strings.Contains(low, "travel"):
+			r.Group = "Non-monthly"
+		case strings.Contains(low, "total"):
+			continue
+		}
+		rows = append(rows, r)
+	}
+	b, _ := json.Marshal(map[string]any{"rows": rows, "notes": notes})
+	return string(b)
 }

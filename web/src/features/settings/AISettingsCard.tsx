@@ -5,23 +5,12 @@ import { Badge, Button, Card, Field, FormError } from "@/components/ui";
 import { mailboxesQuery, type Mailbox } from "@/features/email/api";
 import { MailboxDialog } from "@/features/email/MailboxDialog";
 import { api } from "@/lib/api";
+import { aiSettingsQuery, type AISettings } from "./ai";
 
-type AISettings = {
-  can_edit: boolean;
-  key_set: boolean;
-  key_hint: string;
-  key_source: "settings" | "config" | "";
-  chat_model: string;
-  email_model: string;
-  email_base_url: string;
-  config_chat_model: string;
-  chat_ready: boolean;
-  email_ready: boolean;
-};
-type Patch = Partial<{ openrouter_key: string; chat_model: string; email_model: string; email_base_url: string }>;
+type Patch = Partial<{ openrouter_key: string; chat_model: string; email_model: string; email_base_url: string; vision_model: string }>;
+type Target = "chat" | "email" | "vision";
 type TestResult = { ok: boolean; model?: string; error?: string };
 
-const aiSettingsQuery = { queryKey: ["settings", "ai"], queryFn: () => api.get<AISettings>("/settings/ai") };
 
 /** OpenRouter key and models (admins edit; saved settings win over viceroy.toml), plus which mailboxes the AI reads. */
 export function AISettingsCard() {
@@ -35,11 +24,13 @@ export function AISettingsCard() {
   const [chatModel, setChatModel] = useState("");
   const [emailModel, setEmailModel] = useState("");
   const [baseURL, setBaseURL] = useState("");
+  const [visionModel, setVisionModel] = useState("");
   useEffect(() => {
     if (!s) return;
     setChatModel(s.chat_model);
     setEmailModel(s.email_model);
     setBaseURL(s.email_base_url);
+    setVisionModel(s.vision_model);
   }, [s]);
 
   const save = useMutation({
@@ -53,13 +44,13 @@ export function AISettingsCard() {
       test.reset();
     },
   });
-  const test = useMutation({ mutationFn: (target: "chat" | "email") => api.post<TestResult>("/settings/ai/test", { target }) });
+  const test = useMutation({ mutationFn: (target: Target) => api.post<TestResult>("/settings/ai/test", { target }) });
   const edit = (m: Mailbox | null) => {
     setEditing(m);
     setOpen(true);
   };
   const canEdit = !!s?.can_edit;
-  const dirty = !!s && (chatModel !== s.chat_model || emailModel !== s.email_model || baseURL !== s.email_base_url);
+  const dirty = !!s && (chatModel !== s.chat_model || emailModel !== s.email_model || baseURL !== s.email_base_url || visionModel !== s.vision_model);
   const showKeyInput = !!s && (!s.key_set || replacing);
 
   return (
@@ -71,6 +62,11 @@ export function AISettingsCard() {
             ok={s?.email_ready}
             label="Reading bank emails"
             detail={s?.email_ready ? `${s.email_model || s.chat_model}${s.email_base_url ? " (self-hosted)" : " via OpenRouter"}` : "Needs an API key"}
+          />
+          <Status
+            ok={s?.vision_ready}
+            label="Reading budgets & screenshots"
+            detail={s?.vision_ready ? s.vision_model || s.chat_model : "Needs an API key"}
           />
         </div>
 
@@ -147,6 +143,14 @@ export function AISettingsCard() {
               disabled={!canEdit}
             />
           </div>
+          <Field
+            label="Multimodal model"
+            value={visionModel}
+            onChange={(e) => setVisionModel(e.target.value)}
+            placeholder="Same as chat model"
+            hint="Reads budgets you paste or screenshot (Budget → Import). Pick a stronger model that accepts images, e.g. a Claude Sonnet or Gemini Pro model."
+            disabled={!canEdit}
+          />
           <details className="text-[13px]" open={!!s?.email_base_url}>
             <summary className="cursor-pointer text-muted">Read emails with a self-hosted model instead</summary>
             <Field
@@ -161,7 +165,7 @@ export function AISettingsCard() {
           </details>
           <div className="flex flex-wrap items-center gap-2">
             {dirty && (
-              <Button size="sm" loading={save.isPending && !save.variables?.openrouter_key} onClick={() => save.mutate({ chat_model: chatModel, email_model: emailModel, email_base_url: baseURL })}>
+              <Button size="sm" loading={save.isPending && !save.variables?.openrouter_key} onClick={() => save.mutate({ chat_model: chatModel, email_model: emailModel, email_base_url: baseURL, vision_model: visionModel })}>
                 Save
               </Button>
             )}
@@ -172,6 +176,9 @@ export function AISettingsCard() {
                 </Button>
                 <Button size="sm" variant="secondary" disabled={!s?.email_ready || dirty} loading={test.isPending && test.variables === "email"} onClick={() => test.mutate("email")}>
                   Test email reading
+                </Button>
+                <Button size="sm" variant="secondary" disabled={!s?.vision_ready || dirty} loading={test.isPending && test.variables === "vision"} onClick={() => test.mutate("vision")}>
+                  Test images
                 </Button>
               </>
             )}

@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight, Target as TargetIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Target as TargetIcon, Upload } from "lucide-react";
 import { useState } from "react";
 import { Button, Card, CategoryIcon, MoneyText, PageHeader, Segmented } from "@/components/ui";
 import { BudgetEditDialog } from "./BudgetEditDialog";
+import { BudgetImportDialog } from "./BudgetImportDialog";
 import { budgetQuery, chunkLabel, periodLabel, remaining, type Budget, type BudgetGroup, type BudgetLine, type Target, type View } from "./api";
 
 const views: { value: View; label: string }[] = [
@@ -31,6 +32,7 @@ export function BudgetPage() {
   const [view, setViewState] = useState<View>(initialView);
   const [date, setDate] = useState("");
   const [editing, setEditing] = useState<{ target: Target; line: BudgetLine } | null>(null);
+  const [importing, setImporting] = useState(false);
   const { data: b } = useQuery(budgetQuery(view, date));
 
   const setView = (v: View) => {
@@ -45,7 +47,25 @@ export function BudgetPage() {
 
   return (
     <>
-      <PageHeader title="Budget" />
+      <PageHeader
+        title="Budget"
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setImporting(true)} disabled={!b}>
+              <Upload size={14} /> Import
+            </Button>
+            <a
+              href={b ? `/api/budget/export?month=${b.month}` : undefined}
+              download
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-[13px] font-medium text-text transition hover:bg-surface-2"
+              aria-label="Export budget as CSV"
+            >
+              <Download size={14} />
+              <span className="hidden sm:inline">Export</span>
+            </a>
+          </>
+        }
+      />
       <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1">
@@ -90,6 +110,7 @@ export function BudgetPage() {
         forwardDefault={b?.settings.forward_default ?? false}
         onClose={() => setEditing(null)}
       />
+      <BudgetImportDialog open={importing} onOpenChange={setImporting} month={b?.month ?? ""} />
     </>
   );
 }

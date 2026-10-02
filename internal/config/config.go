@@ -38,6 +38,7 @@ type AIConfig struct {
 	BaseURL          string `toml:"base_url"`       // OpenAI-compatible API root; default OpenRouter
 	EmailModel       string `toml:"email_model"`    // model that reads unmatched bank emails; "" = chat_model
 	EmailBaseURL     string `toml:"email_base_url"` // e.g. a local Ollama; "" = base_url with openrouter_key
+	VisionModel      string `toml:"vision_model"`   // multimodal model for budget imports (text and screenshots); "" = chat_model
 	LocalCategorizer bool   `toml:"local_categorizer"`
 }
 
@@ -162,6 +163,9 @@ email_model = ""
 # Optional: read those emails with a self-hosted OpenAI-compatible endpoint instead, so they
 # never leave this machine, e.g. Ollama: "http://127.0.0.1:11434/v1" (no API key is sent).
 email_base_url = ""
+# Multimodal model that reads budgets you paste or screenshot (Budget → Import). It must
+# accept images for screenshots. Empty = chat_model.
+vision_model = ""
 local_categorizer = true
 `
 

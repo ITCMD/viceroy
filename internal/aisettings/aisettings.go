@@ -22,6 +22,7 @@ const (
 	keyChatModel    = "ai.chat_model"
 	keyEmailModel   = "ai.email_model"
 	keyEmailBaseURL = "ai.email_base_url"
+	keyVisionModel  = "ai.vision_model"
 )
 
 type Store struct {
@@ -38,6 +39,7 @@ type Settings struct {
 	ChatModel    string
 	EmailModel   string // "" = ChatModel
 	EmailBaseURL string // self-hosted endpoint for email reading; "" = OpenRouter
+	VisionModel  string // multimodal model for budget imports; "" = ChatModel
 
 	// What viceroy.toml would give, shown as placeholders.
 	ConfigChatModel string
@@ -46,7 +48,7 @@ type Settings struct {
 func (s *Store) Load(ctx context.Context, hh int64) (Settings, error) {
 	out := Settings{
 		APIKey: s.Config.OpenRouterKey, ChatModel: s.Config.ChatModel, EmailModel: s.Config.EmailModel,
-		EmailBaseURL: s.Config.EmailBaseURL, ConfigChatModel: s.Config.ChatModel,
+		EmailBaseURL: s.Config.EmailBaseURL, VisionModel: s.Config.VisionModel, ConfigChatModel: s.Config.ChatModel,
 	}
 	if out.APIKey != "" {
 		out.KeySource = "config"
@@ -73,6 +75,8 @@ func (s *Store) Load(ctx context.Context, hh int64) (Settings, error) {
 			out.EmailModel = r.Value
 		case keyEmailBaseURL:
 			out.EmailBaseURL = r.Value
+		case keyVisionModel:
+			out.VisionModel = r.Value
 		}
 	}
 	return out, nil
@@ -85,6 +89,7 @@ type Patch struct {
 	ChatModel    *string `json:"chat_model"`
 	EmailModel   *string `json:"email_model"`
 	EmailBaseURL *string `json:"email_base_url"`
+	VisionModel  *string `json:"vision_model"`
 }
 
 var ErrBadURL = errors.New("the self-hosted endpoint must start with http:// or https://")
@@ -116,7 +121,7 @@ func (s *Store) Save(ctx context.Context, hh int64, p Patch) error {
 			return err
 		}
 	}
-	for k, v := range map[string]*string{keyChatModel: p.ChatModel, keyEmailModel: p.EmailModel} {
+	for k, v := range map[string]*string{keyChatModel: p.ChatModel, keyEmailModel: p.EmailModel, keyVisionModel: p.VisionModel} {
 		if v != nil {
 			if err := set(k, strings.TrimSpace(*v)); err != nil {
 				return err
@@ -147,6 +152,26 @@ func (st Settings) Email(baseURL, referer string) *ai.Client {
 	c := ai.New(baseURL, st.APIKey, model)
 	c.Referer = referer
 	return c
+}
+
+// Vision is the multimodal client that reads pasted or screenshotted budgets.
+func (st Settings) Vision(baseURL, referer string) *ai.Client {
+	model := st.VisionModel
+	if model == "" {
+		model = st.ChatModel
+	}
+	c := ai.New(baseURL, st.APIKey, model)
+	c.Referer = referer
+	return c
+}
+
+// VisionClient loads the household's settings and returns its multimodal client.
+func (s *Store) VisionClient(ctx context.Context, hh int64) (*ai.Client, error) {
+	st, err := s.Load(ctx, hh)
+	if err != nil {
+		return nil, err
+	}
+	return st.Vision(s.Config.BaseURL, s.Referer), nil
 }
 
 // ChatClient loads the household's settings and returns its chat client.

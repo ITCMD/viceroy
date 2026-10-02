@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -24,6 +25,66 @@ type Message struct {
 	Content    string     `json:"content"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+	// Parts, when set, is sent as the content instead of Content (text and images for
+	// multimodal models). Decoding an array content fills Parts and joins its text into Content.
+	Parts []Part `json:"-"`
+}
+
+// Part is one piece of a multimodal message: {type: text, text} or {type: image_url, image_url}.
+type Part struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *ImageURL `json:"image_url,omitempty"`
+}
+
+type ImageURL struct {
+	URL string `json:"url"` // https URL or data:image/...;base64,...
+}
+
+func TextPart(s string) Part    { return Part{Type: "text", Text: s} }
+func ImagePart(url string) Part { return Part{Type: "image_url", ImageURL: &ImageURL{URL: url}} }
+func (m Message) HasImages() bool {
+	return slices.ContainsFunc(m.Parts, func(p Part) bool { return p.ImageURL != nil })
+}
+
+type plainMessage Message
+
+func (m Message) MarshalJSON() ([]byte, error) {
+	if len(m.Parts) == 0 {
+		return json.Marshal(plainMessage(m))
+	}
+	return json.Marshal(struct {
+		plainMessage
+		Content []Part `json:"content"`
+	}{plainMessage(m), m.Parts})
+}
+
+func (m *Message) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		plainMessage
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*m = Message(raw.plainMessage)
+	c := bytes.TrimSpace(raw.Content)
+	switch {
+	case len(c) > 0 && c[0] == '[':
+		if err := json.Unmarshal(c, &m.Parts); err != nil {
+			return err
+		}
+		var texts []string
+		for _, p := range m.Parts {
+			if p.Text != "" {
+				texts = append(texts, p.Text)
+			}
+		}
+		m.Content = strings.Join(texts, "\n")
+	case len(c) > 0 && c[0] == '"':
+		return json.Unmarshal(c, &m.Content)
+	}
+	return nil
 }
 
 type ToolCall struct {

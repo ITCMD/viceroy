@@ -26,9 +26,11 @@ type aiSettingsDTO struct {
 	ChatModel       string `json:"chat_model"`
 	EmailModel      string `json:"email_model"`
 	EmailBaseURL    string `json:"email_base_url"`
+	VisionModel     string `json:"vision_model"`
 	ConfigChatModel string `json:"config_chat_model"`
 	ChatReady       bool   `json:"chat_ready"`
 	EmailReady      bool   `json:"email_ready"`
+	VisionReady     bool   `json:"vision_ready"`
 }
 
 func (s *Server) handleGetAISettings(w http.ResponseWriter, r *http.Request) {
@@ -39,9 +41,10 @@ func (s *Server) handleGetAISettings(w http.ResponseWriter, r *http.Request) {
 	}
 	out := aiSettingsDTO{
 		CanEdit: CurrentUser(r).IsAdmin == 1, KeySet: st.APIKey != "", KeySource: st.KeySource,
-		ChatModel: st.ChatModel, EmailModel: st.EmailModel, EmailBaseURL: st.EmailBaseURL, ConfigChatModel: st.ConfigChatModel,
-		ChatReady:  st.Chat(s.ai.Config.BaseURL, "").Configured(),
-		EmailReady: st.Email(s.ai.Config.BaseURL, "").Configured(),
+		ChatModel: st.ChatModel, EmailModel: st.EmailModel, EmailBaseURL: st.EmailBaseURL, VisionModel: st.VisionModel, ConfigChatModel: st.ConfigChatModel,
+		ChatReady:   st.Chat(s.ai.Config.BaseURL, "").Configured(),
+		EmailReady:  st.Email(s.ai.Config.BaseURL, "").Configured(),
+		VisionReady: st.Vision(s.ai.Config.BaseURL, "").Configured(),
 	}
 	if k := st.APIKey; len(k) >= 8 {
 		out.KeyHint = k[len(k)-4:]
@@ -68,7 +71,10 @@ func (s *Server) handleSaveAISettings(w http.ResponseWriter, r *http.Request) {
 	s.handleGetAISettings(w, r)
 }
 
-// POST /settings/ai/test {target: chat|email}: one tiny request to check the key and model.
+// testImage is a 1×1 PNG: the vision test only passes when the model accepts images.
+const testImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+// POST /settings/ai/test {target: chat|email|vision}: one tiny request to check the key and model.
 func (s *Server) handleTestAI(w http.ResponseWriter, r *http.Request) {
 	if CurrentUser(r).IsAdmin != 1 {
 		writeError(w, http.StatusForbidden, "Only an admin can test AI settings.")
@@ -84,9 +90,12 @@ func (s *Server) handleTestAI(w http.ResponseWriter, r *http.Request) {
 		client *ai.Client
 		err    error
 	)
-	if in.Target == "email" {
+	switch in.Target {
+	case "email":
 		client, err = s.ai.EmailClient(r.Context(), HouseholdID(r))
-	} else {
+	case "vision":
+		client, err = s.ai.VisionClient(r.Context(), HouseholdID(r))
+	default:
 		client, err = s.ai.ChatClient(r.Context(), HouseholdID(r))
 	}
 	if err != nil {
@@ -99,7 +108,11 @@ func (s *Server) handleTestAI(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
-	_, err = client.CompleteJSON(ctx, []ai.Message{{Role: "user", Content: `Reply with exactly {"ok": true}`}})
+	msg := ai.Message{Role: "user", Content: `Reply with exactly {"ok": true}`}
+	if in.Target == "vision" {
+		msg.Parts = []ai.Part{ai.TextPart(`This is a test image. Reply with exactly {"ok": true}`), ai.ImagePart(testImage)}
+	}
+	_, err = client.CompleteJSON(ctx, []ai.Message{msg})
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "model": client.Model, "error": err.Error()})
 		return
