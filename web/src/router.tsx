@@ -12,6 +12,7 @@ import { BudgetPage } from "@/features/budget/BudgetPage";
 import { GoalsPage } from "@/features/goals/GoalsPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ReportsPage } from "@/features/reports/ReportsPage";
+import { RecurringPage } from "@/features/recurring/RecurringPage";
 import { ComingSoon } from "@/features/placeholders/ComingSoon";
 import { loadSession } from "@/lib/session";
 
@@ -62,6 +63,7 @@ const pages: Record<string, () => React.ReactNode> = {
   "/transactions": TransactionsPage,
   "/budget": BudgetPage,
   "/goals": GoalsPage,
+  "/recurring": RecurringPage,
   "/settings": SettingsPage,
 };
 

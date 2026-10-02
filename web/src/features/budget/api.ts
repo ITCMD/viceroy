@@ -20,6 +20,8 @@ export type BudgetLine = {
   chunk: Chunk;
   /** Hidden from the budget (still counted in totals). */
   hidden: boolean;
+  /** Recurring charges still to come in the upcoming window (a week, or until payday). */
+  upcoming: number;
   /** Non-monthly: unspent budget (or overspending, negative) carried in from earlier months; `budget` includes it. */
   rollover: number;
 };
@@ -30,7 +32,7 @@ export type BudgetGroup = { id: number; name: string; kind: GroupKind; budget: n
 
 export type PaySchedule = { kind: "weekly" | "biweekly" | "semimonthly" | "monthly"; anchor?: string; days?: number[] };
 
-export type BudgetSettings = { forward_default: boolean; week_start: number; pay_schedule: PaySchedule };
+export type BudgetSettings = { forward_default: boolean; week_start: number; pay_schedule: PaySchedule; upcoming_window: "week" | "paycheck" };
 
 export type Budget = {
   view: View;

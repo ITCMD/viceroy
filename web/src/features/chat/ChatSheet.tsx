@@ -215,7 +215,7 @@ function ThreadPicker({
     },
   });
   return (
-    <Popover.Root modal open={open} onOpenChange={setOpen}>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger className={headerButton} aria-label="Past chats" title="Past chats">
         <History size={16} />
       </Popover.Trigger>

@@ -97,20 +97,23 @@ test("dashboard widgets and recurring", async ({ page }) => {
   await expect(page.getByRole("img", { name: "Spending this month vs last month chart" })).toBeVisible();
   await expect(page.getByTestId("dashboard-budget")).toContainText("Flexible");
   await expect(page.getByTestId("dashboard-recurring")).toContainText("Streamflix");
-  await expect(page.getByRole("heading", { name: "Goals" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Investments" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Goals", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Investments", exact: true })).toBeVisible();
   await shot(page, "63-dashboard");
 
-  await page.getByRole("button", { name: /View all/ }).click();
-  const dlg = page.getByRole("dialog");
-  const row = dlg.getByTestId("recurring-row").filter({ hasText: "Streamflix" });
+  // Strong detections count as upcoming; on the Recurring tab they're suggestions to track or dismiss.
+  await page.getByRole("link", { name: /View all/ }).click();
+  await expect(page.getByRole("heading", { name: "Recurring", level: 1 })).toBeVisible();
+  const sug = page.getByTestId("recurring-suggestions");
+  const row = sug.getByTestId("recurring-row").filter({ hasText: "Streamflix" });
   await expect(row).toContainText("Monthly");
-  await row.getByRole("button", { name: "Dismiss" }).click();
-  await expect(dlg.getByTestId("recurring-list").getByText("Streamflix")).toBeHidden();
-  await dlg.getByRole("button", { name: /dismissed/ }).click();
-  await expect(dlg.getByTestId("recurring-row").filter({ hasText: "Streamflix" })).toContainText("Restore");
-  await page.keyboard.press("Escape");
-  // The card may be empty now (nothing else due soon), so check the page, not the list.
+  await row.getByRole("button", { name: "Not recurring" }).click();
+  await expect(sug.getByText("Streamflix")).toHaveCount(0);
+  await expect(page.getByTestId("recurring-calendar").getByText("Streamflix")).toHaveCount(0);
+  await page.getByRole("button", { name: /marked not recurring/ }).click();
+  await expect(page.getByTestId("recurring-row").filter({ hasText: "Streamflix" })).toContainText("Restore");
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Upcoming recurring" })).toBeVisible();
   await expect(page.locator("main").getByText("Streamflix")).toHaveCount(0);
 });
 

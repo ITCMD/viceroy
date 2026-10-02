@@ -81,6 +81,14 @@ func TestDetect(t *testing.T) {
 	}
 }
 
+func TestNextAcrossMonthEnd(t *testing.T) {
+	// Paid on the 31st, then once on the 1st: next is the 31st, not the end of next month.
+	os := []occ{{date: date("2026-07-31")}, {date: date("2026-08-31")}, {date: date("2026-10-01")}}
+	if got := next(Monthly, os, nil).Format(time.DateOnly); got != "2026-10-31" {
+		t.Errorf("next = %s", got)
+	}
+}
+
 func TestNextClampsMonthEnd(t *testing.T) {
 	os := []occ{{date: date("2026-01-31")}, {date: date("2026-03-31")}}
 	if got := next(Monthly, os, nil).Format(time.DateOnly); got != "2026-04-30" {

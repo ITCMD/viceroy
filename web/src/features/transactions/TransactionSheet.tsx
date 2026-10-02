@@ -1,10 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { Landmark, Link2, Mail, PencilLine, Sparkles, Undo2, Unlink, Upload, Wand2, type LucideIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Landmark, Link2, Mail, PencilLine, Repeat, Sparkles, Undo2, Unlink, Upload, Wand2, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Badge, Button, CategoryPicker, Field, FormError, MoneyText, Select, Sheet, Switch, TagInput, TextArea } from "@/components/ui";
 import { goalsQuery } from "@/features/goals/api";
 import { accountLabel, accountsQuery } from "@/features/accounts/api";
 import { RuleDialog } from "@/features/settings/RuleDialog";
+import { cadenceLabels, dueLabel } from "@/features/recurring/api";
+import { RecurringItemDialog, type RecurringDraft } from "@/features/recurring/RecurringItemDialog";
 import type { RuleDraft } from "@/features/settings/rules";
 import { EmailViewer } from "@/features/email/EmailSettings";
 import { api } from "@/lib/api";
@@ -58,7 +61,9 @@ export function TransactionSheet({ id, onClose, onSelect }: { id: number | null;
   const t = data?.transaction;
   return (
     <Sheet open={id !== null} onOpenChange={(o) => !o && onClose()} title={t?.merchant ?? ""}>
-      {t && t.id === id && <Details t={t} linked={data.linked} alert={data.email} aiChanges={data.ai_changes ?? []} onClose={onClose} onSelect={onSelect} />}
+      {t && t.id === id && (
+        <Details t={t} linked={data.linked} alert={data.email} aiChanges={data.ai_changes ?? []} recurring={data.recurring ?? null} onClose={onClose} onSelect={onSelect} />
+      )}
     </Sheet>
   );
 }
@@ -68,6 +73,7 @@ function Details({
   linked,
   alert,
   aiChanges,
+  recurring,
   onClose,
   onSelect,
 }: {
@@ -75,6 +81,7 @@ function Details({
   linked: Transaction[];
   alert: TxnEmail | null;
   aiChanges: AIChange[];
+  recurring: { id: number; name: string; cadence: keyof typeof cadenceLabels; next_date: string } | null;
   onClose: () => void;
   onSelect: (id: number) => void;
 }) {
@@ -85,6 +92,7 @@ function Details({
   // What the user changed while the sheet is open, as rule actions ("Create rule" offers them).
   const [edits, setEdits] = useState<RuleDraft>({});
   const [ruleDraft, setRuleDraft] = useState<RuleDraft | null>(null);
+  const [recurringDraft, setRecurringDraft] = useState<RecurringDraft | null>(null);
   const { data: cats } = useQuery(categoriesQuery);
   const { data: tagData } = useQuery(tagsQuery);
   const { data: goalData } = useQuery(goalsQuery);
@@ -177,7 +185,42 @@ function Details({
           checked={t.hidden}
           onCheckedChange={(v) => patch.mutate({ hidden: v })}
         />
+        {recurring ? (
+          <div className="flex items-center gap-2 text-[13px]" data-testid="txn-recurring">
+            <Repeat size={14} className="text-muted" />
+            <span className="min-w-0 flex-1 truncate">
+              Recurring: {recurring.name} · {cadenceLabels[recurring.cadence]}
+              {recurring.next_date && <span className="text-muted"> · next {dueLabel(recurring.next_date, new Date().toLocaleDateString("en-CA")).toLowerCase()}</span>}
+            </span>
+            <Link to={"/recurring" as string} className="font-medium text-accent hover:underline">
+              View
+            </Link>
+          </div>
+        ) : (
+          <div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                setRecurringDraft({
+                  kind: "transaction",
+                  txnId: t.id,
+                  name: t.merchant,
+                  matchText: t.bank_merchant || t.merchant,
+                  merchantId: t.merchant_id,
+                  amount: t.amount_cents,
+                  date: t.date,
+                  accountId: t.account_id,
+                  categoryId: t.category_id,
+                })
+              }
+            >
+              <Repeat size={14} /> Mark as recurring
+            </Button>
+          </div>
+        )}
       </div>
+      <RecurringItemDialog draft={recurringDraft} onClose={() => setRecurringDraft(null)} />
 
       {Object.keys(edits).length > 0 && (
         <section className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-3" data-testid="rule-suggestion">

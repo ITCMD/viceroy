@@ -13,7 +13,6 @@ import { NetWorthCard } from "@/features/accounts/NetWorthCard";
 import { budgetQuery, monthLabel, type BudgetGroup } from "@/features/budget/api";
 import { goalsQuery } from "@/features/goals/api";
 import { dueLabel, recurringQuery } from "@/features/recurring/api";
-import { RecurringDialog } from "@/features/recurring/RecurringDialog";
 import { spendingPaceQuery } from "@/features/reports/api";
 import { formatMoney } from "@/lib/format";
 import { useSession } from "@/lib/session";
@@ -164,26 +163,18 @@ function BudgetGroupRow({ g }: { g: BudgetGroup }) {
 // ---- upcoming recurring ----
 
 function RecurringCard() {
-  const { data } = useQuery(recurringQuery);
-  const [open, setOpen] = useState(false);
+  const { data } = useQuery(recurringQuery());
   const upcoming = useMemo(() => {
     if (!data) return [];
     const until = new Date(Date.parse(data.today) + 30 * 86_400_000).toISOString().slice(0, 10);
-    return data.series.filter((s) => !s.dismissed && s.next_date <= until).slice(0, 6);
+    return data.upcoming.filter((s) => s.next_date && s.next_date <= until).slice(0, 6);
   }, [data]);
-  const count = data?.series.filter((s) => !s.dismissed).length ?? 0;
+  const count = data?.upcoming.length ?? 0;
   return (
-    <Card
-      title="Upcoming recurring"
-      action={
-        <button className="text-[13px] font-medium text-accent hover:underline" onClick={() => setOpen(true)}>
-          View all{count ? ` (${count})` : ""}
-        </button>
-      }
-    >
+    <Card title="Upcoming recurring" action={<ViewLink to="/recurring">View all{count ? ` (${count})` : ""}</ViewLink>}>
       {upcoming.length === 0 ? (
         <EmptyState icon={CalendarClock} title="Nothing due soon">
-          Recurring bills and paychecks show up here once they've repeated a few times.
+          Recurring bills and paychecks show up here once they've repeated a few times, or when you track them on the Recurring tab.
         </EmptyState>
       ) : (
         <ul className="-my-1 divide-y divide-border" data-testid="dashboard-recurring">
@@ -197,7 +188,6 @@ function RecurringCard() {
           ))}
         </ul>
       )}
-      <RecurringDialog open={open} onOpenChange={setOpen} />
     </Card>
   );
 }

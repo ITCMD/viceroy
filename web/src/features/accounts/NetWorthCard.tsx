@@ -2,8 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { useMemo, useState } from "react";
 import { AreaChart } from "@/components/charts/AreaChart";
-import { Card, MoneyText, Segmented } from "@/components/ui";
+import { MessageSquarePlus } from "lucide-react";
+import { Button, Card, MoneyText, Segmented } from "@/components/ui";
 import { netWorthQuery } from "./api";
+import { NetWorthNoteDialog, netWorthNotesQuery, type NoteDraft } from "./NetWorthNotes";
 
 const ranges = [
   { days: 30, label: "1M" },
@@ -21,6 +23,9 @@ export function NetWorthCard() {
   const first = points[0]?.value ?? 0;
   const change = last - first;
   const label = ranges.find((r) => r.days === days)!.label;
+  const { data: notes } = useQuery(netWorthNotesQuery);
+  const markers = useMemo(() => (notes?.annotations ?? []).map((n) => ({ id: n.id, date: n.date, label: n.label, icon: n.icon })), [notes]);
+  const [draft, setDraft] = useState<NoteDraft | null>(null);
 
   return (
     <Card>
@@ -33,11 +38,32 @@ export function NetWorthCard() {
             <MoneyText cents={Math.abs(change)} /> <span className="text-muted">over {label}</span>
           </div>
         </div>
-        <Segmented label="Time range" value={days} onChange={setDays} items={ranges.map((r) => ({ value: r.days, label: r.label }))} />
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label="Add a note to the chart"
+            title="Add a note (or right-click a day on the chart)"
+            onClick={() => setDraft({ date: points.at(-1)?.date ?? new Date().toLocaleDateString("en-CA") })}
+          >
+            <MessageSquarePlus size={15} />
+          </Button>
+          <Segmented label="Time range" value={days} onChange={setDays} items={ranges.map((r) => ({ value: r.days, label: r.label }))} />
+        </div>
       </div>
       <div className="mt-3">
-        <AreaChart points={points} label="Net worth" />
+        <AreaChart
+          points={points}
+          label="Net worth"
+          markers={markers}
+          onPickDate={(date) => setDraft({ date })}
+          onMarkerClick={(id) => {
+            const note = notes?.annotations.find((n) => n.id === id);
+            if (note) setDraft({ note });
+          }}
+        />
       </div>
+      <NetWorthNoteDialog draft={draft} onClose={() => setDraft(null)} />
     </Card>
   );
 }

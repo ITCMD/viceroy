@@ -51,6 +51,20 @@ export function BudgetSettingsCard() {
           options={weekdays.map((d, i) => ({ value: String(i), label: d }))}
           className="max-w-60"
         />
+        <div>
+          <Select
+            label="Show upcoming recurring charges"
+            value={data?.budget.upcoming_window ?? "week"}
+            disabled={!data}
+            onChange={(e) => save.mutate({ upcoming_window: e.target.value as BudgetSettings["upcoming_window"] })}
+            options={[
+              { value: "week", label: "Due in the next 7 days" },
+              { value: "paycheck", label: "Due before the next paycheck" },
+            ]}
+            className="max-w-72"
+          />
+          <p className="mt-1 text-xs text-muted">Budget bars get a blue segment for recurring charges coming up in this window.</p>
+        </div>
         {pay && (
           <div className="flex flex-col gap-3 border-t border-border pt-4">
             <div>

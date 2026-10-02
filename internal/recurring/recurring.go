@@ -229,11 +229,24 @@ func next(c Cadence, os []occ, semiDays []int) time.Time {
 			}
 		}
 	case Quarterly:
-		return addMonths(last, 3, typicalDay(os))
+		return snapToDay(last.AddDate(0, 0, 91), typicalDay(os))
 	case Yearly:
 		return addMonths(last, 12, last.Day())
 	}
-	return addMonths(last, 1, typicalDay(os))
+	return snapToDay(last.AddDate(0, 0, 30), typicalDay(os))
+}
+
+// snapToDay picks the date nearest to approx whose day of the month is day (clamped). A
+// charge on the 31st that once landed on the 1st is next due on the 31st, not a month later.
+func snapToDay(approx time.Time, day int) time.Time {
+	best := approx
+	for i, n := range []int{-1, 0, 1} {
+		c := addMonths(approx, n, day)
+		if i == 0 || absInt(int(c.Sub(approx).Hours()/24)) < absInt(int(best.Sub(approx).Hours()/24)) {
+			best = c
+		}
+	}
+	return best
 }
 
 // semimonthlyDays reports whether ~15-day gaps fall on two fixed days of the month

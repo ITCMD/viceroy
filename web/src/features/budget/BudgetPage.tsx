@@ -174,6 +174,9 @@ function LineRow({ l, income, showPacing, onClick }: { l: BudgetLine; income: bo
   const over = !income && l.actual > l.budget;
   const ahead = !income && showPacing && l.expected > 0 && l.actual > l.expected && !over;
   const timing = chunkLabel(l.chunk);
+  // Recurring charges still to come in the upcoming window, drawn after the spent fill.
+  const soon = income ? 0 : l.upcoming;
+  const soonPct = soon > 0 ? (l.budget > 0 ? Math.min(1 - pct, soon / l.budget) : 1 - pct) : 0;
   return (
     <button onClick={onClick} className={clsx(cols, "w-full px-4 py-2 text-left text-[13px] hover:bg-surface-2", l.hidden && "opacity-60")} data-testid="budget-line">
       <span className="flex min-w-0 items-center gap-2.5">
@@ -183,6 +186,11 @@ function LineRow({ l, income, showPacing, onClick }: { l: BudgetLine; income: bo
             <span className="truncate text-sm">{l.name}</span>
             {timing && <span className="hidden shrink-0 text-xs text-muted md:inline">{timing}</span>}
             {l.hidden && <span className="shrink-0 text-xs text-muted">Hidden</span>}
+            {soon > 0 && (
+              <span className="shrink-0 text-xs text-upcoming" title="Recurring charges due soon (Settings → Budget sets how far ahead)">
+                +{formatMoney(soon)} soon
+              </span>
+            )}
             {l.rollover !== 0 && (
               <span
                 className={clsx("shrink-0 text-xs", l.rollover < 0 ? "text-negative" : "text-muted")}
@@ -194,12 +202,19 @@ function LineRow({ l, income, showPacing, onClick }: { l: BudgetLine; income: bo
               </span>
             )}
           </span>
-          {(l.budget > 0 || l.actual > 0) && (
+          {(l.budget > 0 || l.actual > 0 || soon > 0) && (
             <span className="relative mt-1 block h-1.5 rounded-full bg-surface-2" aria-hidden>
               <span
                 className={clsx("absolute inset-y-0 left-0 rounded-full", over ? "bg-negative" : income ? "bg-positive" : ahead ? "bg-accent/60" : "bg-accent")}
                 style={{ width: `${pct * 100}%` }}
               />
+              {soonPct > 0 && (
+                <span
+                  className="absolute inset-y-0 rounded-r-full bg-upcoming/70"
+                  style={{ left: `${pct * 100}%`, width: `${soonPct * 100}%` }}
+                  data-testid="budget-upcoming"
+                />
+              )}
               {showPacing && l.expected > 0 && l.budget > 0 && l.expected < l.budget && (
                 <span className="absolute -inset-y-0.5 w-0.5 rounded bg-text/50" style={{ left: `${(l.expected / l.budget) * 100}%` }} title="Expected by today" />
               )}

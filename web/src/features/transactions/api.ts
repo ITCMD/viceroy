@@ -1,3 +1,4 @@
+import type { Cadence } from "@/features/recurring/api";
 import { infiniteQueryOptions, queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -85,7 +86,13 @@ export const transactionsQuery = (f: TxnFilters) =>
 export const transactionQuery = (id: number) =>
   queryOptions({
     queryKey: ["transactions", "detail", id],
-    queryFn: () => api.get<{ transaction: Transaction; linked: Transaction[]; email: TxnEmail | null; ai_changes: AIChange[] }>(`/transactions/${id}`),
+    queryFn: () => api.get<{
+        transaction: Transaction;
+        linked: Transaction[];
+        email: TxnEmail | null;
+        ai_changes: AIChange[];
+        recurring: { id: number; name: string; cadence: Cadence; next_date: string } | null;
+      }>(`/transactions/${id}`),
   });
 
 export const similarQuery = (id: number) =>
