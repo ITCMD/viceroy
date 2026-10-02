@@ -50,6 +50,10 @@ set `TZ`, e.g. `TZ=America/New_York`, if the server's zone isn't yours.
 
 ## systemd
 
+Quick way: `make build && sudo deploy/install.sh --lan 192.168.0.0/24` does all of the
+steps below (the `--lan` part only on first install; re-run it after `make build` to
+upgrade). Manually:
+
 `deploy/viceroy.service` runs Viceroy as a `viceroy` system user with a tight sandbox. The
 config goes in `/etc/viceroy/viceroy.toml`; data (database, keys, backups) goes in
 `/var/lib/viceroy`.
