@@ -101,6 +101,22 @@ func (q *Queries) CountCategoryGroups(ctx context.Context, householdID int64) (i
 	return count, err
 }
 
+const countCategoryTransactions = `-- name: CountCategoryTransactions :one
+SELECT COUNT(*) FROM transactions WHERE category_id = ? AND household_id = ?
+`
+
+type CountCategoryTransactionsParams struct {
+	CategoryID  sql.NullInt64 `json:"category_id"`
+	HouseholdID int64         `json:"household_id"`
+}
+
+func (q *Queries) CountCategoryTransactions(ctx context.Context, arg CountCategoryTransactionsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countCategoryTransactions, arg.CategoryID, arg.HouseholdID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCategory = `-- name: CreateCategory :one
 INSERT INTO categories (household_id, group_id, name, icon, sort) VALUES (?, ?, ?, ?, ?) RETURNING id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden
 `
@@ -232,6 +248,23 @@ func (q *Queries) CreateRule(ctx context.Context, arg CreateRuleParams) (Rule, e
 		&i.SetGoalID,
 	)
 	return i, err
+}
+
+const deleteCategory = `-- name: DeleteCategory :execrows
+DELETE FROM categories WHERE id = ? AND household_id = ?
+`
+
+type DeleteCategoryParams struct {
+	ID          int64 `json:"id"`
+	HouseholdID int64 `json:"household_id"`
+}
+
+func (q *Queries) DeleteCategory(ctx context.Context, arg DeleteCategoryParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteCategory, arg.ID, arg.HouseholdID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteManualTransaction = `-- name: DeleteManualTransaction :exec
@@ -1458,6 +1491,39 @@ func (q *Queries) MerchantHistoryCategory(ctx context.Context, arg MerchantHisto
 	return category_id, err
 }
 
+const moveCategoryRules = `-- name: MoveCategoryRules :exec
+UPDATE rules SET set_category_id = ?1 WHERE set_category_id = ?2 AND household_id = ?3
+`
+
+type MoveCategoryRulesParams struct {
+	ToID        sql.NullInt64 `json:"to_id"`
+	FromID      sql.NullInt64 `json:"from_id"`
+	HouseholdID int64         `json:"household_id"`
+}
+
+func (q *Queries) MoveCategoryRules(ctx context.Context, arg MoveCategoryRulesParams) error {
+	_, err := q.db.ExecContext(ctx, moveCategoryRules, arg.ToID, arg.FromID, arg.HouseholdID)
+	return err
+}
+
+const moveCategoryTransactions = `-- name: MoveCategoryTransactions :execrows
+UPDATE transactions SET category_id = ?1 WHERE category_id = ?2 AND household_id = ?3
+`
+
+type MoveCategoryTransactionsParams struct {
+	ToID        sql.NullInt64 `json:"to_id"`
+	FromID      sql.NullInt64 `json:"from_id"`
+	HouseholdID int64         `json:"household_id"`
+}
+
+func (q *Queries) MoveCategoryTransactions(ctx context.Context, arg MoveCategoryTransactionsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, moveCategoryTransactions, arg.ToID, arg.FromID, arg.HouseholdID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const renameMerchant = `-- name: RenameMerchant :exec
 UPDATE merchants SET name = ? WHERE id = ? AND household_id = ?
 `
@@ -1548,6 +1614,27 @@ UPDATE transactions SET linked_txn_id = NULL, linked_at = NULL WHERE id = ?
 
 func (q *Queries) UnlinkTransaction(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, unlinkTransaction, id)
+	return err
+}
+
+const updateCategory = `-- name: UpdateCategory :exec
+UPDATE categories SET name = ?, icon = ? WHERE id = ? AND household_id = ?
+`
+
+type UpdateCategoryParams struct {
+	Name        string `json:"name"`
+	Icon        string `json:"icon"`
+	ID          int64  `json:"id"`
+	HouseholdID int64  `json:"household_id"`
+}
+
+func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) error {
+	_, err := q.db.ExecContext(ctx, updateCategory,
+		arg.Name,
+		arg.Icon,
+		arg.ID,
+		arg.HouseholdID,
+	)
 	return err
 }
 

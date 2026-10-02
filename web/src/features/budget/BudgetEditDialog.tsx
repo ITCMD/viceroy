@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
+import { Info } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BarChart } from "@/components/charts/BarChart";
 import { Button, Dialog, Field, FormError, MoneyText, Segmented, Select, Switch } from "@/components/ui";
@@ -64,12 +65,15 @@ export function BudgetEditDialog({
   const [chunk, setChunk] = useState<Chunk>({ kind: "even" });
   const [timingOpen, setTimingOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [noPacing, setNoPacing] = useState(false);
 
   useEffect(() => {
     if (!line) return;
     setAmount(line.month_budget ? centsToInput(line.month_budget) : "");
     setForward(forwardDefault);
-    setChunk(line.chunk);
+    const { no_pacing, ...when } = line.chunk;
+    setChunk(when as Chunk);
+    setNoPacing(!!no_pacing);
     setTimingOpen(line.chunk.kind !== "even");
     setHidden(line.hidden);
   }, [line, forwardDefault]);
@@ -77,8 +81,9 @@ export function BudgetEditDialog({
   const save = useBudgetMutation(async () => {
     if (!target || !line) return;
     await api.put("/budget/amount", { [`${target.kind}_id`]: target.id, month, amount, apply_forward: forward });
-    if (target.kind === "category" && !sameChunk(chunk, line.chunk)) {
-      await api.put(`/budget/categories/${target.id}/chunk`, chunk);
+    const full: Chunk = noPacing ? { ...chunk, no_pacing: true } : chunk;
+    if (target.kind === "category" && !sameChunk(full, line.chunk)) {
+      await api.put(`/budget/categories/${target.id}/chunk`, full);
     }
     if (target.kind === "category" && hidden !== line.hidden) {
       await api.put(`/budget/categories/${target.id}/hidden`, { hidden });
@@ -169,6 +174,13 @@ export function BudgetEditDialog({
           )}
         </div>
 
+        {target?.kind === "category" && (
+          <label className="flex items-center gap-2 text-[13px]" title="Use this if this happens randomly all at once in a month.">
+            <input type="checkbox" className="size-4 accent-accent" checked={noPacing} onChange={(e) => setNoPacing(e.target.checked)} />
+            <span className="font-medium">Exclude from pacing</span>
+            <Info size={13} className="text-muted" aria-label="Use this if this happens randomly all at once in a month." />
+          </label>
+        )}
         {target?.kind === "category" && (
           <div className="rounded-lg border border-border">
             <button

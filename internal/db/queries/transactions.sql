@@ -244,3 +244,18 @@ UPDATE transactions SET ai_cat_tried = 1 WHERE id = ? AND household_id = ?;
 
 -- name: SetCategoryPlace :exec
 UPDATE categories SET group_id = ?, sort = ? WHERE id = ? AND household_id = ?;
+
+-- name: UpdateCategory :exec
+UPDATE categories SET name = ?, icon = ? WHERE id = ? AND household_id = ?;
+
+-- name: DeleteCategory :execrows
+DELETE FROM categories WHERE id = ? AND household_id = ?;
+
+-- name: MoveCategoryTransactions :execrows
+UPDATE transactions SET category_id = sqlc.arg(to_id) WHERE category_id = sqlc.arg(from_id) AND household_id = sqlc.arg(household_id);
+
+-- name: MoveCategoryRules :exec
+UPDATE rules SET set_category_id = sqlc.arg(to_id) WHERE set_category_id = sqlc.arg(from_id) AND household_id = sqlc.arg(household_id);
+
+-- name: CountCategoryTransactions :one
+SELECT COUNT(*) FROM transactions WHERE category_id = ? AND household_id = ?;

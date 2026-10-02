@@ -25,6 +25,7 @@ import (
 type Row struct {
 	Group    string        `json:"group"`
 	Category string        `json:"category"`
+	Source   string        `json:"source,omitempty"` // AI: the name as written, when matched to a differently named existing category
 	Icon     string        `json:"icon"`
 	Amount   int64         `json:"amount"` // monthly, cents
 	Timing   *budget.Chunk `json:"timing"`
@@ -290,12 +291,13 @@ func ValidImage(u string) bool {
 const prompt = `You read a household budget so it can be imported into Viceroy, a budgeting app. The input is pasted text and/or screenshots from another app (Monarch, YNAB, a spreadsheet, a bank).
 
 Reply with only a JSON object:
-{"rows": [{"group": "...", "category": "...", "amount": "123.45", "timing": null, "icon": null}], "notes": "..."}
+{"rows": [{"group": "...", "category": "...", "source": "...", "amount": "123.45", "timing": null, "icon": null}], "notes": "..."}
 
 Rules:
 - One row per budget category that has a planned amount. Leave out totals, subtotals, headings and "left to budget" lines. When there are budget, actual/spent and remaining columns, use the budget (planned) amount.
 - group: one of %s. Paychecks and other income go in the income group, regular bills in the fixed group, day-to-day spending in the flexible group, yearly or irregular costs in the non-monthly group, money set aside for savings goals in the goals group.
-- category: when a line means the same thing as one of the existing categories below, use that exact name (for example "Dining out" -> "Restaurants & Bars"). Otherwise keep the line's own name, tidied up, without emoji.
+- source: the line's own name as written, tidied up, without emoji.
+- category: when a line clearly means the same thing as one of the existing categories below, use that exact name (for example "Dining out" -> "Restaurants & Bars"). When it's only related, or more specific (for example "Pet insurance" when only "Insurance" exists), keep the line's own name: Viceroy offers to create it as a new category.
 - amount: monthly US dollars as a plain number string, no $ or commas. Convert weekly (x 52 / 12), every-two-weeks (x 26 / 12) and yearly (/ 12) amounts to monthly.
 - timing: only when the budget says when the money is spent: "day N" (all on day N of the month, like rent on the 1st), "week N" (during week 1-4 of the month) or "every N weeks". Otherwise null.
 - icon: one fitting emoji for a category that isn't in the list below, otherwise null.
@@ -350,6 +352,7 @@ func ParseReply(reply, anchor string) (rows []Row, problems []string, err error)
 		Rows []struct {
 			Group    string `json:"group"`
 			Category string `json:"category"`
+			Source   string `json:"source"`
 			Amount   any    `json:"amount"`
 			Timing   any    `json:"timing"`
 			Icon     any    `json:"icon"`
@@ -383,6 +386,9 @@ func ParseReply(reply, anchor string) (rows []Row, problems []string, err error)
 			continue
 		}
 		r := Row{Group: cleanName(x.Group), Category: cat, Amount: cents}
+		if src := cleanName(x.Source); src != "" && !strings.EqualFold(src, cat) && !isTotal(src) {
+			r.Source = src
+		}
 		if s, ok := x.Icon.(string); ok {
 			r.Icon = cleanIcon(s)
 		}

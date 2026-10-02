@@ -57,10 +57,15 @@ type Chunk struct {
 	Week   int       `json:"week,omitempty"`
 	Anchor string    `json:"anchor,omitempty"` // YYYY-MM-DD, for every_n_weeks
 	Weeks  int       `json:"weeks,omitempty"`  // interval, for every_n_weeks
+	// NoPacing leaves the category out of pacing (no "expected by today", no pacing alerts):
+	// for spending that lands randomly, all at once, sometime in the month.
+	NoPacing bool `json:"no_pacing,omitempty"`
 }
 
 // Validate normalizes an empty kind to Even and rejects bad params.
 func (c *Chunk) Validate() error {
+	noPacing := c.NoPacing
+	defer func() { c.NoPacing = noPacing }()
 	switch c.Kind {
 	case "", Even:
 		*c = Chunk{Kind: Even}

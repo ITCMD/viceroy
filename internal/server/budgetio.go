@@ -128,8 +128,11 @@ func matchRows(v budgetview.View, rows []budgetio.Row) ([]importRow, []string) {
 			if ir.Icon == "" {
 				ir.Icon = e.line.Icon
 			}
+			if r.Source != "" {
+				ir.Note = fmt.Sprintf("“%s” in your budget.", r.Source)
+			}
 			ir.Status = "same"
-			if ir.Amount != ir.OldAmount || ir.Timing != nil && *ir.Timing != *ir.OldTiming {
+			if ir.Amount != ir.OldAmount || ir.Timing != nil && !sameTiming(*ir.Timing, *ir.OldTiming) {
 				ir.Status = "changed"
 			}
 		} else {
@@ -453,8 +456,10 @@ func (s *Server) handleBudgetImport(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if cat.Valid && row.Timing != nil {
+			// A timing in the file never turns off "leave out of pacing".
+			row.Timing.NoPacing = row.Timing.NoPacing || budgetview.ParseChunk(catByID[cat.Int64].Chunk).NoPacing
 			v := ""
-			if row.Timing.Kind != budget.Even {
+			if row.Timing.Kind != budget.Even || row.Timing.NoPacing {
 				b, _ := json.Marshal(row.Timing)
 				v = string(b)
 			}
@@ -482,4 +487,10 @@ func (s *Server) handleBudgetImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// sameTiming compares schedules, ignoring the pacing flag (import files don't carry it).
+func sameTiming(a, b budget.Chunk) bool {
+	a.NoPacing, b.NoPacing = false, false
+	return a == b
 }

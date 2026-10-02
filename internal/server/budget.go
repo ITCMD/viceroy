@@ -189,7 +189,7 @@ func (s *Server) handleSetChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := ""
-	if c.Kind != budget.Even {
+	if c.Kind != budget.Even || c.NoPacing {
 		b, _ := json.Marshal(c)
 		v = string(b)
 	}

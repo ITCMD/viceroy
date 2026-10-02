@@ -85,7 +85,8 @@ func TestParseCSVLoose(t *testing.T) {
 
 func TestParseReply(t *testing.T) {
 	reply := "```json\n" + `{"rows":[
-		{"group":"Fixed","category":"Rent","amount":"1800","timing":"day 1","icon":null},
+		{"group":"Fixed","category":"Rent","source":"rent","amount":"1800","timing":"day 1","icon":null},
+		{"group":"Flexible","category":"Restaurants & Bars","source":"Eating out","amount":"200"},
 		{"group":"Flexible","category":"Dining\nout","amount":312.5,"timing":"whenever","icon":"🍽️"},
 		{"group":"Flexible","category":"Total","amount":"2112.50"},
 		{"group":"Flexible","category":"Fun","amount":"lots"}
@@ -94,7 +95,7 @@ func TestParseReply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 2 || rows[0].Timing.Day != 1 || rows[1].Category != "Dining out" || rows[1].Amount != 31250 || rows[1].Timing != nil || rows[1].Icon != "🍽️" {
+	if len(rows) != 3 || rows[0].Timing.Day != 1 || rows[0].Source != "" || rows[1].Source != "Eating out" || rows[2].Category != "Dining out" || rows[2].Amount != 31250 || rows[2].Timing != nil || rows[2].Icon != "🍽️" {
 		t.Fatalf("rows %+v", rows)
 	}
 	if len(problems) != 2 || !strings.HasPrefix(problems[0], "AI: Skipped") || !strings.Contains(problems[1], "Fun") {

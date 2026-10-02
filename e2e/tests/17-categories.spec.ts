@@ -64,3 +64,43 @@ test("categories: reorder, move to Non-monthly, and non-monthly rolls over", asy
   await expect(page.getByTestId("budget-rollover-note")).toContainText("Unspent in earlier months: $100.00");
   await page.screenshot({ path: `${shots}/17-rollover.png` });
 });
+
+test("categories: add, rename and delete a custom category; exclude one from pacing", async ({ page }) => {
+  await login(page);
+  await page.goto("/settings?tab=categories");
+  const flexible = page.getByTestId("category-group-flexible");
+  await page.getByRole("button", { name: "Add category to Flexible" }).click();
+  const dlg = page.getByTestId("category-dialog");
+  await dlg.getByLabel("Icon").fill("🐾");
+  await dlg.getByLabel("Name").fill("Dog walker");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(flexible.getByTestId("category-row").last()).toContainText("Dog walker");
+
+  // A duplicate name is refused.
+  await page.getByRole("button", { name: "Add category to Fixed" }).click();
+  await page.getByTestId("category-dialog").getByLabel("Name").fill("dog walker");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("dialog")).toContainText("There's already a category called “Dog walker”");
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  await page.getByRole("button", { name: "Edit Dog walker" }).click();
+  await page.getByTestId("category-dialog").getByLabel("Name").fill("Dog care");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(flexible).toContainText("Dog care");
+
+  // Exclude it from pacing in the budget editor.
+  await page.goto("/budget");
+  const line = page.getByTestId("budget-line").filter({ hasText: "Dog care" });
+  await line.click();
+  await page.getByLabel("Exclude from pacing").check();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(line).toContainText("Not paced");
+
+  // Delete it.
+  await page.goto("/settings?tab=categories");
+  await page.getByRole("button", { name: "Edit Dog care" }).click();
+  await page.getByRole("button", { name: "Delete category" }).click();
+  await expect(page.getByTestId("category-delete")).toContainText("No transactions use Dog care");
+  await page.getByRole("button", { name: "Delete category" }).click();
+  await expect(flexible).not.toContainText("Dog care");
+});

@@ -74,6 +74,10 @@ var apiDocs = []apiDoc{
 	doc("Transactions", "POST", "/transactions/{id}/unlink", "Break a link (and stop it from being made again).", ""),
 	doc("Transactions", "POST", "/transactions/{id}/ai-undo", "Undo what the email-reading AI changed (category, notes, tags, review flag).", ""),
 	doc("Transactions", "GET", "/categories", "Category groups and their categories.", ""),
+	doc("Transactions", "POST", "/categories", "Add a category at the end of a group.", "name, icon, group_id"),
+	doc("Transactions", "PATCH", "/categories/{id}", "Rename a category or change its icon.", "name, icon"),
+	doc("Transactions", "GET", "/categories/{id}/usage", "How many transactions use a category.", ""),
+	doc("Transactions", "DELETE", "/categories/{id}", "Delete a category; its transactions and rules move to move_to or become uncategorized.", "move_to (category id, optional)"),
 	doc("Transactions", "PUT", "/categories/layout", "Reorder categories and move them between Fixed, Flexible and Non-monthly.", "groups [{id, category_ids in order}]"),
 	doc("Transactions", "GET", "/tags", "Tags.", ""),
 

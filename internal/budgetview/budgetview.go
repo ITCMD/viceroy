@@ -334,6 +334,9 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 			g.Rollover += withCarry.Budget - l.Budget
 			line.Budget, line.Expected, line.Rollover = withCarry.Budget, withCarry.Expected, carry(p.Start)
 		}
+		if chunk.NoPacing {
+			line.Expected = 0
+		}
 		g.Lines = append(g.Lines, line)
 		g.Budget += line.Budget
 		g.Actual += line.Actual

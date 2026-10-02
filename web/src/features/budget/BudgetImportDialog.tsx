@@ -14,6 +14,8 @@ type Source = "csv" | "text" | "image";
 type PreviewRow = {
   group: string;
   category: string;
+  /** AI: the name as written, when it was matched to a differently named category. */
+  source?: string;
   icon: string;
   amount: number;
   timing: Chunk | null;
@@ -28,6 +30,10 @@ type Result = { created: number; updated: number; unchanged: number };
 type Row = PreviewRow & { input: string };
 
 const MAX_IMAGES = 4;
+
+/** The name a new category gets: the budget's own wording when the AI matched it to an
+ * existing category (so it can be created instead), else the row's name. */
+const newName = (r: PreviewRow) => r.source || r.category;
 const sources: { value: Source; label: string }[] = [
   { value: "csv", label: "CSV file" },
   { value: "text", label: "Paste text" },
@@ -75,7 +81,13 @@ export function BudgetImportDialog({ open, onOpenChange, month }: { open: boolea
         month,
         rows: rows
           .filter((r) => r.target !== "skip")
-          .map((r) => ({ target: r.target, category: r.category, icon: r.icon, amount: toCents(r.input) ?? 0, timing: r.timing })),
+          .map((r) => ({
+            target: r.target,
+            category: r.target.startsWith("new:") ? newName(r) : r.category,
+            icon: r.icon,
+            amount: toCents(r.input) ?? 0,
+            timing: r.timing,
+          })),
       }),
     () => qc.invalidateQueries({ queryKey: ["categories"] }),
   );
@@ -122,7 +134,7 @@ export function BudgetImportDialog({ open, onOpenChange, month }: { open: boolea
   const targetOptions = (r: Row) => [
     { value: "skip", label: "Don't import" },
     ...(budget?.groups ?? []).map((g) =>
-      g.kind === "goals" ? { value: "new:goals", label: `New goal “${r.category}”` } : { value: `new:${g.id}`, label: `New “${r.category}” in ${g.name}` },
+      g.kind === "goals" ? { value: "new:goals", label: `New goal “${newName(r)}”` } : { value: `new:${g.id}`, label: `New “${newName(r)}” in ${g.name}` },
     ),
     ...(budget?.groups ?? []).flatMap((g) =>
       g.lines.map((l) => ({ value: `${g.kind === "goals" ? "goal" : "cat"}:${l.id}`, label: `${g.name} · ${l.icon} ${l.name}` })),
@@ -301,7 +313,7 @@ export function BudgetImportDialog({ open, onOpenChange, month }: { open: boolea
                       <CategoryIcon icon={existing?.icon || r.icon || "📦"} size="sm" />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium">{r.category}</span>
+                          <span className="truncate text-sm font-medium">{r.target.startsWith("new:") ? newName(r) : r.category}</span>
                           <span className="shrink-0 whitespace-nowrap">
                             <Badge tone={st.tone}>{st.label}</Badge>
                           </span>

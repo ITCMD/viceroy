@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ArrowDown, ArrowUp, GripVertical } from "lucide-react";
+import { ArrowDown, ArrowUp, GripVertical, Pencil, Plus } from "lucide-react";
 import { useEffect, useState, type DragEvent } from "react";
 import { Button, Card, CategoryIcon, FormError, Select } from "@/components/ui";
 import { categoriesQuery, useTxnMutation, type CategoryGroup } from "@/features/transactions/api";
 import { api } from "@/lib/api";
+import { CategoryDialog, type CategoryDraft } from "./CategoryDialog";
 
 /** Expense groups a category can move between; income and transfers only reorder. */
 const movable = new Set(["fixed", "flexible", "non_monthly"]);
@@ -24,6 +25,7 @@ export function CategoriesSettings() {
   const [groups, setGroups] = useState<CategoryGroup[]>([]);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [dropAt, setDropAt] = useState<{ group: number; index: number } | null>(null);
+  const [editing, setEditing] = useState<CategoryDraft | null>(null);
 
   useEffect(() => {
     if (data) setGroups(data.groups);
@@ -76,11 +78,18 @@ export function CategoriesSettings() {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-[13px] text-muted">
-        Drag categories to reorder them, or move them between Fixed, Flexible and Non-monthly. The budget shows them in this order.
+        Add your own categories, rename them, or drag them to reorder and move them between Fixed, Flexible and Non-monthly. The budget shows them in this order.
       </p>
       {groups.map((g) => (
         <div key={g.id} data-testid={`category-group-${g.kind}`}>
-          <Card title={g.name}>
+          <Card
+            title={g.name}
+            action={
+              <Button size="sm" variant="ghost" onClick={() => setEditing({ group: g })} aria-label={`Add category to ${g.name}`}>
+                <Plus size={14} /> Add category
+              </Button>
+            }
+          >
             <div className="-m-4">
               {groupHints[g.kind] && <p className="border-b border-border px-4 py-2.5 text-[13px] text-muted">{groupHints[g.kind]}</p>}
               <ul
@@ -121,6 +130,9 @@ export function CategoriesSettings() {
                     <GripVertical size={16} className="shrink-0 cursor-grab text-muted" aria-hidden />
                     <CategoryIcon icon={c.icon} size="sm" />
                     <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                    <Button size="sm" variant="ghost" className="px-2" aria-label={`Edit ${c.name}`} onClick={() => setEditing({ group: g, category: c })}>
+                      <Pencil size={13} />
+                    </Button>
                     {movable.has(g.kind) && (
                       <Select
                         label={`Group for ${c.name}`}
@@ -159,6 +171,7 @@ export function CategoriesSettings() {
         </div>
       ))}
       <FormError error={save.error} />
+      <CategoryDialog draft={editing} onClose={() => setEditing(null)} />
     </div>
   );
 }

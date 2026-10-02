@@ -3,11 +3,12 @@ import { api } from "@/lib/api";
 
 export type View = "month" | "week" | "paycheck";
 
-export type Chunk =
+export type Chunk = (
   | { kind: "even" }
   | { kind: "day"; day: number }
   | { kind: "week"; week: number }
-  | { kind: "every_n_weeks"; weeks: number; anchor: string };
+  | { kind: "every_n_weeks"; weeks: number; anchor: string }
+) & { /** Left out of pacing: no "expected by today" marker or pacing alerts. */ no_pacing?: boolean };
 
 export type BudgetLine = {
   id: number;

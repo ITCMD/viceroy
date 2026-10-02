@@ -173,7 +173,7 @@ function LineRow({ l, income, showPacing, onClick }: { l: BudgetLine; income: bo
   const pct = l.budget > 0 ? Math.min(1, l.actual / l.budget) : l.actual > 0 ? 1 : 0;
   const over = !income && l.actual > l.budget;
   const ahead = !income && showPacing && l.expected > 0 && l.actual > l.expected && !over;
-  const timing = chunkLabel(l.chunk);
+  const timing = [chunkLabel(l.chunk), l.chunk.no_pacing && "Not paced"].filter(Boolean).join(" · ");
   // Recurring charges still to come in the upcoming window, drawn after the spent fill.
   const soon = income ? 0 : l.upcoming;
   const soonPct = soon > 0 ? (l.budget > 0 ? Math.min(1 - pct, soon / l.budget) : 1 - pct) : 0;

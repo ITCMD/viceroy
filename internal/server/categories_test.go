@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func TestCategoryLayoutAndRollover(t *testing.T) {
@@ -92,4 +93,65 @@ func jsonList(xs []any) string {
 		s += fmt.Sprint(x)
 	}
 	return s + "]"
+}
+
+func TestCategoryCRUDAndNoPacing(t *testing.T) {
+	c := newTestServer(t)
+	c.do("POST", "/api/setup", `{"name":"A","email":"a@example.com","password":"correct horse battery"}`, true)
+	_, out := c.do("POST", "/api/accounts", `{"name":"Wallet","type":"cash","balance":"1000"}`, true)
+	_, cats := c.do("GET", "/api/categories", "", false)
+	var flexible map[string]any
+	catID := map[string]any{}
+	for _, g := range cats["groups"].([]any) {
+		gm := g.(map[string]any)
+		if gm["kind"] == "flexible" {
+			flexible = gm
+		}
+		for _, cat := range gm["categories"].([]any) {
+			cm := cat.(map[string]any)
+			catID[cm["name"].(string)] = cm["id"]
+		}
+	}
+	code, created := c.do("POST", "/api/categories", fmt.Sprintf(`{"name":" Pet care ","icon":"🐶","group_id":%v}`, flexible["id"]), true)
+	if code != 201 || created["name"] != "Pet care" {
+		t.Fatalf("create = %d %v", code, created)
+	}
+	id := fmt.Sprint(created["id"])
+	if code, _ := c.do("POST", "/api/categories", fmt.Sprintf(`{"name":"groceries","group_id":%v}`, flexible["id"]), true); code != 400 {
+		t.Fatalf("duplicate = %d", code)
+	}
+	if code, _ := c.do("POST", "/api/categories", `{"name":"X","group_id":999999}`, true); code != 400 {
+		t.Fatalf("bad group = %d", code)
+	}
+	if code, r := c.do("PATCH", "/api/categories/"+id, `{"name":"Vet bills","icon":"🐱"}`, true); code != 200 || r["name"] != "Vet bills" {
+		t.Fatalf("rename = %d %v", code, r)
+	}
+	// It's on the budget (last in Flexible); leave it out of pacing.
+	month := time.Now().Format("2006-01")
+	c.do("PUT", "/api/budget/amount", fmt.Sprintf(`{"category_id":%s,"month":%q,"amount":"300"}`, id, month), true)
+	if code, _ := c.do("PUT", "/api/budget/categories/"+id+"/chunk", `{"kind":"even","no_pacing":true}`, true); code != 200 {
+		t.Fatalf("no pacing = %d", code)
+	}
+	_, b := c.do("GET", "/api/budget", "", false)
+	l, _ := findLine(t, b, "Vet bills")
+	if l["expected"] != float64(0) || l["chunk"].(map[string]any)["no_pacing"] != true || l["budget"] != float64(30000) {
+		t.Fatalf("line = %v", l)
+	}
+
+	// Delete, moving its transactions to Groceries.
+	_, txn := c.do("POST", "/api/transactions", fmt.Sprintf(`{"account_id":%v,"date":"2026-09-01","amount":"-20","description":"Vet"}`, out["id"]), true)
+	c.do("PATCH", fmt.Sprint("/api/transactions/", txn["id"]), `{"category_id":`+id+`}`, true)
+	if _, u := c.do("GET", "/api/categories/"+id+"/usage", "", false); u["transactions"] != float64(1) {
+		t.Fatalf("usage = %v", u)
+	}
+	if code, r := c.do("DELETE", fmt.Sprintf("/api/categories/%s?move_to=%v", id, catID["Groceries"]), "", true); code != 200 || r["moved"] != float64(1) {
+		t.Fatalf("delete = %d %v", code, r)
+	}
+	_, d := c.do("GET", fmt.Sprint("/api/transactions/", txn["id"]), "", false)
+	if d["transaction"].(map[string]any)["category_id"] != catID["Groceries"] {
+		t.Fatalf("moved txn = %v", d["transaction"])
+	}
+	if code, _ := c.do("DELETE", "/api/categories/"+id, "", true); code != 404 {
+		t.Fatalf("delete again = %d", code)
+	}
 }
