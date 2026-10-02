@@ -32,6 +32,14 @@ func TestOfferedAccountsAndTracking(t *testing.T) {
 		t.Fatal("offered account imported transactions")
 	}
 
+	// Dismissing keeps it off and stops offering it.
+	if err := e.svc.SetTracked(e.ctx, c.ID, nil, []int64{sp.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if a := e.accounts()["Sapphire Preferred (6666)"]; a.Status != "ignored" || a.OfferedAt.Valid {
+		t.Fatalf("dismissed account: %+v", a)
+	}
+
 	// Add it, and drop the savings account.
 	sav := e.accounts()["360 Performance Savings (2222)"]
 	before := e.fake.Requests

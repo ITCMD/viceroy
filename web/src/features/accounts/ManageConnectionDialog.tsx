@@ -50,6 +50,8 @@ export function ManageConnectionDialog({
     (v: { old: number; with: number }) => api.post<{ warning?: string }>(`/accounts/${v.old}/replace`, { with: v.with }),
     (r) => r.warning && setWarning(r.warning),
   );
+  // Keep a new account off and stop flagging it as new.
+  const dismiss = useAccountsMutation((id: number) => api.put(`/connections/${c!.id}/accounts`, { include: [], exclude: [id] }));
   // A new account with the same last 4 digits as one already followed is likely a sync duplicate.
   const twinOf = (a: Account) =>
     a.offered && a.mask ? accounts.find((o) => o.id !== a.id && o.mask === a.mask && !o.replaced_by && o.status !== "ignored" && !o.is_manual) : undefined;
@@ -105,23 +107,33 @@ export function ManageConnectionDialog({
                         </div>
                         {a.offered && <Badge tone="accent">New</Badge>}
                       </div>
-                      {twin && (
-                        <div className="flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs" data-testid="twin-hint">
-                          <span className="min-w-0 flex-1 text-muted">
-                            Same last 4 digits as <span className="font-medium text-text">{twin.name}</span>. If it's the same account, replace that one
-                            with this (a sync duplicate).
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            loading={replace.isPending}
-                            onClick={() =>
-                              confirm(`Replace “${twin.name}” with “${a.name}”? Its transactions, balance history, rules and settings move to the new one.`) &&
-                              replace.mutate({ old: twin.id, with: a.id })
-                            }
-                          >
-                            Replace {twin.name}
-                          </Button>
+                      {a.offered && !want[a.id] && (
+                        <div className="flex flex-col gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted" data-testid="offer-hint">
+                          {twin && (
+                            <p data-testid="twin-hint">
+                              Same last 4 digits as <span className="font-medium text-text">{twin.name}</span>. If this account is jointly owned and both
+                              logins have access to it, simply leave this copy disabled. If the bank now reports {twin.name} under this new entry instead
+                              (a sync duplicate), replace it.
+                            </p>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            {twin && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                loading={replace.isPending}
+                                onClick={() =>
+                                  confirm(`Replace “${twin.name}” with “${a.name}”? Its transactions, balance history, rules and settings move to the new one.`) &&
+                                  replace.mutate({ old: twin.id, with: a.id })
+                                }
+                              >
+                                Replace {twin.name}
+                              </Button>
+                            )}
+                            <Button size="sm" variant="ghost" loading={dismiss.isPending && dismiss.variables === a.id} onClick={() => dismiss.mutate(a.id)}>
+                              Dismiss
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </li>
@@ -159,7 +171,7 @@ export function ManageConnectionDialog({
               onCheckedChange={(v) => autoAdd.mutate(v)}
             />
           </div>
-          <FormError error={save.error ?? refresh.error ?? autoAdd.error ?? replace.error} />
+          <FormError error={save.error ?? refresh.error ?? autoAdd.error ?? replace.error ?? dismiss.error} />
         </div>
       )}
     </Dialog>

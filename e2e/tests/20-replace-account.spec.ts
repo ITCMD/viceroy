@@ -26,6 +26,8 @@ test("replace an account with its sync duplicate", async ({ page, request }) => 
   await banner.click();
   const hint = page.getByTestId("twin-hint");
   await expect(hint).toContainText("Same last 4 digits as Quicksilver Card (3333)");
+  await expect(hint).toContainText("If this account is jointly owned and both logins have access to it, simply leave this copy disabled.");
+  await expect(page.getByTestId("offer-hint").getByRole("button", { name: "Dismiss" })).toBeVisible();
   await page.screenshot({ path: `${shots}/20-replace-hint.png` });
   await page.keyboard.press("Escape");
 
@@ -53,7 +55,19 @@ test("replace an account with its sync duplicate", async ({ page, request }) => 
   const moved = (await (await page.request.get(`/api/transactions?account=${repl.id}`)).json()).transactions.length;
   expect(moved).toBe(before);
 
-  // Another sync doesn't bring the old link back.
+  // Dismissing an offered account clears the New flag and the banner.
+  await request.post(`${fake}/_control/scenario`, { data: { name: "relinked+dupcard+newbank" } });
+  await page.getByRole("button", { name: "Sync now" }).click();
+  const offer = page.getByRole("button", { name: /1 new account on SimpleFIN: Sapphire Preferred/ });
+  await offer.click();
+  const row = page.getByTestId("manage-row").filter({ hasText: "Sapphire Preferred" });
+  await row.getByRole("button", { name: "Dismiss" }).click();
+  await expect(row.getByText("New")).toHaveCount(0);
+  await expect(row.getByRole("switch")).not.toBeChecked();
+  await page.keyboard.press("Escape");
+  await expect(offer).toBeHidden();
+
+  // Another sync doesn't bring the old link back (or the dismissed account).
   await page.getByRole("button", { name: "Sync now" }).click();
   await expect(page.getByRole("button", { name: "Sync now" })).toBeEnabled();
   await expect(page.getByRole("button", { name: /new account on SimpleFIN/ })).toHaveCount(0);
