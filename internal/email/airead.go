@@ -28,22 +28,25 @@ const (
 	KindPaymentReceived  = "payment_received"
 	KindSecurityAlert    = "security_alert"
 	KindStatementReady   = "statement_ready"
+	KindBalanceSummary   = "balance_summary"
 	KindTransactionAlert = "transaction_alert"
 	KindOtherNotice      = "other_notice"
 	KindIgnore           = "ignore"
 )
 
 var AIKinds = []string{KindPaymentDue, KindPaymentScheduled, KindPaymentReceived, KindSecurityAlert,
-	KindStatementReady, KindTransactionAlert, KindOtherNotice, KindIgnore}
+	KindStatementReady, KindBalanceSummary, KindTransactionAlert, KindOtherNotice, KindIgnore}
 
 // AIResult is the validated reading of one email.
 type AIResult struct {
 	Kind    string
 	Summary string
 	Last4   string
-	Amount  sql.NullInt64 // cents
-	Minimum sql.NullInt64 // cents
-	Date    string        // YYYY-MM-DD or ""
+	// AccountText is the exact phrase naming the account (e.g. "Quicksilver (0428)").
+	AccountText string
+	Amount      sql.NullInt64 // cents
+	Minimum     sql.NullInt64 // cents
+	Date        string        // YYYY-MM-DD or ""
 	// Recipe is the AI's reading of a transaction_alert (values and where they sit), or nil.
 	Recipe *Recipe
 }
@@ -66,12 +69,13 @@ type Notice struct {
 }
 
 const aiPrompt = `You read emails that a bank, credit card issuer or other financial company sent to its customer. Reply with only a JSON object with these keys:
-"kind": one of "payment_due", "payment_scheduled", "payment_received", "security_alert", "statement_ready", "transaction_alert", "other_notice", "ignore".
+"kind": one of "payment_due", "payment_scheduled", "payment_received", "security_alert", "statement_ready", "balance_summary", "transaction_alert", "other_notice", "ignore".
 "summary": one short sentence for a phone notification, stating the facts (amounts, dates, what happened). No greeting, no advice.
 "account_last4": the last 4 digits of the card or account the email is about, as a string, or null.
-"amount": for payment_due the statement balance (or amount due); for a payment the payment amount; as a plain number string like "245.10", or null.
+"account_text": the short exact phrase in the email that names that account with its last 4 digits (e.g. "Quicksilver (0428)" or "ending in 0428"), or null.
+"amount": for payment_due the statement balance (or amount due); for a payment the payment amount; for balance_summary the account's current balance; as a plain number string like "245.10", or null.
 "minimum_due": for payment_due the minimum payment as a number string, else null.
-"date": for payment_due the due date, for payment_scheduled the date it will be paid, for payment_received the payment date, as YYYY-MM-DD, or null.
+"date": for payment_due the due date, for payment_scheduled the date it will be paid, for payment_received the payment date, for balance_summary the date the balance is as of, as YYYY-MM-DD, or null.
 "transaction": for transaction_alert only (else null): the one transaction and where its values sit in the email text, so the app can read the next email like it without AI. An object with:
   "direction": "out" (purchase, withdrawal, debit, payment or transfer out of the account) or "in" (deposit, refund, credit, transfer in).
   "amount": the amount as a plain number string like "17.08".
@@ -87,6 +91,7 @@ Kinds:
 - payment_received: a payment was made, received or posted.
 - security_alert: suspicious or unusual activity, possible fraud, a declined charge, a new login or device, a password, email or phone change, a locked or replaced card.
 - statement_ready: a new statement is available and no due date is given.
+- balance_summary: states an account's current balance (e.g. "Your requested balance summary", "Your balance is $X as of ..."), with no payment due date.
 - transaction_alert: a notice about one specific purchase, withdrawal, transfer or deposit.
 - other_notice: anything else about the customer's accounts they should know (low balance, overdraft, rate or terms change, credit limit change).
 - ignore: marketing, offers, newsletters, surveys, rewards promotions, and anything not about the customer's own accounts.
@@ -163,6 +168,7 @@ func ParseAIResult(reply string, received time.Time) (AIResult, error) {
 		Kind    string          `json:"kind"`
 		Summary string          `json:"summary"`
 		Last4   any             `json:"account_last4"`
+		AcctTxt any             `json:"account_text"`
 		Amount  any             `json:"amount"`
 		Minimum any             `json:"minimum_due"`
 		Date    any             `json:"date"`
@@ -185,6 +191,7 @@ func ParseAIResult(reply string, received time.Time) (AIResult, error) {
 	if s := str(v.Last4); len(s) >= 4 && isDigits(s[len(s)-4:]) {
 		res.Last4 = s[len(s)-4:]
 	}
+	res.AccountText = clip(str(v.AcctTxt), 60)
 	res.Amount, res.Minimum = cents(v.Amount), cents(v.Minimum)
 	if res.Kind == KindTransactionAlert {
 		res.Recipe = parseRecipe(v.Txn)
@@ -437,10 +444,26 @@ func (s *Service) applyAI(ctx context.Context, m db.EmailMessage, res AIResult) 
 				return nil, false, err
 			}
 		}
-		notice = &Notice{Kind: "bank_notice", Key: fmt.Sprintf("email:%d", m.ID), Title: noticeTitle(res, m, acctName), Body: res.Summary}
-		if _, ok := billKinds[res.Kind]; ok {
-			notice.URL = "/accounts"
+		if res.Kind == KindBalanceSummary {
+			facts, err := CheckBalance(ctx, q, m.HouseholdID, FromRow(m), res)
+			if err != nil {
+				return nil, false, err
+			}
+			if facts.AccountID != 0 {
+				a, err := q.GetAccount(ctx, db.GetAccountParams{ID: facts.AccountID, HouseholdID: m.HouseholdID})
+				if err != nil {
+					return nil, false, err
+				}
+				acctName = a.Name
+			}
+			b, _ := json.Marshal(facts)
+			if err := q.SetEmailAIFacts(ctx, db.SetEmailAIFactsParams{AiFacts: string(b), ID: m.ID}); err != nil {
+				return nil, false, err
+			}
 		}
+		// Opening the notice shows the email with what Viceroy can do about it.
+		notice = &Notice{Kind: "bank_notice", Key: fmt.Sprintf("email:%d", m.ID), Title: noticeTitle(res, m, acctName), Body: res.Summary,
+			URL: fmt.Sprintf("/accounts?email=%d", m.ID)}
 	}
 	if err := q.SetEmailAIResult(ctx, db.SetEmailAIResultParams{AiStatus: "done", AiKind: res.Kind, AiSummary: res.Summary, Status: status, ID: m.ID}); err != nil {
 		return nil, false, err
@@ -561,6 +584,8 @@ func noticeTitle(res AIResult, m db.EmailMessage, acct string) string {
 		return "Security alert · " + who
 	case KindStatementReady:
 		return "Statement ready · " + who
+	case KindBalanceSummary:
+		return "Balance · " + who
 	}
 	if m.Subject != "" {
 		return who + ": " + m.Subject

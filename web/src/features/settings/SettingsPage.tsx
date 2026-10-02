@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListFilter, Plus, Trash2, Upload } from "lucide-react";
-import { useLocation } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { Logo } from "@/components/AppLogo";
-import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader, Switch } from "@/components/ui";
+import { Button, Card, CategoryPill, EmptyState, FormError, PageHeader, Switch, Tabs } from "@/components/ui";
 import { accountsQuery, useAccountsMutation } from "@/features/accounts/api";
 import { categoriesQuery, useTxnMutation } from "@/features/transactions/api";
 import { goalsQuery } from "@/features/goals/api";
@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { ApiSettingsCard } from "@/features/api/ApiSettingsCard";
 import { AISettingsCard } from "./AISettingsCard";
 import { BudgetSettingsCard } from "./BudgetSettingsCard";
+import { CategoriesSettings } from "./CategoriesSettings";
 import { RuleDialog } from "./RuleDialog";
 import { settingsQuery, type Settings } from "./settings";
 import { ruleConditions, rulesQuery, type Rule } from "./rules";
@@ -43,8 +44,12 @@ function AccountsCard() {
   );
 }
 
+type SettingsTab = "general" | "categories";
+
 export function SettingsPage() {
   const hash = useLocation({ select: (l) => l.hash });
+  const tab: SettingsTab = useLocation({ select: (l) => (l.search as { tab?: string }).tab === "categories" ? "categories" : "general" });
+  const navigate = useNavigate();
   useEffect(() => {
     if (hash) document.getElementById(hash)?.scrollIntoView({ block: "start" });
   }, [hash]);
@@ -52,22 +57,38 @@ export function SettingsPage() {
     <>
       <PageHeader title="Settings" />
       <div className="mx-auto flex max-w-4xl flex-col gap-4 p-4 md:p-6">
-        <AccountsCard />
-        <AppearanceCard />
-        <BudgetSettingsCard />
-        <RulesCard />
-        <ImportCard />
-        <div id="notifications" className="scroll-mt-16">
-          <NotificationSettingsCard />
-        </div>
-        <div id="ai" className="scroll-mt-16">
-          <AISettingsCard />
-        </div>
-        <div id="api" className="scroll-mt-16">
-          <ApiSettingsCard />
-        </div>
-        <EmailSettings />
+        <Tabs<SettingsTab>
+          value={tab}
+          onChange={(t) => navigate({ to: "/settings" as string, search: (t === "general" ? {} : { tab: t }) as never })}
+          items={[
+            { value: "general", label: "General" },
+            { value: "categories", label: "Categories" },
+          ]}
+        />
+        {tab === "categories" ? <CategoriesSettings /> : <GeneralSettings />}
       </div>
+    </>
+  );
+}
+
+function GeneralSettings() {
+  return (
+    <>
+      <AccountsCard />
+      <AppearanceCard />
+      <BudgetSettingsCard />
+      <RulesCard />
+      <ImportCard />
+      <div id="notifications" className="scroll-mt-16">
+        <NotificationSettingsCard />
+      </div>
+      <div id="ai" className="scroll-mt-16">
+        <AISettingsCard />
+      </div>
+      <div id="api" className="scroll-mt-16">
+        <ApiSettingsCard />
+      </div>
+      <EmailSettings />
     </>
   );
 }

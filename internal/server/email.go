@@ -32,6 +32,7 @@ func (s *Server) emailRoutes(r chi.Router) {
 	r.Get("/email/messages/{id}", s.handleGetEmailMessage)
 	r.Post("/email/messages/{id}/ignore", s.handleIgnoreEmailMessage)
 	r.Post("/email/messages/{id}/retry", s.handleRetryEmailMessage)
+	r.Post("/email/messages/{id}/action", s.handleEmailAction)
 }
 
 // ---- Mailboxes ----
@@ -310,12 +311,14 @@ type emailFilterDTO struct {
 	CustomParser *email.CustomParser `json:"custom_parser"`
 	Sign         string              `json:"sign"`
 	Source       string              `json:"source"` // user | ai (written by the email AI, checked by Viceroy)
+	Action       string              `json:"action"` // transaction | balance | ignore
 }
 
 func toEmailFilterDTO(f db.EmailFilter) emailFilterDTO {
 	out := emailFilterDTO{
 		ID: f.ID, Name: f.Name, Priority: f.Priority, Enabled: f.Enabled == 1, Sender: f.Sender, SubjectMatch: f.SubjectMatch,
 		BodyMatch: f.BodyMatch, UseRegex: f.UseRegex == 1, AccountID: f.AccountID, Parser: f.Parser, Sign: f.Sign, Source: f.Source,
+		Action: f.Action,
 	}
 	if f.CustomParser != "" {
 		var c email.CustomParser
@@ -338,6 +341,7 @@ type emailFilterIn struct {
 	Parser       string              `json:"parser"`
 	CustomParser *email.CustomParser `json:"custom_parser"`
 	Sign         string              `json:"sign"`
+	Action       string              `json:"action"` // "" = transaction
 }
 
 // row validates the body and converts it to a filter row (ID/priority/created left to the caller).
@@ -345,7 +349,13 @@ func (in emailFilterIn) row(hh int64) (db.EmailFilter, error) {
 	f := db.EmailFilter{
 		HouseholdID: hh, Name: strings.TrimSpace(in.Name), Enabled: 1, Sender: strings.TrimSpace(in.Sender),
 		SubjectMatch: strings.TrimSpace(in.SubjectMatch), BodyMatch: strings.TrimSpace(in.BodyMatch),
-		UseRegex: b2i(in.UseRegex), AccountID: in.AccountID, Parser: in.Parser, Sign: in.Sign,
+		UseRegex: b2i(in.UseRegex), AccountID: in.AccountID, Parser: in.Parser, Sign: in.Sign, Action: in.Action,
+	}
+	if f.Action == "" {
+		f.Action = email.ActionTransaction
+	}
+	if !email.ValidAction(f.Action) {
+		return f, errors.New("Choose what the filter does.")
 	}
 	if in.Enabled != nil {
 		f.Enabled = b2i(*in.Enabled)
@@ -366,7 +376,7 @@ func (in emailFilterIn) row(hh int64) (db.EmailFilter, error) {
 		b, _ := json.Marshal(in.CustomParser)
 		f.CustomParser = string(b)
 	}
-	if err := email.ValidateParser(f.Parser, f.CustomParser); err != nil {
+	if err := email.ValidateFilterParser(f.Action, f.Parser, f.CustomParser); err != nil {
 		return f, err
 	}
 	if f.Name == "" {
@@ -431,7 +441,7 @@ func (s *Server) handleCreateEmailFilter(w http.ResponseWriter, r *http.Request)
 	row, err := q.InsertEmailFilter(ctx, db.InsertEmailFilterParams{
 		HouseholdID: hh, Name: f.Name, Priority: f.Priority, Enabled: f.Enabled, Sender: f.Sender,
 		SubjectMatch: f.SubjectMatch, BodyMatch: f.BodyMatch, UseRegex: f.UseRegex, AccountID: f.AccountID,
-		Parser: f.Parser, CustomParser: f.CustomParser, Sign: f.Sign, CreatedAt: time.Now().Unix(),
+		Parser: f.Parser, CustomParser: f.CustomParser, Sign: f.Sign, Action: f.Action, CreatedAt: time.Now().Unix(),
 	})
 	if err != nil {
 		s.internalError(w, err)
@@ -452,6 +462,9 @@ func (s *Server) handleUpdateEmailFilter(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotFound, "Filter not found.")
 		return
 	}
+	if in.Action == "" {
+		in.Action = cur.Action
+	}
 	f, err := in.row(hh)
 	if err == nil {
 		if _, err = q.GetAccount(ctx, db.GetAccountParams{ID: f.AccountID, HouseholdID: hh}); err != nil {
@@ -469,7 +482,7 @@ func (s *Server) handleUpdateEmailFilter(w http.ResponseWriter, r *http.Request)
 	if err := q.UpdateEmailFilter(ctx, db.UpdateEmailFilterParams{
 		Name: f.Name, Priority: f.Priority, Enabled: f.Enabled, Sender: f.Sender, SubjectMatch: f.SubjectMatch,
 		BodyMatch: f.BodyMatch, UseRegex: f.UseRegex, AccountID: f.AccountID, Parser: f.Parser,
-		CustomParser: f.CustomParser, Sign: f.Sign, ID: id, HouseholdID: hh,
+		CustomParser: f.CustomParser, Sign: f.Sign, Action: f.Action, ID: id, HouseholdID: hh,
 	}); err != nil {
 		s.internalError(w, err)
 		return
@@ -525,7 +538,10 @@ func (s *Server) handlePreviewEmailFilter(w http.ResponseWriter, r *http.Request
 	ctx, hh := r.Context(), HouseholdID(r)
 	f := db.EmailFilter{
 		Sender: strings.TrimSpace(in.Sender), SubjectMatch: strings.TrimSpace(in.SubjectMatch),
-		BodyMatch: strings.TrimSpace(in.BodyMatch), UseRegex: b2i(in.UseRegex), Parser: in.Parser,
+		BodyMatch: strings.TrimSpace(in.BodyMatch), UseRegex: b2i(in.UseRegex), Parser: in.Parser, Action: in.Action,
+	}
+	if f.Action == "" {
+		f.Action = email.ActionTransaction
 	}
 	if f.Parser == "" {
 		f.Parser = "generic"
@@ -544,7 +560,7 @@ func (s *Server) handlePreviewEmailFilter(w http.ResponseWriter, r *http.Request
 	if !filterOK {
 		out.FilterError = email.FilterOf(f).Validate().Error()
 	}
-	if err := email.ValidateParser(f.Parser, f.CustomParser); err != nil {
+	if err := email.ValidateFilterParser(f.Action, f.Parser, f.CustomParser); err != nil {
 		out.ParserError = err.Error()
 	}
 	parse := func(m db.EmailMessage) previewMatch {
@@ -553,7 +569,7 @@ func (s *Server) handlePreviewEmailFilter(w http.ResponseWriter, r *http.Request
 		if out.ParserError != "" {
 			return pm
 		}
-		if p, err := email.Parse(f.Parser, f.CustomParser, email.FromRow(m)); err != nil {
+		if p, err := email.PreviewParse(f.Action, f.Parser, f.CustomParser, email.FromRow(m)); err != nil {
 			pm.Error = err.Error()
 		} else {
 			pm.Parsed = &p
@@ -623,6 +639,7 @@ func (s *Server) handleListEmailMessages(w http.ResponseWriter, r *http.Request)
 		FilterID      *int64 `json:"filter_id"`
 		TransactionID *int64 `json:"transaction_id"`
 		AiRecipe      string `json:"-"`
+		AiFacts       string `json:"-"`
 		// Why no filter could be built from the AI's reading of a transaction email.
 		AIProblem string `json:"ai_problem"`
 	}
@@ -657,13 +674,31 @@ type emailMessageDTO struct {
 	SuggestedAccountID *int64 `json:"suggested_account_id"`
 	AccountPhrase      string `json:"account_phrase"`
 	SuggestedSign      string `json:"suggested_sign"`
+	// What Viceroy verified in a notice (e.g. a balance summary), and what was done with the email.
+	AIFacts *email.Facts `json:"ai_facts"`
+	Applied string       `json:"applied"`
+	// The bill event the AI recorded from this email, if any.
+	Bill *billEventDTO `json:"bill"`
+}
+
+type billEventDTO struct {
+	Kind        string `json:"kind"`
+	AccountID   *int64 `json:"account_id"`
+	AmountCents *int64 `json:"amount_cents"`
+	Date        string `json:"date"`
 }
 
 func toEmailMessageDTO(m db.EmailMessage) emailMessageDTO {
 	out := emailMessageDTO{
 		ID: m.ID, FromAddr: m.FromAddr, FromName: m.FromName, Subject: m.Subject, ReceivedAt: m.ReceivedAt,
 		BodyText: m.BodyText, Status: m.Status, FilterID: ptr(m.FilterID), TransactionID: ptr(m.TransactionID), Error: m.Error,
-		AIKind: m.AiKind, AISummary: m.AiSummary, SuggestedSign: email.GuessSign(email.FromRow(m)),
+		AIKind: m.AiKind, AISummary: m.AiSummary, SuggestedSign: email.GuessSign(email.FromRow(m)), Applied: m.Applied,
+	}
+	if m.AiFacts != "" {
+		var f email.Facts
+		if json.Unmarshal([]byte(m.AiFacts), &f) == nil {
+			out.AIFacts = &f
+		}
 	}
 	if m.AiRecipe != "" {
 		var rc email.RecipeCheck
@@ -693,6 +728,21 @@ func (s *Server) handleGetEmailMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if id != 0 {
 		out.SuggestedAccountID, out.AccountPhrase = &id, phrase
+	}
+	if b, err := db.New(s.db).GetBillForEmail(r.Context(), sql.NullInt64{Int64: m.ID, Valid: true}); err == nil {
+		out.Bill = &billEventDTO{Kind: b.Kind, AccountID: ptr(b.AccountID), AmountCents: ptr(b.AmountCents), Date: b.Date.String}
+		if b.AccountID.Valid {
+			out.SuggestedAccountID = ptr(b.AccountID)
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		s.internalError(w, err)
+		return
+	}
+	if out.AIFacts != nil && out.AIFacts.AccountID != 0 {
+		out.SuggestedAccountID = &out.AIFacts.AccountID
+		if out.AIFacts.AccountText != "" {
+			out.AccountPhrase = out.AIFacts.AccountText
+		}
 	}
 	if out.AIRecipe != nil && out.AIRecipe.AccountID != 0 {
 		out.SuggestedAccountID = &out.AIRecipe.AccountID

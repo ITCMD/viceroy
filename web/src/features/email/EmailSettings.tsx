@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Inbox, Mail, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Badge, Button, Card, Dialog, EmptyState, FormError } from "@/components/ui";
 import { accountLabel, accountsQuery } from "@/features/accounts/api";
 import { api } from "@/lib/api";
@@ -15,6 +15,7 @@ import {
   templatesQuery,
   useEmailMutation,
   type EmailFilter,
+  type EmailMessage,
   type EmailMessageRow,
   type Mailbox,
 } from "./api";
@@ -150,8 +151,15 @@ function FiltersCard({ onEdit, accounts }: { onEdit: (f: EmailFilter | null) => 
                     )}
                   </span>
                   <span className="mt-0.5 block truncate text-[13px] text-muted">
-                    {conditions(f)} → {acct ? accountLabel(acct) : "missing account"} · {parser}
-                    {f.sign === "credit" && " · deposits"}
+                    {f.action === "ignore" ? (
+                      <>{conditions(f)} → ignored</>
+                    ) : (
+                      <>
+                        {conditions(f)} → {acct ? accountLabel(acct) : "missing account"}
+                        {f.action === "balance" ? " · updates the balance" : ` · ${parser}`}
+                        {f.action === "transaction" && f.sign === "credit" && " · deposits"}
+                      </>
+                    )}
                   </span>
                 </button>
                 <Button size="sm" variant="danger-ghost" aria-label="Delete filter" loading={del.isPending && del.variables === f.id} onClick={() => del.mutate(f.id)}>
@@ -223,10 +231,13 @@ export function EmailViewer({
   message,
   onClose,
   onCreateFilter,
+  renderActions,
 }: {
   message: { id: number; from_addr: string; subject: string } | null;
   onClose: () => void;
   onCreateFilter?: (m: EmailMessageRow) => void;
+  /** Shown above the email text once it has loaded (e.g. a bank notice's actions). */
+  renderActions?: (m: EmailMessage) => ReactNode;
 }) {
   const { data } = useQuery({ ...messageQuery(message?.id ?? 0), enabled: !!message });
   return (
@@ -234,7 +245,7 @@ export function EmailViewer({
       open={!!message}
       onOpenChange={(o) => !o && onClose()}
       className="md:max-w-2xl"
-      title={message?.subject || "(no subject)"}
+      title={message?.subject || data?.subject || "(no subject)"}
       description={data ? `${data.from_name ? `${data.from_name} <${data.from_addr}>` : data.from_addr} · ${new Date(data.received_at * 1000).toLocaleString()}` : message?.from_addr}
       footer={
         onCreateFilter && data && data.status !== "parsed" ? (
@@ -250,6 +261,7 @@ export function EmailViewer({
         ) : undefined
       }
     >
+      {data && renderActions?.(data)}
       <pre className="whitespace-pre-wrap break-words font-sans text-[13px]">
         {data ? data.body_text || "The body of this email is no longer stored." : "Loading…"}
       </pre>

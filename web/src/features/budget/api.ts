@@ -20,11 +20,13 @@ export type BudgetLine = {
   chunk: Chunk;
   /** Hidden from the budget (still counted in totals). */
   hidden: boolean;
+  /** Non-monthly: unspent budget (or overspending, negative) carried in from earlier months; `budget` includes it. */
+  rollover: number;
 };
 
 export type GroupKind = "income" | "fixed" | "flexible" | "non_monthly" | "goals";
 
-export type BudgetGroup = { id: number; name: string; kind: GroupKind; budget: number; actual: number; lines: BudgetLine[] };
+export type BudgetGroup = { id: number; name: string; kind: GroupKind; budget: number; actual: number; rollover: number; lines: BudgetLine[] };
 
 export type PaySchedule = { kind: "weekly" | "biweekly" | "semimonthly" | "monthly"; anchor?: string; days?: number[] };
 

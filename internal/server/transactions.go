@@ -33,6 +33,7 @@ func (s *Server) transactionRoutes(r chi.Router) {
 	r.Post("/transactions/{id}/unlink", s.handleUnlinkTransaction)
 	r.Post("/transactions/{id}/ai-undo", s.handleUndoAIChanges)
 	r.Get("/categories", s.handleListCategories)
+	r.Put("/categories/layout", s.handleCategoryLayout)
 	r.Get("/tags", s.handleListTags)
 	r.Get("/rules", s.handleListRules)
 	r.Post("/rules", s.handleCreateRule)

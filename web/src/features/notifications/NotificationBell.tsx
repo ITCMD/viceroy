@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import clsx from "clsx";
 import { Bell, BellRing, CalendarClock, Gauge, Landmark, Receipt, TriangleAlert, Unplug, type LucideIcon } from "lucide-react";
 import { Popover } from "radix-ui";
@@ -23,6 +23,7 @@ export function NotificationBell({ className }: { className?: string }) {
   const { data } = useQuery(notificationsQuery);
   const markRead = useMarkRead();
   const navigate = useNavigate();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"alerts" | "bank">("alerts");
   const unread = data?.unread ?? 0;
@@ -98,7 +99,8 @@ export function NotificationBell({ className }: { className?: string }) {
                       className="flex w-full gap-3 px-4 py-3 text-left hover:bg-surface-2"
                       onClick={() => {
                         onOpenChange(false);
-                        if (n.url) navigate({ to: n.url });
+                        // URLs may carry a query, e.g. a bank notice's "/accounts?email=12".
+                        if (n.url) router.history.push(n.url);
                       }}
                     >
                       <span className={clsx("grid size-8 shrink-0 place-items-center rounded-full", tone)}>

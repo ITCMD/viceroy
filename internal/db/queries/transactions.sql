@@ -241,3 +241,6 @@ WHERE id = ? AND household_id = ? AND category_id IS NULL;
 
 -- name: MarkAICategoryTried :exec
 UPDATE transactions SET ai_cat_tried = 1 WHERE id = ? AND household_id = ?;
+
+-- name: SetCategoryPlace :exec
+UPDATE categories SET group_id = ?, sort = ? WHERE id = ? AND household_id = ?;

@@ -72,13 +72,19 @@ INSERT INTO accounts (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
--- name: UpdateAccountFromSync :exec
+-- A balance read more recently than the bank's (e.g. from a balance-summary email) is kept until
+-- the bank reports a newer one. Returns the balance the account ends up with.
+-- name: UpdateAccountFromSync :one
 UPDATE accounts
-SET institution_id = ?, institution_name = ?, provider_name = ?, currency = ?,
-    balance_cents = ?, available_cents = ?, balance_at = ?,
+SET institution_id = sqlc.narg(institution_id), institution_name = sqlc.arg(institution_name),
+    provider_name = sqlc.arg(provider_name), currency = sqlc.arg(currency),
+    balance_cents = CASE WHEN balance_at > sqlc.narg(balance_at) THEN balance_cents ELSE sqlc.arg(balance_cents) END,
+    available_cents = CASE WHEN balance_at > sqlc.narg(balance_at) THEN available_cents ELSE sqlc.narg(available_cents) END,
+    balance_at = CASE WHEN balance_at > sqlc.narg(balance_at) THEN balance_at ELSE sqlc.narg(balance_at) END,
     status = CASE WHEN status = 'disconnected' THEN 'active' ELSE status END,
-    updated_at = ?
-WHERE id = ?;
+    updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id)
+RETURNING balance_cents;
 
 -- name: RelinkAccount :exec
 UPDATE accounts

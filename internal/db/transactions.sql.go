@@ -1473,6 +1473,27 @@ func (q *Queries) RenameMerchant(ctx context.Context, arg RenameMerchantParams) 
 	return err
 }
 
+const setCategoryPlace = `-- name: SetCategoryPlace :exec
+UPDATE categories SET group_id = ?, sort = ? WHERE id = ? AND household_id = ?
+`
+
+type SetCategoryPlaceParams struct {
+	GroupID     int64 `json:"group_id"`
+	Sort        int64 `json:"sort"`
+	ID          int64 `json:"id"`
+	HouseholdID int64 `json:"household_id"`
+}
+
+func (q *Queries) SetCategoryPlace(ctx context.Context, arg SetCategoryPlaceParams) error {
+	_, err := q.db.ExecContext(ctx, setCategoryPlace,
+		arg.GroupID,
+		arg.Sort,
+		arg.ID,
+		arg.HouseholdID,
+	)
+	return err
+}
+
 const setTransactionAICategory = `-- name: SetTransactionAICategory :exec
 UPDATE transactions SET category_id = ?, category_source = 'ai', needs_review = 1, ai_cat_tried = 1
 WHERE id = ? AND household_id = ? AND category_id IS NULL

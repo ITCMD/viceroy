@@ -70,6 +70,7 @@ var apiDocs = []apiDoc{
 	doc("Transactions", "POST", "/transactions/{id}/unlink", "Break a link (and stop it from being made again).", ""),
 	doc("Transactions", "POST", "/transactions/{id}/ai-undo", "Undo what the email-reading AI changed (category, notes, tags, review flag).", ""),
 	doc("Transactions", "GET", "/categories", "Category groups and their categories.", ""),
+	doc("Transactions", "PUT", "/categories/layout", "Reorder categories and move them between Fixed, Flexible and Non-monthly.", "groups [{id, category_ids in order}]"),
 	doc("Transactions", "GET", "/tags", "Tags.", ""),
 
 	doc("Rules", "GET", "/rules", "Categorization rules in priority order.", ""),
@@ -112,6 +113,7 @@ var apiDocs = []apiDoc{
 	doc("Email alerts", "GET", "/email/messages/{id}", "One email with its text.", ""),
 	doc("Email alerts", "POST", "/email/messages/{id}/ignore", "Ignore an email.", ""),
 	doc("Email alerts", "POST", "/email/messages/{id}/retry", "Route an email again.", ""),
+	doc("Email alerts", "POST", "/email/messages/{id}/action", "Act on a bank notice: set the balance it states, mark the bill paid, or ignore emails like it.", "action (balance | bill_paid | ignore), always (balance: add a filter for emails like it), account_id (bill_paid), subject_match (ignore)"),
 
 	doc("Notifications", "GET", "/notifications", "Recent alerts and the unread count.", ""),
 	doc("Notifications", "POST", "/notifications/read", "Mark all alerts read.", ""),

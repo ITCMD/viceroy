@@ -188,7 +188,9 @@ func reply(msgs []ai.Message) string {
 var (
 	moneyRe = regexp.MustCompile(`\$\s?([\d,]+\.\d{2})`)
 	last4Re = regexp.MustCompile(`(?i)ending in (\d{4})`)
-	dateRe  = regexp.MustCompile(`(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}`)
+	// "Quicksilver (0428)"
+	acctParenRe = regexp.MustCompile(`([A-Z][A-Za-z]+) \((\d{4})\)`)
+	dateRe      = regexp.MustCompile(`(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}`)
 )
 
 // classify is a keyword stand-in for the email-reading prompt (email.LLMReader): it answers
@@ -207,6 +209,8 @@ func classify(text string) string {
 		kind = "payment_due"
 	case strings.Contains(low, "statement is ready"):
 		kind = "statement_ready"
+	case strings.Contains(low, "balance summary") || strings.Contains(low, "has a balance of"):
+		kind = "balance_summary"
 	case strings.Contains(low, "purchase") || strings.Contains(low, "transaction") || strings.Contains(low, "withdrawal") || strings.Contains(low, "deposit"):
 		kind = "transaction_alert"
 	}
@@ -221,6 +225,9 @@ func classify(text string) string {
 	if m := last4Re.FindStringSubmatch(text); m != nil {
 		out["account_last4"] = m[1]
 	}
+	if m := acctParenRe.FindStringSubmatch(text); m != nil && kind == "balance_summary" {
+		out["account_last4"], out["account_text"] = m[2], m[0]
+	}
 	if m := dateRe.FindString(text); m != "" {
 		if d, err := time.Parse("January 2, 2006", m); err == nil {
 			out["date"] = d.Format(time.DateOnly)
@@ -228,7 +235,7 @@ func classify(text string) string {
 	}
 	summary := map[string]string{
 		"security_alert": "Unusual activity was reported on your account.", "payment_scheduled": "A payment was scheduled.",
-		"payment_received": "Your payment was received.", "payment_due": "A payment is due.", "statement_ready": "A new statement is ready.",
+		"payment_received": "Your payment was received.", "payment_due": "A payment is due.", "statement_ready": "A new statement is ready.", "balance_summary": "Your balance was reported.",
 		"transaction_alert": "A purchase was made.", "ignore": "Marketing email.",
 	}[kind]
 	if a, ok := out["amount"].(string); ok {

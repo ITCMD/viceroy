@@ -194,6 +194,9 @@ func (s *Service) route(ctx context.Context, q *db.Queries, row db.EmailMessage,
 		}
 		return s.queueAI(ctx, q, row)
 	}
+	if f.Action == ActionBalance || f.Action == ActionIgnore {
+		return s.applyFilterAction(ctx, q, row, f)
+	}
 	filterID := sql.NullInt64{Int64: f.ID, Valid: true}
 	p, err := Parse(f.Parser, f.CustomParser, m)
 	if err != nil {

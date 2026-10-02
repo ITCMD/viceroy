@@ -5,6 +5,7 @@ import { LogOut } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRefreshSession, useSession } from "@/lib/session";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
+import { EmailNoticeHost } from "@/features/email/NoticeActions";
 import { settingsQuery } from "@/features/settings/settings";
 import { AppLogo, applyLogo, cachedLogo } from "./AppLogo";
 import { navItems } from "./nav";
@@ -58,6 +59,7 @@ export function AppShell() {
       <main className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0">
         <Outlet />
       </main>
+      <EmailNoticeHost />
 
       <nav className="fixed inset-x-0 bottom-0 z-20 flex border-t border-border bg-sidebar pb-[env(safe-area-inset-bottom)] md:hidden">
         {navItems

@@ -104,6 +104,9 @@ type Line struct {
 	MonthBudget int64        `json:"month_budget"` // the editable monthly amount (month of the period start)
 	Chunk       budget.Chunk `json:"chunk"`
 	Hidden      bool         `json:"hidden"` // hidden from the budget (still counted in totals)
+	// Rollover is what a non-monthly category carries into this month from earlier ones
+	// (unspent budget, or overspending when negative). Budget already includes it.
+	Rollover int64 `json:"rollover"`
 }
 
 type Group struct {
@@ -113,6 +116,8 @@ type Group struct {
 	Budget int64  `json:"budget"`
 	Actual int64  `json:"actual"`
 	Lines  []Line `json:"lines"`
+	// The part of Budget that is rollover rather than this period's plan.
+	Rollover int64 `json:"rollover"`
 }
 
 type Summary struct {
@@ -224,6 +229,10 @@ func ParseChunk(s string) budget.Chunk {
 // Kinds are the category group kinds shown on the budget, in order. Transfers are left out.
 var Kinds = map[string]bool{"income": true, "fixed": true, "flexible": true, "non_monthly": true}
 
+// Rollover reports whether categories of a group kind carry unspent budget and overspending
+// into the next month.
+func Rollover(kind string) bool { return kind == "non_monthly" }
+
 // Build computes the budget for the period of the given view containing at. now is today's
 // date (it decides pacing).
 func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, now time.Time) (View, error) {
@@ -246,7 +255,18 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 	if err != nil {
 		return View{}, err
 	}
-	catTotals, err := LoadCategoryTotals(ctx, q, hh, from, p.End)
+	// Rollover categories need their spending back to the month they were first budgeted.
+	kindOf := map[int64]string{}
+	for _, g := range groups {
+		kindOf[g.ID] = g.Kind
+	}
+	totalsFrom := from
+	for _, c := range cats {
+		if first := budget.FirstMonth(amounts.Cats[c.ID]); Rollover(kindOf[c.GroupID]) && !first.IsZero() && first.Before(totalsFrom) {
+			totalsFrom = first
+		}
+	}
+	catTotals, err := LoadCategoryTotals(ctx, q, hh, totalsFrom, p.End)
 	if err != nil {
 		return View{}, err
 	}
@@ -284,16 +304,23 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 			sign = 1
 		}
 		chunk := ParseChunk(c.Chunk)
-		l := budget.ComputeLine(p, chunk, amounts.Cats[c.ID], now, func(a, b time.Time) int64 {
-			return sign * catTotals.Sum(c.ID, a, b)
-		})
-		g.Lines = append(g.Lines, Line{
+		spent := func(a, b time.Time) int64 { return sign * catTotals.Sum(c.ID, a, b) }
+		rows := amounts.Cats[c.ID]
+		l := budget.ComputeLine(p, chunk, rows, now, spent, nil)
+		line := Line{
 			ID: c.ID, Name: c.Name, Icon: c.Icon, Budget: l.Budget, Actual: l.Actual, Expected: l.Expected,
-			MonthBudget: budget.Resolve(amounts.Cats[c.ID], month), Chunk: chunk, Hidden: c.BudgetHidden == 1,
-		})
-		g.Budget += l.Budget
-		g.Actual += l.Actual
-		if g.Kind != "income" && l.Budget == 0 && l.Actual > 0 {
+			MonthBudget: budget.Resolve(rows, month), Chunk: chunk, Hidden: c.BudgetHidden == 1,
+		}
+		if Rollover(g.Kind) {
+			carry := func(m time.Time) int64 { return budget.Carryover(rows, m, spent) }
+			withCarry := budget.ComputeLine(p, chunk, rows, now, spent, carry)
+			g.Rollover += withCarry.Budget - l.Budget
+			line.Budget, line.Expected, line.Rollover = withCarry.Budget, withCarry.Expected, carry(p.Start)
+		}
+		g.Lines = append(g.Lines, line)
+		g.Budget += line.Budget
+		g.Actual += line.Actual
+		if g.Kind != "income" && line.Budget == 0 && line.Actual > 0 {
 			out.Summary.UnbudgetedCats++
 		}
 	}
@@ -304,7 +331,7 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 		}
 		l := budget.ComputeLine(p, budget.Chunk{Kind: budget.Even}, amounts.Goals[g.ID], now, func(a, b time.Time) int64 {
 			return goalTotals.Sum(g.ID, a, b)
-		})
+		}, nil)
 		gg.Lines = append(gg.Lines, Line{
 			ID: g.ID, Name: g.Name, Icon: g.Icon, Budget: l.Budget, Actual: l.Actual, Expected: l.Expected,
 			MonthBudget: budget.Resolve(amounts.Goals[g.ID], month), Chunk: budget.Chunk{Kind: budget.Even},
@@ -324,7 +351,8 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 			sm.GoalsBudget += g.Budget
 			sm.GoalsActual += g.Actual
 		default:
-			sm.ExpenseBudget += g.Budget
+			// Rollover is money budgeted (or overspent) in earlier months, not this period's plan.
+			sm.ExpenseBudget += g.Budget - g.Rollover
 			sm.ExpenseActual += g.Actual
 		}
 	}

@@ -14,12 +14,15 @@ export function AddTransactionDialog({
   onOpenChange,
   accounts,
   defaultAccount,
+  initial,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   accounts: Account[];
   defaultAccount?: number;
+  /** Prefill (e.g. from a bank email). */
+  initial?: { date?: string; description?: string; amount?: string };
   onCreated: (id: number) => void;
 }) {
   const [kind, setKind] = useState<Kind>("pending");
@@ -47,9 +50,9 @@ export function AddTransactionDialog({
     if (!open) return;
     setKind("pending");
     setAccountId(String(bankDefault ?? ""));
-    setDate(todayISO());
-    setDescription("");
-    setAmount("");
+    setDate(initial?.date || todayISO());
+    setDescription(initial?.description ?? "");
+    setAmount(initial?.amount ?? "");
     setDirection("out");
     setCategoryId(null);
     setNotes("");

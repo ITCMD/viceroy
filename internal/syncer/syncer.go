@@ -328,11 +328,14 @@ func (r *run) reconcile(ctx context.Context, sa simplefin.Account, inst db.Insti
 	if currency == "" || len(currency) > 3 {
 		currency = "USD"
 	}
+	// update stores the bank's reading; bal becomes the balance kept (a newer email reading wins).
 	update := func(id int64) error {
-		return r.q.UpdateAccountFromSync(ctx, db.UpdateAccountFromSyncParams{
+		kept, err := r.q.UpdateAccountFromSync(ctx, db.UpdateAccountFromSyncParams{
 			InstitutionID: instID, InstitutionName: inst.Name, ProviderName: sa.Name, Currency: currency,
 			BalanceCents: bal, AvailableCents: avail, BalanceAt: balAt, UpdatedAt: r.now.Unix(), ID: id,
 		})
+		bal = kept
+		return err
 	}
 
 	if a, err := r.q.GetAccountByExternal(ctx, db.GetAccountByExternalParams{ConnectionID: nullInt(r.conn.ID), ExternalID: nullStr(sa.ID)}); err == nil {

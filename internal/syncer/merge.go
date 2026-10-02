@@ -83,7 +83,7 @@ func (s *Service) Merge(ctx context.Context, householdID, fromID, intoID int64) 
 		}); err != nil {
 			return err
 		}
-		if err := q.UpdateAccountFromSync(ctx, db.UpdateAccountFromSyncParams{
+		if _, err := q.UpdateAccountFromSync(ctx, db.UpdateAccountFromSyncParams{
 			InstitutionID: from.InstitutionID, InstitutionName: from.InstitutionName, ProviderName: from.ProviderName,
 			Currency: from.Currency, BalanceCents: from.BalanceCents, AvailableCents: from.AvailableCents,
 			BalanceAt: from.BalanceAt, UpdatedAt: now, ID: into.ID,

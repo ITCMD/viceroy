@@ -1401,13 +1401,17 @@ func (q *Queries) SetTransactionExternal(ctx context.Context, arg SetTransaction
 	return err
 }
 
-const updateAccountFromSync = `-- name: UpdateAccountFromSync :exec
+const updateAccountFromSync = `-- name: UpdateAccountFromSync :one
 UPDATE accounts
-SET institution_id = ?, institution_name = ?, provider_name = ?, currency = ?,
-    balance_cents = ?, available_cents = ?, balance_at = ?,
+SET institution_id = ?1, institution_name = ?2,
+    provider_name = ?3, currency = ?4,
+    balance_cents = CASE WHEN balance_at > ?5 THEN balance_cents ELSE ?6 END,
+    available_cents = CASE WHEN balance_at > ?5 THEN available_cents ELSE ?7 END,
+    balance_at = CASE WHEN balance_at > ?5 THEN balance_at ELSE ?5 END,
     status = CASE WHEN status = 'disconnected' THEN 'active' ELSE status END,
-    updated_at = ?
-WHERE id = ?
+    updated_at = ?8
+WHERE id = ?9
+RETURNING balance_cents
 `
 
 type UpdateAccountFromSyncParams struct {
@@ -1415,26 +1419,30 @@ type UpdateAccountFromSyncParams struct {
 	InstitutionName string        `json:"institution_name"`
 	ProviderName    string        `json:"provider_name"`
 	Currency        string        `json:"currency"`
+	BalanceAt       sql.NullInt64 `json:"balance_at"`
 	BalanceCents    int64         `json:"balance_cents"`
 	AvailableCents  sql.NullInt64 `json:"available_cents"`
-	BalanceAt       sql.NullInt64 `json:"balance_at"`
 	UpdatedAt       int64         `json:"updated_at"`
 	ID              int64         `json:"id"`
 }
 
-func (q *Queries) UpdateAccountFromSync(ctx context.Context, arg UpdateAccountFromSyncParams) error {
-	_, err := q.db.ExecContext(ctx, updateAccountFromSync,
+// A balance read more recently than the bank's (e.g. from a balance-summary email) is kept until
+// the bank reports a newer one. Returns the balance the account ends up with.
+func (q *Queries) UpdateAccountFromSync(ctx context.Context, arg UpdateAccountFromSyncParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, updateAccountFromSync,
 		arg.InstitutionID,
 		arg.InstitutionName,
 		arg.ProviderName,
 		arg.Currency,
+		arg.BalanceAt,
 		arg.BalanceCents,
 		arg.AvailableCents,
-		arg.BalanceAt,
 		arg.UpdatedAt,
 		arg.ID,
 	)
-	return err
+	var balance_cents int64
+	err := row.Scan(&balance_cents)
+	return balance_cents, err
 }
 
 const updateAccountSettings = `-- name: UpdateAccountSettings :exec

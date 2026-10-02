@@ -415,10 +415,15 @@ type Line struct {
 
 // ComputeLine works out a category's or goal's numbers for p. spent returns the
 // sign-adjusted amount (positive = spent, for expenses) over [from, to).
-func ComputeLine(p Period, c Chunk, rows []AmountRow, today time.Time, spent func(from, to time.Time) int64) Line {
+// carry, when set, adds a rollover to each month's budget (see Carryover).
+func ComputeLine(p Period, c Chunk, rows []AmountRow, today time.Time, spent func(from, to time.Time) int64, carry func(month time.Time) int64) Line {
 	allowance := func(q Period) int64 {
 		return PeriodAllowance(q, c, func(mp MonthPart) (int64, int64) {
-			return Resolve(rows, MonthKey(mp.Month)), spent(mp.Month, Date(mp.Month.Year(), mp.Month.Month(), mp.From))
+			b := Resolve(rows, MonthKey(mp.Month))
+			if carry != nil {
+				b += carry(mp.Month)
+			}
+			return b, spent(mp.Month, Date(mp.Month.Year(), mp.Month.Month(), mp.From))
 		})
 	}
 	l := Line{Budget: allowance(p), Actual: spent(p.Start, p.End)}
@@ -426,4 +431,32 @@ func ComputeLine(p Period, c Chunk, rows []AmountRow, today time.Time, spent fun
 		l.Expected = allowance(Period{p.Start, today.AddDate(0, 0, 1)})
 	}
 	return l
+}
+
+// FirstMonth is the first month a category has a budget amount for, or the zero time.
+func FirstMonth(rows []AmountRow) time.Time {
+	first := ""
+	for _, r := range rows {
+		if first == "" || r.Month < first {
+			first = r.Month
+		}
+	}
+	t, err := time.Parse("2006-01", first)
+	if err != nil {
+		return time.Time{}
+	}
+	return Date(t.Year(), t.Month(), 1)
+}
+
+// Carryover is what a rollover (non-monthly) category brings into month: for every earlier
+// month since it was first budgeted, the budget minus what was spent. Positive is unspent
+// money carried forward, negative is overspending. spent returns the sign-adjusted amount
+// (positive = spent) over [from, to).
+func Carryover(rows []AmountRow, month time.Time, spent func(from, to time.Time) int64) int64 {
+	var carry int64
+	month = MonthStart(month)
+	for m := FirstMonth(rows); !m.IsZero() && m.Before(month); m = m.AddDate(0, 1, 0) {
+		carry += Resolve(rows, MonthKey(m)) - spent(m, m.AddDate(0, 1, 0))
+	}
+	return carry
 }

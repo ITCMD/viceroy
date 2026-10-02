@@ -14,6 +14,7 @@ import {
   useEmailMutation,
   type CustomParser,
   type EmailFilter,
+  type FilterAction,
   type FieldSpec,
   type Parsed,
   type Preview,
@@ -64,6 +65,7 @@ export function FilterDialog({
   const [regex, setRegex] = useState(false);
   const [accountId, setAccountId] = useState("");
   const [sign, setSign] = useState<EmailFilter["sign"]>("debit");
+  const [action, setAction] = useState<FilterAction>("transaction");
   const [parser, setParser] = useState("generic");
   const [custom, setCustom] = useState<CustomParser>(emptyParser);
   const [enabled, setEnabled] = useState(true);
@@ -86,6 +88,7 @@ export function FilterDialog({
     setRegex(filter?.use_regex ?? false);
     setAccountId(filter ? String(filter.account_id) : "");
     setSign(filter?.sign ?? "debit");
+    setAction(filter?.action ?? "transaction");
     setParser(filter?.parser ?? "generic");
     setCustom(filter?.custom_parser ?? emptyParser);
     setEnabled(filter?.enabled ?? true);
@@ -125,13 +128,15 @@ export function FilterDialog({
       subject_match: subject,
       body_match: body,
       use_regex: regex,
-      account_id: Number(accountId) || 0,
+      // An ignore filter reads nothing, but every filter belongs to an account.
+      account_id: Number(accountId) || (action === "ignore" ? (accounts.find((a) => a.status !== "closed")?.id ?? 0) : 0),
       sign,
+      action,
       parser,
       custom_parser: parser === "custom" ? custom : null,
       enabled,
     }),
-    [name, sender, subject, body, regex, accountId, sign, parser, custom, enabled],
+    [name, sender, subject, body, regex, accountId, sign, action, parser, custom, enabled, accounts],
   );
   const previewBody = useDebounced({ ...draft, message_id: sampleId ?? 0 }, 300);
   const preview = useQuery({
@@ -280,50 +285,91 @@ export function FilterDialog({
             <FormError error={p?.filter_error || null} />
           </Step>
 
-          <Step n={2} title="Where does it go?">
-            <Select
-              label="Account"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              required
-              options={[{ value: "", label: "Choose an account" }, ...selectable.map((a) => ({ value: String(a.id), label: accountLabel(a) }))]}
+          <Step n={2} title="What should Viceroy do?">
+            <Segmented
+              label="Action"
+              value={action}
+              onChange={setAction}
+              items={[
+                { value: "transaction", label: "Add transactions" },
+                { value: "balance", label: "Update balance" },
+                { value: "ignore", label: "Ignore" },
+              ]}
             />
+            {action !== "transaction" && (
+              <p className="-mt-1.5 text-xs text-muted">
+                {action === "balance"
+                  ? "For balance summaries: sets the account's balance. On a synced account a later bank sync replaces it only when the bank's balance is newer."
+                  : "Matching emails are marked ignored and never reach Emails to review or the AI."}
+              </p>
+            )}
+            {action !== "ignore" && (
+              <Select
+                label="Account"
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                required
+                options={[{ value: "", label: "Choose an account" }, ...selectable.map((a) => ({ value: String(a.id), label: accountLabel(a) }))]}
+              />
+            )}
             {acct && s?.suggested_account_id === acct.id && (
               <p className="-mt-1.5 text-xs text-positive">Found {acct.mask ? `…${acct.mask}` : "this account"} in the email.</p>
             )}
-            {acct && (
+            {acct && action === "transaction" && (
               <p className="-mt-1.5 text-xs text-muted">
                 {acct.is_manual
                   ? "Email-only account: these become final transactions."
                   : "Synced account: these count right away and link to the bank's transaction when it arrives."}
               </p>
             )}
-            <Segmented
-              label="Money"
-              value={sign}
-              onChange={setSign}
-              items={[
-                { value: "debit", label: "Money out" },
-                { value: "credit", label: "Money in" },
-              ]}
-            />
-            <p className="-mt-1.5 text-xs text-muted">{sign === "credit" ? "Deposits, refunds and transfers in." : "Purchases, withdrawals and payments."}</p>
-          </Step>
-
-          <Step n={3} title="How should Viceroy read it?">
-            <Select label="Read the amount, merchant and date" value={parser} onChange={(e) => setParser(e.target.value)} options={parserOptions} />
-            <p className="-mt-1.5 text-xs text-muted">{parserHints[parser] ?? "Made for this bank's alert emails."}</p>
-            {parser === "custom" && (
-              <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
-                <SpecEditor label="Amount" spec={custom.amount} onChange={(v) => setCustom({ ...custom, amount: v })} example="Amount:" />
-                <SpecEditor label="Merchant" spec={custom.merchant} onChange={(v) => setCustom({ ...custom, merchant: v })} example="Merchant:" />
-                <SpecEditor label="Date (optional)" spec={custom.date} onChange={(v) => setCustom({ ...custom, date: v })} example="Date:" />
-              </div>
+            {action === "transaction" && (
+              <>
+                <Segmented
+                  label="Money"
+                  value={sign}
+                  onChange={setSign}
+                  items={[
+                    { value: "debit", label: "Money out" },
+                    { value: "credit", label: "Money in" },
+                  ]}
+                />
+                <p className="-mt-1.5 text-xs text-muted">{sign === "credit" ? "Deposits, refunds and transfers in." : "Purchases, withdrawals and payments."}</p>
+              </>
             )}
-            <FormError error={p?.parser_error || null} />
           </Step>
 
-          <Step n={4} title="Test it">
+          {action !== "ignore" && (
+            <Step n={3} title="How should Viceroy read it?">
+              {action === "balance" ? (
+                <Select
+                  label="Read the balance"
+                  value={parser === "custom" ? "custom" : "generic"}
+                  onChange={(e) => setParser(e.target.value)}
+                  options={[
+                    { value: "generic", label: "Automatic: the amount after “balance” (recommended)" },
+                    { value: "custom", label: "Point to the balance myself" },
+                  ]}
+                />
+              ) : (
+                <>
+                  <Select label="Read the amount, merchant and date" value={parser} onChange={(e) => setParser(e.target.value)} options={parserOptions} />
+                  <p className="-mt-1.5 text-xs text-muted">{parserHints[parser] ?? "Made for this bank's alert emails."}</p>
+                </>
+              )}
+              {parser === "custom" && (
+                <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
+                  <SpecEditor label={action === "balance" ? "Balance" : "Amount"} spec={custom.amount} onChange={(v) => setCustom({ ...custom, amount: v })} example="Amount:" />
+                  {action === "transaction" && (
+                    <SpecEditor label="Merchant" spec={custom.merchant} onChange={(v) => setCustom({ ...custom, merchant: v })} example="Merchant:" />
+                  )}
+                  <SpecEditor label="Date (optional)" spec={custom.date} onChange={(v) => setCustom({ ...custom, date: v })} example="Date:" />
+                </div>
+              )}
+              <FormError error={p?.parser_error || null} />
+            </Step>
+          )}
+
+          <Step n={action === "ignore" ? 3 : 4} title="Test it">
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="secondary" size="sm" disabled={!testMatch} onClick={() => setTestedKey(draftKey)}>
                 <FlaskConical size={14} /> {stale ? "Test again" : sampleId ? "Test on this email" : "Test on a recent email"}
@@ -332,7 +378,14 @@ export function FilterDialog({
               {stale && <span className="text-xs text-muted">Changed since the last test.</span>}
             </div>
             {tested && testMatch && (
-              <TestResult m={testMatch} sign={sign} account={acct ? accountLabel(acct) : ""} loading={preview.isFetching} onCustom={() => setParser("custom")} />
+              <TestResult
+                m={testMatch}
+                sign={sign}
+                action={action}
+                account={action === "ignore" ? "-" : acct ? accountLabel(acct) : ""}
+                loading={preview.isFetching}
+                onCustom={() => setParser("custom")}
+              />
             )}
             {tested && p && !p.filter_error && (
               <details className="text-[13px]">
@@ -412,7 +465,22 @@ function Chip({ active, onClick, children }: { active?: boolean; onClick: () => 
 }
 
 /** A checklist of what the filter does with one email. */
-function TestResult({ m, sign, account, loading, onCustom }: { m: PreviewMatch; sign: string; account: string; loading: boolean; onCustom: () => void }) {
+function TestResult({
+  m,
+  sign,
+  action,
+  account,
+  loading,
+  onCustom,
+}: {
+  m: PreviewMatch;
+  sign: string;
+  action: FilterAction;
+  account: string;
+  loading: boolean;
+  onCustom: () => void;
+}) {
+  if (action !== "transaction") return <ActionTestResult m={m} action={action} account={account} loading={loading} onCustom={onCustom} />;
   const merchantOK = !!m.parsed && plausibleMerchant(m.parsed.merchant);
   const all = m.matches && !!m.parsed && merchantOK && !!account;
   return (
@@ -529,6 +597,57 @@ function SpecEditor({ label, spec, onChange, example }: { label: string; spec: F
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/** The test checklist for a balance or ignore filter. */
+function ActionTestResult({
+  m,
+  action,
+  account,
+  loading,
+  onCustom,
+}: {
+  m: PreviewMatch;
+  action: FilterAction;
+  account: string;
+  loading: boolean;
+  onCustom: () => void;
+}) {
+  const all = m.matches && !!m.parsed && !!account;
+  return (
+    <div className={clsx("rounded-lg border px-3 py-2.5", all ? "border-positive/40" : "border-border", loading && "opacity-60")} data-testid="filter-test-result">
+      <div className="mb-1.5 truncate text-xs text-muted">Tested on “{m.subject || "(no subject)"}”</div>
+      <ul className="flex flex-col gap-1.5 text-[13px]">
+        <Check ok={m.matches} label={m.matches ? "This email matches the filter" : "This email doesn't match: check From, Subject and Mentions above"} />
+        {action === "ignore" ? (
+          <Check ok label="It will be ignored" />
+        ) : m.parsed ? (
+          <Check
+            ok
+            label={
+              <>
+                Balance <MoneyText cents={m.parsed.amount_cents} className="font-medium" /> as of {dateLabel(m.parsed.date)}
+                {account && <> · sets {account}</>}
+              </>
+            }
+          />
+        ) : (
+          <Check
+            ok={false}
+            label={
+              <>
+                Couldn't read it: {m.error || "pick how to read it above"}.{" "}
+                <button type="button" className="font-medium text-accent hover:underline" onClick={onCustom}>
+                  Point to the balance yourself
+                </button>
+              </>
+            }
+          />
+        )}
+        {action === "balance" && !account && <Check ok={false} label="Choose an account above" />}
+      </ul>
     </div>
   );
 }

@@ -39,11 +39,15 @@ export type EmailFilter = {
   sign: "debit" | "credit";
   /** "ai": written by the email-reading AI and checked by Viceroy; editing makes it "user". */
   source: "user" | "ai";
+  /** What the filter does with matching emails. */
+  action: FilterAction;
 };
+
+export type FilterAction = "transaction" | "balance" | "ignore";
 
 export type Template = { name: string; label: string };
 
-export type MessageStatus = "unrouted" | "parsed" | "parse_failed" | "ignored" | "noticed";
+export type MessageStatus = "unrouted" | "parsed" | "parse_failed" | "ignored" | "noticed" | "applied";
 
 export type EmailMessageRow = {
   id: number;
@@ -86,9 +90,26 @@ export type RecipeCheck = {
   sign?: "debit" | "credit";
 };
 
+/** What Viceroy verified in a notice the AI read (a balance summary). */
+export type NoticeFacts = {
+  kind: "balance";
+  account_id?: number;
+  account_text?: string;
+  amount_cents: number;
+  balance_cents: number;
+  as_of?: string;
+  /** Viceroy reads the same balance without AI, so a filter can do it every time. */
+  can_always?: boolean;
+  problem?: string;
+};
+
 export type EmailMessage = Omit<EmailMessageRow, "filter_name" | "ai_problem"> & {
   body_text: string;
   ai_recipe: RecipeCheck | null;
+  ai_facts: NoticeFacts | null;
+  /** What Viceroy did with the email besides a transaction. */
+  applied: string;
+  bill: { kind: "due" | "scheduled" | "paid"; account_id: number | null; amount_cents: number | null; date: string } | null;
   suggested_account_id: number | null;
   account_phrase: string;
   suggested_sign: "debit" | "credit";
@@ -159,6 +180,7 @@ export const statusLabels: Record<MessageStatus, string> = {
   parse_failed: "Couldn't read",
   ignored: "Ignored",
   noticed: "Read by AI",
+  applied: "Done",
 };
 
 /** One line about what the AI made of an unmatched email, or "" when it hasn't been read. */

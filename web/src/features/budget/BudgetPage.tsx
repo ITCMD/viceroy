@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { ChevronLeft, ChevronRight, Download, Eye, EyeOff, Target as TargetIcon, Upload } from "lucide-react";
 import { useState } from "react";
 import { Button, Card, CategoryIcon, MoneyText, PageHeader, Segmented } from "@/components/ui";
+import { formatMoney } from "@/lib/format";
 import { BudgetEditDialog } from "./BudgetEditDialog";
 import { BudgetImportDialog } from "./BudgetImportDialog";
 import { budgetQuery, chunkLabel, periodLabel, remaining, type Budget, type BudgetGroup, type BudgetLine, type Target, type View } from "./api";
@@ -131,7 +132,10 @@ function GroupCard({ g, showPacing, showHidden, onEdit }: { g: BudgetGroup; show
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-surface" data-testid={`budget-group-${g.kind}`}>
       <header className={clsx(cols, "border-b border-border px-4 py-2.5 text-[13px]")}>
-        <h3 className="text-[15px] font-semibold">{g.name}</h3>
+        <h3 className="text-[15px] font-semibold">
+          {g.name}
+          {g.kind === "non_monthly" && <span className="ml-2 text-xs font-normal text-muted">Rolls over monthly</span>}
+        </h3>
         <span className="hidden text-right text-muted sm:block">Budget</span>
         <span className="text-right text-muted">{income ? "Received" : "Actual"}</span>
         <span className="text-right text-muted">Remaining</span>
@@ -179,6 +183,16 @@ function LineRow({ l, income, showPacing, onClick }: { l: BudgetLine; income: bo
             <span className="truncate text-sm">{l.name}</span>
             {timing && <span className="hidden shrink-0 text-xs text-muted md:inline">{timing}</span>}
             {l.hidden && <span className="shrink-0 text-xs text-muted">Hidden</span>}
+            {l.rollover !== 0 && (
+              <span
+                className={clsx("shrink-0 text-xs", l.rollover < 0 ? "text-negative" : "text-muted")}
+                title="Carried over from earlier months"
+                data-testid="budget-rollover"
+              >
+                ↻ {l.rollover > 0 ? "+" : "−"}
+                {formatMoney(Math.abs(l.rollover))}
+              </span>
+            )}
           </span>
           {(l.budget > 0 || l.actual > 0) && (
             <span className="relative mt-1 block h-1.5 rounded-full bg-surface-2" aria-hidden>

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { BarChart } from "@/components/charts/BarChart";
 import { Button, Dialog, Field, FormError, MoneyText, Segmented, Select, Switch } from "@/components/ui";
@@ -159,6 +160,13 @@ export function BudgetEditDialog({
               </dd>
             </div>
           </dl>
+          {!!line?.rollover && (
+            <p className="mt-2 text-[13px] text-muted" data-testid="budget-rollover-note">
+              {line.rollover > 0 ? "Unspent" : "Overspent"} in earlier months:{" "}
+              <MoneyText cents={line.rollover} className={clsx("font-medium", line.rollover < 0 && "text-negative")} />. Non-monthly categories carry it
+              into this month, on top of the amount above.
+            </p>
+          )}
         </div>
 
         {target?.kind === "category" && (

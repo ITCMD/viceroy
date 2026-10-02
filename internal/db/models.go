@@ -167,6 +167,7 @@ type EmailFilter struct {
 	Sign         string `json:"sign"`
 	CreatedAt    int64  `json:"created_at"`
 	Source       string `json:"source"`
+	Action       string `json:"action"`
 }
 
 type EmailMailbox struct {
@@ -210,6 +211,8 @@ type EmailMessage struct {
 	AiKind        string        `json:"ai_kind"`
 	AiSummary     string        `json:"ai_summary"`
 	AiRecipe      string        `json:"ai_recipe"`
+	AiFacts       string        `json:"ai_facts"`
+	Applied       string        `json:"applied"`
 }
 
 type Goal struct {

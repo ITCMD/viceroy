@@ -233,14 +233,46 @@ func TestComputeLine(t *testing.T) {
 		return 0
 	}
 	week2 := Period{d("2026-02-08"), d("2026-02-15")}
-	l := ComputeLine(week2, Chunk{}, rows, d("2026-02-10"), spent)
+	l := ComputeLine(week2, Chunk{}, rows, d("2026-02-10"), spent, nil)
 	// $300 left over 21 days → $100 for the week; 3 days in → $300×3/21 ≈ $42.86.
 	if l.Budget != 10000 || l.Actual != 0 || l.Expected != 4286 {
 		t.Fatalf("%+v", l)
 	}
 	month := MonthPeriod(d("2026-02-10"))
-	l = ComputeLine(month, Chunk{}, rows, d("2026-03-01"), spent)
+	l = ComputeLine(month, Chunk{}, rows, d("2026-03-01"), spent, nil)
 	if l.Budget != 40000 || l.Actual != 10000 || l.Expected != 0 {
 		t.Fatalf("%+v", l)
+	}
+}
+
+func TestCarryover(t *testing.T) {
+	// Travel: $200/month from January. $50 spent in January, $500 in February.
+	rows := []AmountRow{{Month: "2026-01", Amount: 20000, Forward: true}}
+	byMonth := map[string]int64{"2026-01": 5000, "2026-02": 50000, "2025-12": 99900}
+	spent := func(from, to time.Time) int64 {
+		var s int64
+		for m := from; m.Before(to); m = m.AddDate(0, 1, 0) {
+			s += byMonth[MonthKey(m)]
+		}
+		return s
+	}
+	for month, want := range map[string]int64{
+		"2026-01-15": 0,      // nothing before the first budgeted month (December's spending is ignored)
+		"2026-02-01": 15000,  // $150 unspent in January
+		"2026-03-10": -15000, // then $300 overspent in February
+		"2026-04-01": 5000,   // March: nothing spent, +$200
+	} {
+		if got := Carryover(rows, d(month), spent); got != want {
+			t.Errorf("Carryover(%s) = %d, want %d", month, got, want)
+		}
+	}
+	if Carryover(nil, d("2026-03-01"), spent) != 0 {
+		t.Error("an unbudgeted category carries nothing")
+	}
+	// The rollover adds to the month's allowance, and to a week's share of what's left.
+	carry := func(m time.Time) int64 { return Carryover(rows, m, spent) }
+	l := ComputeLine(MonthPeriod(d("2026-02-10")), Chunk{}, rows, d("2026-02-10"), spent, carry)
+	if l.Budget != 35000 || l.Actual != 50000 {
+		t.Fatalf("february with rollover = %+v", l)
 	}
 }
