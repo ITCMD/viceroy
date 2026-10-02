@@ -75,6 +75,8 @@ type accountDTO struct {
 	Offered           bool     `json:"offered"`        // shared on SimpleFIN after setup; not added yet
 	ReplacedBy        *int64   `json:"replaced_by"`    // replaced by this account (sync duplicate); a hidden tombstone
 	OwnerID           *int64   `json:"owner_id"`       // household member, nil = shared
+	APRBps            *int64   `json:"apr_bps"`        // debts: yearly rate in basis points, nil = not entered
+	MinPaymentCents   *int64   `json:"min_payment_cents"`
 }
 
 // billDTO is an account's payment state. Amounts are cents; dates YYYY-MM-DD.
@@ -161,6 +163,7 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 			Hidden: a.Hidden == 1, IsManual: a.IsManual == 1, ConnectionID: ptr(a.ConnectionID), InstitutionStatus: "ok",
 			Builtin: a.Builtin, Color: a.Color, ColorSource: a.ColorSource, OwnerID: ptr(a.OwnerUserID),
 			InvertBalance: a.InvertBalance == 1, Offered: a.OfferedAt.Valid && a.Status == "ignored", ReplacedBy: ptr(a.ReplacedBy),
+			APRBps: ptr(a.AprBps), MinPaymentCents: ptr(a.MinPaymentCents),
 		}
 		if v, ok := logos[a.ID]; ok {
 			u := fmt.Sprintf("/api/accounts/%d/logo?v=%d", a.ID, v)
@@ -189,6 +192,20 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"accounts": list, "types": accounts.Types})
+}
+
+// parseAPR reads a yearly rate in percent ("24.99", "24.99%") as basis points; "" = none.
+func parseAPR(in string) (sql.NullInt64, error) {
+	v := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(in), "%"))
+	if v == "" {
+		return sql.NullInt64{}, nil
+	}
+	// Percent with up to two decimals is the same shape as dollars and cents.
+	bps, err := money.ParseCents(v)
+	if err != nil || bps < 0 || bps > 10000 {
+		return sql.NullInt64{}, errors.New("Enter the APR as a percent like 24.99.")
+	}
+	return sql.NullInt64{Int64: bps, Valid: true}, nil
 }
 
 // parseBalance reads a user-entered balance. Liabilities are entered as the positive amount
@@ -284,6 +301,9 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		Color             *string         `json:"color"` // #rrggbb, or "" to let Viceroy pick again
 		InvertBalance     *bool           `json:"invert_balance"`
 		OwnerID           json.RawMessage `json:"owner_id"` // member id, or null for shared
+		// Debts: "24.99" (percent) and "85.00" (dollars); "" clears.
+		APR        *string `json:"apr"`
+		MinPayment *string `json:"min_payment"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -338,7 +358,35 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	apr, minPay := a.AprBps, a.MinPaymentCents
+	if in.APR != nil {
+		v, err := parseAPR(*in.APR)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		apr = v
+	}
+	if in.MinPayment != nil {
+		minPay = sql.NullInt64{}
+		if v := strings.TrimSpace(*in.MinPayment); v != "" {
+			c, err := money.ParseCents(v)
+			if err != nil || c < 0 {
+				writeError(w, http.StatusBadRequest, "Enter the minimum payment as an amount like 85 or 85.00.")
+				return
+			}
+			minPay = sql.NullInt64{Int64: c, Valid: true}
+		}
+	}
 	q := db.New(s.db)
+	if in.APR != nil || in.MinPayment != nil {
+		if err := q.SetAccountDebtTerms(r.Context(), db.SetAccountDebtTermsParams{
+			AprBps: apr, MinPaymentCents: minPay, UpdatedAt: p.UpdatedAt, ID: a.ID, HouseholdID: a.HouseholdID,
+		}); err != nil {
+			s.internalError(w, err)
+			return
+		}
+	}
 	if err := q.UpdateAccountSettings(r.Context(), p); err != nil {
 		s.internalError(w, err)
 		return

@@ -10,12 +10,13 @@ import (
 )
 
 const createChatThread = `-- name: CreateChatThread :one
-INSERT INTO chat_threads (user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?) RETURNING id, user_id, title, created_at, updated_at
+INSERT INTO chat_threads (user_id, title, context, created_at, updated_at) VALUES (?, ?, ?, ?, ?) RETURNING id, user_id, title, created_at, updated_at, context
 `
 
 type CreateChatThreadParams struct {
 	UserID    int64  `json:"user_id"`
 	Title     string `json:"title"`
+	Context   string `json:"context"`
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`
 }
@@ -24,6 +25,7 @@ func (q *Queries) CreateChatThread(ctx context.Context, arg CreateChatThreadPara
 	row := q.db.QueryRowContext(ctx, createChatThread,
 		arg.UserID,
 		arg.Title,
+		arg.Context,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -34,6 +36,7 @@ func (q *Queries) CreateChatThread(ctx context.Context, arg CreateChatThreadPara
 		&i.Title,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Context,
 	)
 	return i, err
 }
@@ -53,7 +56,7 @@ func (q *Queries) DeleteChatThread(ctx context.Context, arg DeleteChatThreadPara
 }
 
 const getChatThread = `-- name: GetChatThread :one
-SELECT id, user_id, title, created_at, updated_at FROM chat_threads WHERE id = ? AND user_id = ?
+SELECT id, user_id, title, created_at, updated_at, context FROM chat_threads WHERE id = ? AND user_id = ?
 `
 
 type GetChatThreadParams struct {
@@ -70,6 +73,7 @@ func (q *Queries) GetChatThread(ctx context.Context, arg GetChatThreadParams) (C
 		&i.Title,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Context,
 	)
 	return i, err
 }
@@ -146,7 +150,7 @@ func (q *Queries) ListChatMessages(ctx context.Context, threadID int64) ([]ChatM
 }
 
 const listChatThreads = `-- name: ListChatThreads :many
-SELECT id, user_id, title, created_at, updated_at FROM chat_threads WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 50
+SELECT id, user_id, title, created_at, updated_at, context FROM chat_threads WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 50
 `
 
 func (q *Queries) ListChatThreads(ctx context.Context, userID int64) ([]ChatThread, error) {
@@ -164,6 +168,7 @@ func (q *Queries) ListChatThreads(ctx context.Context, userID int64) ([]ChatThre
 			&i.Title,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Context,
 		); err != nil {
 			return nil, err
 		}

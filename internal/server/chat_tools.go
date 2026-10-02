@@ -352,7 +352,76 @@ func (s *Server) chatTools(hh int64) []ai.Tool {
 				return map[string]any{"goals": out}, nil
 			},
 		},
+		{
+			Name: "debt_payoff",
+			Description: "Debts owed (credit cards, loans) with APR, minimum payment, monthly interest and interest charged in the last 12 months, " +
+				"plus payoff plans: minimums only, snowball (smallest balance first) and avalanche (highest APR first) with extra_dollars a month on top.",
+			Parameters: schema(`{"type":"object","properties":{"extra_dollars":{"type":"number","description":"Extra paid each month beyond the minimums (default 0)"}}}`),
+			Run: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var a struct {
+					Extra json.RawMessage `json:"extra_dollars"`
+				}
+				if err := decodeArgs(raw, &a); err != nil {
+					return nil, err
+				}
+				extra, _, err := dollarsArg(a.Extra)
+				if err != nil {
+					return nil, err
+				}
+				rep, err := s.debtReport(ctx, hh, max(extra, 0))
+				if err != nil {
+					return nil, err
+				}
+				return debtForModel(rep), nil
+			},
+		},
 	}
+}
+
+// debtForModel is the debt report in dollars, without the month-by-month series.
+func debtForModel(rep debtReport) map[string]any {
+	debts := []map[string]any{}
+	for _, d := range rep.Debts {
+		debts = append(debts, map[string]any{
+			"name": d.Name, "type": d.Type, "owed": usd(d.Balance), "apr_percent": float64(d.APRBps) / 100, "apr_source": d.APRSource,
+			"min_payment": usd(d.MinPayment), "min_payment_source": d.MinPaymentSource,
+			"monthly_interest": usd(d.MonthlyInterest), "interest_charged_last_12_months": usd(d.InterestPaid12m),
+		})
+	}
+	names := map[int64]string{}
+	for _, d := range rep.Debts {
+		names[d.AccountID] = d.Name
+	}
+	plans := map[string]any{}
+	for k, p := range rep.Plans {
+		order := make([]map[string]any, 0, len(p.Debts))
+		for _, d := range p.Debts {
+			m := map[string]any{"name": names[d.ID], "order": d.Order, "interest": usd(d.Interest)}
+			if d.Months > 0 {
+				m["paid_off_month"] = debtMonth(rep.Start, d.Months)
+			} else {
+				m["paid_off_month"] = "never at this pace"
+			}
+			order = append(order, m)
+		}
+		plan := map[string]any{"monthly_payment": usd(p.Payment), "total_interest": usd(p.Interest), "debts": order}
+		if p.Never {
+			plan["debt_free"] = "never at this pace"
+		} else {
+			plan["debt_free"] = debtMonth(rep.Start, p.Months)
+		}
+		plans[k] = plan
+	}
+	return map[string]any{
+		"total_owed": usd(rep.Total), "monthly_interest": usd(rep.MonthlyInterest), "interest_charged_last_12_months": usd(rep.InterestPaid12m),
+		"extra_per_month": usd(rep.Extra), "debts": debts, "plans": plans,
+		"note": "apr_source assumed = no APR entered (22% assumed for cards); missing = no APR entered, counted as 0%. min_payment_source estimate = guessed.",
+	}
+}
+
+func debtMonth(start string, n int) string {
+	t, _ := time.Parse("2006-01", start)
+	return t.AddDate(0, n, 0).Format("January 2006")
 }
 
 func (s *Server) searchTransactions(ctx context.Context, q *db.Queries, hh int64, text, fromS, toS, category, account string, minRaw, maxRaw json.RawMessage, limit int) (any, error) {

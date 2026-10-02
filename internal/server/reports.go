@@ -15,6 +15,8 @@ import (
 func (s *Server) reportRoutes(r chi.Router) {
 	r.Get("/reports", s.handleReport)
 	r.Get("/reports/spending-pace", s.handleSpendingPace)
+	r.Get("/reports/tree", s.handleReportTree)
+	r.Get("/reports/debt", s.handleDebtReport)
 }
 
 func parseDate(s string) (time.Time, bool) {
@@ -42,9 +44,9 @@ func loadReportCategories(ctx context.Context, q *db.Queries, hh int64) (map[int
 	if err != nil {
 		return nil, err
 	}
-	gname := map[int64]string{}
+	gname, gkind := map[int64]string{}, map[int64]string{}
 	for _, g := range groups {
-		gname[g.ID] = g.Name
+		gname[g.ID], gkind[g.ID] = g.Name, g.Kind
 	}
 	cats, err := q.ListCategories(ctx, hh)
 	if err != nil {
@@ -52,7 +54,7 @@ func loadReportCategories(ctx context.Context, q *db.Queries, hh int64) (map[int
 	}
 	out := make(map[int64]reports.Category, len(cats))
 	for _, c := range cats {
-		out[c.ID] = reports.Category{ID: c.ID, Name: c.Name, Icon: c.Icon, GroupID: c.GroupID, GroupName: gname[c.GroupID]}
+		out[c.ID] = reports.Category{ID: c.ID, Name: c.Name, Icon: c.Icon, GroupID: c.GroupID, GroupName: gname[c.GroupID], GroupKind: gkind[c.GroupID]}
 	}
 	return out, nil
 }
@@ -71,28 +73,8 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		by = reports.ByCategory
 	}
-	to, ok := parseDate(qs.Get("to"))
+	from, to, ok := s.reportRange(w, r)
 	if !ok {
-		to = budgetview.Today()
-	}
-	from, ok := parseDate(qs.Get("from"))
-	if qs.Get("from") == "all" {
-		first, err := q.FirstTransactionDate(ctx, hh)
-		if err != nil {
-			s.internalError(w, err)
-			return
-		}
-		from, ok = parseDate(first)
-	}
-	if !ok {
-		from = time.Date(to.Year(), to.Month()-5, 1, 0, 0, 0, 0, time.UTC)
-	}
-	if from.After(to) {
-		writeError(w, http.StatusBadRequest, "The start date is after the end date.")
-		return
-	}
-	if to.Sub(from) > 20*366*24*time.Hour {
-		writeError(w, http.StatusBadRequest, "That date range is too long.")
 		return
 	}
 	rows, err := loadReportRows(ctx, q, hh, from, to)
@@ -110,6 +92,82 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"from": from.Format(time.DateOnly), "to": to.Format(time.DateOnly), "interval": iv, "by": by,
 		"buckets": rep.Buckets, "income": rep.Income, "spending": rep.Spending,
 	})
+}
+
+// reportRange reads from/to (inclusive YYYY-MM-DD). Defaults: the last 6 months through today;
+// from=all starts at the first transaction. Writes the error itself when it fails.
+func (s *Server) reportRange(w http.ResponseWriter, r *http.Request) (from, to time.Time, ok bool) {
+	qs := r.URL.Query()
+	to, ok = parseDate(qs.Get("to"))
+	if !ok {
+		to = budgetview.Today()
+	}
+	from, ok = parseDate(qs.Get("from"))
+	if qs.Get("from") == "all" {
+		first, err := db.New(s.db).FirstTransactionDate(r.Context(), HouseholdID(r))
+		if err != nil {
+			s.internalError(w, err)
+			return from, to, false
+		}
+		from, ok = parseDate(first)
+	}
+	if !ok {
+		from = time.Date(to.Year(), to.Month()-5, 1, 0, 0, 0, 0, time.UTC)
+	}
+	if from.After(to) {
+		writeError(w, http.StatusBadRequest, "The start date is after the end date.")
+		return from, to, false
+	}
+	if to.Sub(from) > 20*366*24*time.Hour {
+		writeError(w, http.StatusBadRequest, "That date range is too long.")
+		return from, to, false
+	}
+	return from, to, true
+}
+
+// GET /reports/tree?from=&to=: income (category → merchant) and spending (group → category →
+// merchant, plus Contributions and Uncategorized) totals over the range, for the cash flow
+// diagram and the spending breakdown.
+func (s *Server) handleReportTree(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := s.reportRange(w, r)
+	if !ok {
+		return
+	}
+	tree, err := s.reportTree(r.Context(), HouseholdID(r), from, to)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"from": from.Format(time.DateOnly), "to": to.Format(time.DateOnly), "income": tree.Income, "spending": tree.Spending,
+	})
+}
+
+func (s *Server) reportTree(ctx context.Context, hh int64, from, to time.Time) (reports.Tree, error) {
+	q := db.New(s.db)
+	rows, err := q.ReportTreeRows(ctx, db.ReportTreeRowsParams{
+		HouseholdID: hh, FromDate: from.Format(time.DateOnly), ToDate: to.AddDate(0, 0, 1).Format(time.DateOnly),
+	})
+	if err != nil {
+		return reports.Tree{}, err
+	}
+	cats, err := loadReportCategories(ctx, q, hh)
+	if err != nil {
+		return reports.Tree{}, err
+	}
+	gl, err := q.ListGoals(ctx, hh)
+	if err != nil {
+		return reports.Tree{}, err
+	}
+	goals := make(map[int64]reports.Goal, len(gl))
+	for _, g := range gl {
+		goals[g.ID] = reports.Goal{ID: g.ID, Name: g.Name, Icon: g.Icon}
+	}
+	in := make([]reports.TreeRow, len(rows))
+	for i, r := range rows {
+		in[i] = reports.TreeRow{CategoryID: r.CategoryID.Int64, Kind: r.Kind, Merchant: r.Merchant, GoalID: r.GoalID, Total: r.Total, Count: r.N}
+	}
+	return reports.BuildTree(in, cats, goals), nil
 }
 
 // GET /reports/spending-pace?month=YYYY-MM: cumulative spending by day of month for the

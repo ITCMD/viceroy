@@ -56,7 +56,7 @@ var apiDocs = []apiDoc{
 
 	doc("Accounts", "GET", "/accounts", "All accounts with balances, sync status and bill state (from bank emails).", ""),
 	doc("Accounts", "POST", "/accounts", "Create a manual account.", "name, type (checking, savings, cash, credit_card, investment, loan, mortgage, other_asset, other_liability), balance"),
-	doc("Accounts", "PATCH", "/accounts/{id}", "Rename, retype, hide, close, include in net worth, set a manual balance, a color or an owner.", "name, type, include_in_net_worth, hidden, closed, balance, color (#rrggbb, \"\" = pick again), invert_balance (flip the sign the bank reports), owner_id (member, null = shared)"),
+	doc("Accounts", "PATCH", "/accounts/{id}", "Rename, retype, hide, close, include in net worth, set a manual balance, a color or an owner.", "name, type, include_in_net_worth, hidden, closed, balance, color (#rrggbb, \"\" = pick again), invert_balance (flip the sign the bank reports), owner_id (member, null = shared), apr (debts: percent like \"24.99\", \"\" clears), min_payment (debts: dollars, \"\" clears)"),
 	doc("Accounts", "POST", "/accounts/{id}/replace", "Replace this account with another that is really the same one (sync duplicates): transactions, history, rules, filters and settings move over.", "with (account id)"),
 	doc("Accounts", "GET", "/accounts/{id}/history", "One balance per day for an account (signed cents; before its first snapshot, rebuilt from transactions).", "days (default 30)"),
 	doc("Accounts", "POST", "/accounts/{id}/color/suggest", "Ask the AI for the bank's brand color (not saved).", ""),
@@ -79,7 +79,7 @@ var apiDocs = []apiDoc{
 	doc("SimpleFIN", "PATCH", "/connections/{id}", "Connection settings.", "auto_add_new (add accounts shared on the Bridge later without asking)"),
 	doc("SimpleFIN", "PUT", "/connections/{id}/accounts", "Choose which of the connection's accounts Viceroy follows; added ones get 90 days of history.", "include, exclude (account ids)"),
 
-	doc("Transactions", "GET", "/transactions", "Transactions, newest first, paged.", "q, account, category, owner (member id, 0 = shared), uncategorized=1, review=1, hidden=1, limit (≤500), cursor (from next_cursor)"),
+	doc("Transactions", "GET", "/transactions", "Transactions, newest first, paged.", "q, account, category, group (category group id), goal, tag, merchant (exact name), direction (in | out), min, max (size in dollars, either direction), from, to (YYYY-MM-DD), owner (member id, 0 = shared), uncategorized=1, review=1, hidden=1, limit (≤500), cursor (from next_cursor)"),
 	doc("Transactions", "POST", "/transactions", "Add a manual or pending transaction. A likely duplicate returns 409 unless force is true.", "account_id, date (YYYY-MM-DD), amount (negative = money out), description, category_id, notes, tags, pending, force"),
 	doc("Transactions", "GET", "/transactions/{id}", "One transaction with its linked entries and source email.", ""),
 	doc("Transactions", "PATCH", "/transactions/{id}", "Edit: category, merchant, notes, tags, hidden, review flag, goal, owner; date/amount/description for manual ones.", "category_id, merchant, notes, hidden, needs_review, tags, goal_id, owner_id (member, null = follow the account), goal_withdrawal (spent from the goal), date, amount, description"),
@@ -128,6 +128,8 @@ var apiDocs = []apiDoc{
 	doc("Wishlist", "DELETE", "/wishlist/{id}/bought", "Put a bought item back on the list (the purchase leaves the goal).", ""),
 
 	doc("Reports", "GET", "/reports", "Income and spending per period, broken down by category, group or merchant.", "from (YYYY-MM-DD or all), to, interval (month | quarter | year), by (category | group | merchant)"),
+	doc("Reports", "GET", "/reports/tree", "Income by category and merchant, spending by group, category and merchant (plus goal contributions and uncategorized).", "from (YYYY-MM-DD or all), to"),
+	doc("Reports", "GET", "/reports/debt", "Debts with APR, minimum payment and interest, owed balances over two years, and payoff plans (minimum, snowball, avalanche).", "extra (dollars a month beyond the minimums)"),
 	doc("Reports", "GET", "/reports/spending-pace", "Cumulative spending by day, this month vs last.", "month (YYYY-MM)"),
 	doc("Recurring", "GET", "/recurring", "Tracked recurring items, suggestions, what's due before the next payday, and due dates in a range.", "from, to (YYYY-MM-DD; default this month)"),
 	doc("Recurring", "PUT", "/recurring/dismissed", "Hide or restore a suggested recurring series.", "key, dismissed"),

@@ -58,6 +58,7 @@ type Category struct {
 	Icon      string
 	GroupID   int64
 	GroupName string
+	GroupKind string // income | fixed | flexible | non_monthly | transfer
 }
 
 // Bucket is one time slice of the report, [Start, End] inclusive.

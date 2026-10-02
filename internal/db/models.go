@@ -38,6 +38,8 @@ type Account struct {
 	OfferedAt         sql.NullInt64  `json:"offered_at"`
 	ReplacedBy        sql.NullInt64  `json:"replaced_by"`
 	AdoptRows         int64          `json:"adopt_rows"`
+	AprBps            sql.NullInt64  `json:"apr_bps"`
+	MinPaymentCents   sql.NullInt64  `json:"min_payment_cents"`
 }
 
 type AccountBill struct {
@@ -137,6 +139,7 @@ type ChatThread struct {
 	Title     string `json:"title"`
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`
+	Context   string `json:"context"`
 }
 
 type Connection struct {

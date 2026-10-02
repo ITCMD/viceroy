@@ -207,6 +207,9 @@ GROUP BY t.account_id, t.date;
 
 -- ---- account look ----
 
+-- name: SetAccountDebtTerms :exec
+UPDATE accounts SET apr_bps = ?, min_payment_cents = ?, updated_at = ? WHERE id = ? AND household_id = ?;
+
 -- name: SetAccountColor :exec
 UPDATE accounts SET color = ?, color_source = ?, updated_at = ? WHERE id = ? AND household_id = ?;
 

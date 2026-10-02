@@ -135,6 +135,37 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 		Uncategorized: b2i(qs.Get("uncategorized") == "1"), NeedsReview: b2i(qs.Get("review") == "1"),
 		IncludeHidden: b2i(qs.Get("hidden") == "1"), BeforeDate: "", Lim: 100,
 	}
+	if v := qs.Get("merchant"); v != "" {
+		p.Merchant = v
+	}
+	if v, ok := queryInt(r, "group"); ok {
+		p.GroupID = v
+	}
+	if v, ok := queryInt(r, "tag"); ok {
+		p.TagID = v
+	}
+	// direction=in (money in) | out (money out); min/max bound the size in dollars either way.
+	switch d := qs.Get("direction"); d {
+	case "":
+	case "in", "out":
+		p.Direction = d
+	default:
+		writeError(w, http.StatusBadRequest, "direction must be in or out")
+		return
+	}
+	for _, f := range []struct {
+		key string
+		dst *any
+	}{{"min", &p.MinCents}, {"max", &p.MaxCents}} {
+		if v := strings.TrimSpace(qs.Get(f.key)); v != "" {
+			c, err := money.ParseCents(v)
+			if err != nil || c < 0 {
+				writeError(w, http.StatusBadRequest, "min and max are dollar amounts like 25 or 25.50")
+				return
+			}
+			*f.dst = c
+		}
+	}
 	if v, ok := queryInt(r, "account"); ok {
 		p.AccountID = v
 	}

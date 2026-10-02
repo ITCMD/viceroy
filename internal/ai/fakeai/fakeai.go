@@ -43,6 +43,7 @@ type Server struct {
 
 // keywords maps words in the user's message to the tool the fake calls.
 var keywords = []struct{ word, tool string }{
+	{"debt", "debt_payoff"},
 	{"budget", "budget_status"},
 	{"spend", "spending_report"},
 	{"net worth", "net_worth"},
@@ -161,10 +162,16 @@ func pickTool(msg string) string {
 	return ""
 }
 
+var pageRe = regexp.MustCompile(`"page":"([^"]+)"`)
+
 // reply summarizes the latest tool result, or echoes when there is none.
 func reply(msgs []ai.Message) string {
 	last := msgs[len(msgs)-1]
 	if last.Role != "tool" {
+		// A chat started from a page's Discuss button carries the page in the system prompt.
+		if m := pageRe.FindStringSubmatch(msgs[0].Content); m != nil {
+			return "Looking at your " + m[1] + " page. You said: " + last.Content
+		}
 		return "I can help with your budget, spending, accounts, recurring bills and goals. You said: " + last.Content
 	}
 	tool := "a tool"

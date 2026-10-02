@@ -1278,12 +1278,19 @@ WHERE t.household_id = ?1
   AND (?8 = 0 OR t.category_id IS NULL)
   AND (?9 = 0 OR t.needs_review = 1)
   AND (?10 = 1 OR t.hidden = 0)
-  AND (?11 = '' OR t.description LIKE '%' || ?11 || '%' OR m.name LIKE '%' || ?11 || '%'
-       OR t.notes LIKE '%' || ?11 || '%' OR t.payee LIKE '%' || ?11 || '%')
-  AND (?12 = '' OR t.date < ?12
-       OR (t.date = ?12 AND t.id < ?13))
+  AND (?11 IS NULL OR c.group_id = ?11)
+  AND (?12 IS NULL OR (?12 = 'in' AND t.amount_cents > 0)
+       OR (?12 = 'out' AND t.amount_cents < 0))
+  AND (?13 IS NULL OR ABS(t.amount_cents) >= ?13)
+  AND (?14 IS NULL OR ABS(t.amount_cents) <= ?14)
+  AND (?15 IS NULL OR COALESCE(m.name, NULLIF(t.payee, ''), t.description) = ?15)
+  AND (?16 IS NULL OR EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id = t.id AND tt.tag_id = ?16))
+  AND (?17 = '' OR t.description LIKE '%' || ?17 || '%' OR m.name LIKE '%' || ?17 || '%'
+       OR t.notes LIKE '%' || ?17 || '%' OR t.payee LIKE '%' || ?17 || '%')
+  AND (?18 = '' OR t.date < ?18
+       OR (t.date = ?18 AND t.id < ?19))
 ORDER BY t.date DESC, t.id DESC
-LIMIT ?14
+LIMIT ?20
 `
 
 type ListTransactionsParams struct {
@@ -1297,6 +1304,12 @@ type ListTransactionsParams struct {
 	Uncategorized interface{} `json:"uncategorized"`
 	NeedsReview   interface{} `json:"needs_review"`
 	IncludeHidden interface{} `json:"include_hidden"`
+	GroupID       interface{} `json:"group_id"`
+	Direction     interface{} `json:"direction"`
+	MinCents      interface{} `json:"min_cents"`
+	MaxCents      interface{} `json:"max_cents"`
+	Merchant      interface{} `json:"merchant"`
+	TagID         interface{} `json:"tag_id"`
 	Q             interface{} `json:"q"`
 	BeforeDate    interface{} `json:"before_date"`
 	BeforeID      int64       `json:"before_id"`
@@ -1353,6 +1366,12 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 		arg.Uncategorized,
 		arg.NeedsReview,
 		arg.IncludeHidden,
+		arg.GroupID,
+		arg.Direction,
+		arg.MinCents,
+		arg.MaxCents,
+		arg.Merchant,
+		arg.TagID,
 		arg.Q,
 		arg.BeforeDate,
 		arg.BeforeID,

@@ -115,7 +115,7 @@ INSERT INTO accounts (
     name, mask, type, currency, balance_cents, available_cents, balance_at, status,
     review_candidate_id, is_manual, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows
+RETURNING id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows, apr_bps, min_payment_cents
 `
 
 type CreateAccountParams struct {
@@ -191,6 +191,8 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.OfferedAt,
 		&i.ReplacedBy,
 		&i.AdoptRows,
+		&i.AprBps,
+		&i.MinPaymentCents,
 	)
 	return i, err
 }
@@ -198,7 +200,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 const createBuiltinAccount = `-- name: CreateBuiltinAccount :one
 INSERT INTO accounts (household_id, name, type, currency, balance_cents, balance_at, status, is_manual, builtin, created_at, updated_at)
 VALUES (?, ?, ?, 'USD', 0, ?, 'active', 1, ?, ?, ?)
-RETURNING id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows
+RETURNING id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows, apr_bps, min_payment_cents
 `
 
 type CreateBuiltinAccountParams struct {
@@ -252,6 +254,8 @@ func (q *Queries) CreateBuiltinAccount(ctx context.Context, arg CreateBuiltinAcc
 		&i.OfferedAt,
 		&i.ReplacedBy,
 		&i.AdoptRows,
+		&i.AprBps,
+		&i.MinPaymentCents,
 	)
 	return i, err
 }
@@ -412,7 +416,7 @@ func (q *Queries) DisconnectConnectionAccounts(ctx context.Context, arg Disconne
 }
 
 const getAccount = `-- name: GetAccount :one
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows FROM accounts WHERE id = ? AND household_id = ?
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows, apr_bps, min_payment_cents FROM accounts WHERE id = ? AND household_id = ?
 `
 
 type GetAccountParams struct {
@@ -453,12 +457,14 @@ func (q *Queries) GetAccount(ctx context.Context, arg GetAccountParams) (Account
 		&i.OfferedAt,
 		&i.ReplacedBy,
 		&i.AdoptRows,
+		&i.AprBps,
+		&i.MinPaymentCents,
 	)
 	return i, err
 }
 
 const getAccountByExternal = `-- name: GetAccountByExternal :one
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows FROM accounts WHERE connection_id = ? AND external_id = ?
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows, apr_bps, min_payment_cents FROM accounts WHERE connection_id = ? AND external_id = ?
 `
 
 type GetAccountByExternalParams struct {
@@ -499,6 +505,8 @@ func (q *Queries) GetAccountByExternal(ctx context.Context, arg GetAccountByExte
 		&i.OfferedAt,
 		&i.ReplacedBy,
 		&i.AdoptRows,
+		&i.AprBps,
+		&i.MinPaymentCents,
 	)
 	return i, err
 }
@@ -528,7 +536,7 @@ func (q *Queries) GetAccountLogo(ctx context.Context, arg GetAccountLogoParams) 
 
 const getBuiltinAccount = `-- name: GetBuiltinAccount :one
 
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows FROM accounts WHERE household_id = ? AND builtin = ?
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows, apr_bps, min_payment_cents FROM accounts WHERE household_id = ? AND builtin = ?
 `
 
 type GetBuiltinAccountParams struct {
@@ -570,6 +578,8 @@ func (q *Queries) GetBuiltinAccount(ctx context.Context, arg GetBuiltinAccountPa
 		&i.OfferedAt,
 		&i.ReplacedBy,
 		&i.AdoptRows,
+		&i.AprBps,
+		&i.MinPaymentCents,
 	)
 	return i, err
 }
@@ -833,7 +843,7 @@ func (q *Queries) ListAccountTransactionKeys(ctx context.Context, accountID int6
 
 const listAccounts = `-- name: ListAccounts :many
 
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows FROM accounts WHERE household_id = ? ORDER BY type, name, id
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows, apr_bps, min_payment_cents FROM accounts WHERE household_id = ? ORDER BY type, name, id
 `
 
 // ---- accounts ----
@@ -876,6 +886,8 @@ func (q *Queries) ListAccounts(ctx context.Context, householdID int64) ([]Accoun
 			&i.OfferedAt,
 			&i.ReplacedBy,
 			&i.AdoptRows,
+			&i.AprBps,
+			&i.MinPaymentCents,
 		); err != nil {
 			return nil, err
 		}
@@ -891,7 +903,7 @@ func (q *Queries) ListAccounts(ctx context.Context, householdID int64) ([]Accoun
 }
 
 const listAccountsNeedingColor = `-- name: ListAccountsNeedingColor :many
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows FROM accounts WHERE household_id = ? AND color_source = '' ORDER BY id
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows, apr_bps, min_payment_cents FROM accounts WHERE household_id = ? AND color_source = '' ORDER BY id
 `
 
 func (q *Queries) ListAccountsNeedingColor(ctx context.Context, householdID int64) ([]Account, error) {
@@ -933,6 +945,8 @@ func (q *Queries) ListAccountsNeedingColor(ctx context.Context, householdID int6
 			&i.OfferedAt,
 			&i.ReplacedBy,
 			&i.AdoptRows,
+			&i.AprBps,
+			&i.MinPaymentCents,
 		); err != nil {
 			return nil, err
 		}
@@ -948,7 +962,7 @@ func (q *Queries) ListAccountsNeedingColor(ctx context.Context, householdID int6
 }
 
 const listConnectionAccounts = `-- name: ListConnectionAccounts :many
-SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows FROM accounts WHERE connection_id = ?
+SELECT id, household_id, connection_id, institution_id, external_id, institution_name, provider_name, name, mask, type, currency, balance_cents, available_cents, balance_at, status, review_candidate_id, include_in_net_worth, hidden, owner_user_id, is_manual, created_at, updated_at, builtin, color, color_source, invert_balance, offered_at, replaced_by, adopt_rows, apr_bps, min_payment_cents FROM accounts WHERE connection_id = ?
 `
 
 func (q *Queries) ListConnectionAccounts(ctx context.Context, connectionID sql.NullInt64) ([]Account, error) {
@@ -990,6 +1004,8 @@ func (q *Queries) ListConnectionAccounts(ctx context.Context, connectionID sql.N
 			&i.OfferedAt,
 			&i.ReplacedBy,
 			&i.AdoptRows,
+			&i.AprBps,
+			&i.MinPaymentCents,
 		); err != nil {
 			return nil, err
 		}
@@ -1410,7 +1426,6 @@ func (q *Queries) RepointRules(ctx context.Context, arg RepointRulesParams) erro
 }
 
 const setAccountColor = `-- name: SetAccountColor :exec
-
 UPDATE accounts SET color = ?, color_source = ?, updated_at = ? WHERE id = ? AND household_id = ?
 `
 
@@ -1422,11 +1437,35 @@ type SetAccountColorParams struct {
 	HouseholdID int64  `json:"household_id"`
 }
 
-// ---- account look ----
 func (q *Queries) SetAccountColor(ctx context.Context, arg SetAccountColorParams) error {
 	_, err := q.db.ExecContext(ctx, setAccountColor,
 		arg.Color,
 		arg.ColorSource,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.HouseholdID,
+	)
+	return err
+}
+
+const setAccountDebtTerms = `-- name: SetAccountDebtTerms :exec
+
+UPDATE accounts SET apr_bps = ?, min_payment_cents = ?, updated_at = ? WHERE id = ? AND household_id = ?
+`
+
+type SetAccountDebtTermsParams struct {
+	AprBps          sql.NullInt64 `json:"apr_bps"`
+	MinPaymentCents sql.NullInt64 `json:"min_payment_cents"`
+	UpdatedAt       int64         `json:"updated_at"`
+	ID              int64         `json:"id"`
+	HouseholdID     int64         `json:"household_id"`
+}
+
+// ---- account look ----
+func (q *Queries) SetAccountDebtTerms(ctx context.Context, arg SetAccountDebtTermsParams) error {
+	_, err := q.db.ExecContext(ctx, setAccountDebtTerms,
+		arg.AprBps,
+		arg.MinPaymentCents,
 		arg.UpdatedAt,
 		arg.ID,
 		arg.HouseholdID,

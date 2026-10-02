@@ -117,7 +117,7 @@ func TestChatTools(t *testing.T) {
 			return m
 		}
 	}
-	if len(tools) != 7 {
+	if len(tools) != 8 {
 		t.Fatalf("tools = %d", len(tools))
 	}
 	r := tools["search_transactions"](`{"query":"corner","from":"2026-09-01","to":"2026-09-30"}`)

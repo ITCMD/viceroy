@@ -35,6 +35,51 @@ func (q *Queries) FirstTransactionDate(ctx context.Context, householdID int64) (
 	return column_1, err
 }
 
+const interestCharges = `-- name: InterestCharges :many
+SELECT t.account_id, CAST(SUM(-t.amount_cents) AS INTEGER) AS total
+FROM transactions t
+JOIN accounts a ON a.id = t.account_id
+WHERE t.household_id = ?1 AND t.date >= ?2 AND t.amount_cents < 0
+  AND t.hidden = 0 AND t.linked_txn_id IS NULL
+  AND a.type IN ('credit_card', 'loan', 'mortgage', 'other_liability')
+  AND (LOWER(t.description) LIKE '%interest%' OR LOWER(t.description) LIKE '%finance charge%')
+GROUP BY t.account_id
+`
+
+type InterestChargesParams struct {
+	HouseholdID int64  `json:"household_id"`
+	FromDate    string `json:"from_date"`
+}
+
+type InterestChargesRow struct {
+	AccountID int64 `json:"account_id"`
+	Total     int64 `json:"total"`
+}
+
+// Interest and finance charges posted to debt accounts since a date, per account.
+func (q *Queries) InterestCharges(ctx context.Context, arg InterestChargesParams) ([]InterestChargesRow, error) {
+	rows, err := q.db.QueryContext(ctx, interestCharges, arg.HouseholdID, arg.FromDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InterestChargesRow
+	for rows.Next() {
+		var i InterestChargesRow
+		if err := rows.Scan(&i.AccountID, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecurringDismissed = `-- name: ListRecurringDismissed :many
 SELECT key FROM recurring_dismissed WHERE household_id = ?
 `
@@ -182,6 +227,70 @@ func (q *Queries) ReportRows(ctx context.Context, arg ReportRowsParams) ([]Repor
 			&i.Kind,
 			&i.Merchant,
 			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reportTreeRows = `-- name: ReportTreeRows :many
+SELECT t.category_id, COALESCE(g.kind, '') AS kind,
+    CAST(COALESCE(m.name, NULLIF(t.payee, ''), t.description) AS TEXT) AS merchant,
+    CAST(CASE WHEN t.goal_withdrawal = 0 THEN COALESCE(t.goal_id, 0) ELSE 0 END AS INTEGER) AS goal_id,
+    CAST(SUM(CASE WHEN t.goal_id IS NOT NULL AND t.goal_withdrawal = 0 THEN ABS(t.amount_cents) ELSE t.amount_cents END) AS INTEGER) AS total,
+    CAST(COUNT(*) AS INTEGER) AS n
+FROM transactions t
+JOIN accounts a ON a.id = t.account_id
+LEFT JOIN merchants m ON m.id = t.merchant_id
+LEFT JOIN categories c ON c.id = t.category_id
+LEFT JOIN category_groups g ON g.id = c.group_id
+WHERE t.household_id = ?1 AND t.date >= ?2 AND t.date < ?3
+  AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+GROUP BY t.category_id, 3, 4
+`
+
+type ReportTreeRowsParams struct {
+	HouseholdID int64  `json:"household_id"`
+	FromDate    string `json:"from_date"`
+	ToDate      string `json:"to_date"`
+}
+
+type ReportTreeRowsRow struct {
+	CategoryID sql.NullInt64 `json:"category_id"`
+	Kind       string        `json:"kind"`
+	Merchant   string        `json:"merchant"`
+	GoalID     int64         `json:"goal_id"`
+	Total      int64         `json:"total"`
+	N          int64         `json:"n"`
+}
+
+// Totals per category, merchant and goal over [from, to) for the spending tree and cash flow
+// diagram. Same exclusions as ReportRows. Rows put toward a goal (not withdrawals) carry
+// goal_id and their absolute amount, like goal contributions in the budget.
+func (q *Queries) ReportTreeRows(ctx context.Context, arg ReportTreeRowsParams) ([]ReportTreeRowsRow, error) {
+	rows, err := q.db.QueryContext(ctx, reportTreeRows, arg.HouseholdID, arg.FromDate, arg.ToDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReportTreeRowsRow
+	for rows.Next() {
+		var i ReportTreeRowsRow
+		if err := rows.Scan(
+			&i.CategoryID,
+			&i.Kind,
+			&i.Merchant,
+			&i.GoalID,
+			&i.Total,
+			&i.N,
 		); err != nil {
 			return nil, err
 		}

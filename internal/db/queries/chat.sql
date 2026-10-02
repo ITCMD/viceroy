@@ -1,5 +1,5 @@
 -- name: CreateChatThread :one
-INSERT INTO chat_threads (user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?) RETURNING *;
+INSERT INTO chat_threads (user_id, title, context, created_at, updated_at) VALUES (?, ?, ?, ?, ?) RETURNING *;
 
 -- name: GetChatThread :one
 SELECT * FROM chat_threads WHERE id = ? AND user_id = ?;

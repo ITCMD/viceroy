@@ -111,6 +111,18 @@ func (s *Server) handleDeleteChatThread(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// maxContext caps the page data a Discuss chat starts with.
+const maxContext = 120_000
+
+// pageContext tells the model what page the chat was started from and what it showed.
+func pageContext(c string) string {
+	if c == "" {
+		return ""
+	}
+	return "\n\nThe user started this chat with the Discuss button on a page of the app. Here is what that page showed (JSON; money in dollars):\n" + c +
+		"\nAnswer about this data first. Use the tools for anything it doesn't include (for example search_transactions for individual transactions in a category or from a merchant, with the same dates)."
+}
+
 // maxHistory caps the stored messages sent back to the model.
 const maxHistory = 60
 
@@ -134,6 +146,9 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		ThreadID int64  `json:"thread_id"`
 		Content  string `json:"content"`
+		// What was on screen when the chat started from a page's Discuss button (JSON,
+		// used on the first message of a new thread only).
+		Context string `json:"context"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -141,6 +156,10 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 	in.Content = strings.TrimSpace(in.Content)
 	if in.Content == "" || len(in.Content) > 8000 {
 		writeError(w, http.StatusBadRequest, "Write a message (up to 8,000 characters).")
+		return
+	}
+	if len(in.Context) > maxContext {
+		writeError(w, http.StatusBadRequest, "That page has too much data to discuss; try a shorter date range.")
 		return
 	}
 	client, err := s.ai.ChatClient(r.Context(), HouseholdID(r))
@@ -162,7 +181,7 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		thread, err = q.CreateChatThread(ctx, db.CreateChatThreadParams{UserID: u.ID, Title: chatTitle(in.Content), CreatedAt: now, UpdatedAt: now})
+		thread, err = q.CreateChatThread(ctx, db.CreateChatThreadParams{UserID: u.ID, Title: chatTitle(in.Content), Context: in.Context, CreatedAt: now, UpdatedAt: now})
 	}
 	if err != nil {
 		s.internalError(w, err)
@@ -191,7 +210,7 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	q.TouchChatThread(ctx, db.TouchChatThreadParams{UpdatedAt: now, ID: thread.ID})
 
-	history := []ai.Message{{Role: "system", Content: s.systemPrompt(ctx, r)}}
+	history := []ai.Message{{Role: "system", Content: s.systemPrompt(ctx, r) + pageContext(thread.Context)}}
 	history = append(history, trimHistory(rows)...)
 	history = append(history, ai.Message{Role: "user", Content: in.Content})
 
