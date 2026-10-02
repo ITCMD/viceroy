@@ -536,6 +536,20 @@ func (q *Queries) SetUserAdmin(ctx context.Context, arg SetUserAdminParams) erro
 	return err
 }
 
+const setUserEmail = `-- name: SetUserEmail :exec
+UPDATE users SET email = ? WHERE id = ?
+`
+
+type SetUserEmailParams struct {
+	Email string `json:"email"`
+	ID    int64  `json:"id"`
+}
+
+func (q *Queries) SetUserEmail(ctx context.Context, arg SetUserEmailParams) error {
+	_, err := q.db.ExecContext(ctx, setUserEmail, arg.Email, arg.ID)
+	return err
+}
+
 const setUserName = `-- name: SetUserName :exec
 UPDATE users SET name = ? WHERE id = ?
 `

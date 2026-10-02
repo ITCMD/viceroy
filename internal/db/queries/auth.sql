@@ -104,3 +104,6 @@ UPDATE users SET name = ? WHERE id = ?;
 
 -- name: DeleteOtherSessions :exec
 DELETE FROM sessions WHERE user_id = ? AND token_hash != ?;
+
+-- name: SetUserEmail :exec
+UPDATE users SET email = ? WHERE id = ?;

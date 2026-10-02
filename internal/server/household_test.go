@@ -191,3 +191,38 @@ func TestChangePassword(t *testing.T) {
 		t.Fatalf("session after rename = %v", s)
 	}
 }
+
+func TestChangeEmail(t *testing.T) {
+	c := newTestServer(t)
+	c.do("POST", "/api/setup", `{"name":"Lucas","email":"lucas@example.com","password":"correct horse battery"}`, true)
+	_, inv := c.do("POST", "/api/household/invites", `{}`, true)
+	if code, _ := c.newSession().do("POST", "/api/invites/"+inv["token"].(string)+"/accept", `{"name":"Sam","email":"sam@example.com","password":"sam's password!"}`, true); code != 200 {
+		t.Fatalf("join = %d", code)
+	}
+
+	cases := []struct {
+		body string
+		code int
+	}{
+		{`{"current_password":"wrong password!","email":"new@example.com"}`, 400},
+		{`{"current_password":"correct horse battery","email":"not an email"}`, 400},
+		{`{"current_password":"correct horse battery","email":"SAM@example.com"}`, 409},
+		{`{"current_password":"correct horse battery","email":"Lucas@Example.com"}`, 200}, // own email, new case
+		{`{"current_password":"correct horse battery","email":" new@example.com "}`, 200},
+	}
+	for _, tc := range cases {
+		if code, body := c.do("POST", "/api/me/email", tc.body, true); code != tc.code {
+			t.Fatalf("%s = %d %v", tc.body, code, body)
+		}
+	}
+	// Still signed in; the new email signs in and the old one doesn't.
+	if _, s := c.do("GET", "/api/session", "", false); s["user"].(map[string]any)["email"] != "new@example.com" {
+		t.Fatalf("session after change = %v", s)
+	}
+	if code, _ := c.newSession().do("POST", "/api/auth/login", `{"email":"new@example.com","password":"correct horse battery"}`, true); code != 200 {
+		t.Fatalf("login with new email = %d", code)
+	}
+	if code, _ := c.newSession().do("POST", "/api/auth/login", `{"email":"lucas@example.com","password":"correct horse battery"}`, true); code != 401 {
+		t.Fatalf("login with old email = %d", code)
+	}
+}

@@ -48,6 +48,7 @@ var apiDocs = []apiDoc{
 	only("session", doc("Household", "DELETE", "/household/members/{id}", "Remove a member's login; their transactions and accounts stay (admin).", "")),
 	only("session", doc("Household", "PATCH", "/me", "Change your own name.", "name")),
 	only("session", doc("Household", "POST", "/me/password", "Change your password; other sessions are signed out.", "current_password, new_password")),
+	only("session", doc("Household", "POST", "/me/email", "Change your sign-in email; needs your current password.", "current_password, email")),
 	doc("General", "GET", "/docs", "This endpoint list as JSON.", ""),
 	doc("General", "GET", "/openapi.json", "OpenAPI 3 description of the API.", ""),
 

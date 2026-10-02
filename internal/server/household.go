@@ -26,6 +26,7 @@ func (s *Server) householdRoutes(r chi.Router) {
 		r.Delete("/household/members/{id}", s.handleRemoveMember)
 		r.Patch("/me", s.handleUpdateMe)
 		r.Post("/me/password", s.handleChangePassword)
+		r.Post("/me/email", s.handleChangeEmail)
 	})
 }
 
@@ -328,5 +329,40 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 	default:
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleChangeEmail needs the current password, like handleChangePassword. There's no
+// confirmation mail (Viceroy can't send email), so the change applies right away.
+func (s *Server) handleChangeEmail(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Current string `json:"current_password"`
+		Email   string `json:"email"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	ip := ClientIP(r).String()
+	if !s.limiter.allow(ip) {
+		writeError(w, http.StatusTooManyRequests, "Too many attempts. Try again in a few minutes.")
+		return
+	}
+	u := CurrentUser(r)
+	err := s.auth.ChangeEmail(r.Context(), u.ID, in.Current, in.Email)
+	var ve auth.ValidationError
+	switch {
+	case errors.Is(err, auth.ErrInvalidCredentials):
+		s.limiter.fail(ip)
+		writeError(w, http.StatusBadRequest, "Your current password isn't right.")
+	case errors.As(err, &ve):
+		writeError(w, http.StatusBadRequest, ve.Msg)
+	case errors.Is(err, auth.ErrEmailTaken):
+		writeError(w, http.StatusConflict, "That email is already in use.")
+	case err != nil:
+		s.internalError(w, err)
+	default:
+		s.log.Info("email changed", "user", u.ID, "from", u.Email, "to", strings.TrimSpace(in.Email))
+		u.Email = strings.TrimSpace(in.Email)
+		writeJSON(w, http.StatusOK, map[string]any{"user": toUserDTO(u)})
 	}
 }

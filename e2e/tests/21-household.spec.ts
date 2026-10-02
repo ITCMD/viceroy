@@ -136,6 +136,19 @@ test("invite a member, share data, owners, reset link and removal", async ({ pag
   await sam.getByRole("button", { name: "Sign in" }).click();
   await expect(sam.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
 
+  // Sam changes their sign-in email; the household owner's email is taken.
+  await sam.getByRole("link", { name: /^Sam R\. / }).click();
+  await mine.getByRole("button", { name: "Change email" }).click();
+  const em = sam.getByRole("dialog");
+  await em.getByLabel("New email").fill("admin@example.com");
+  await em.getByLabel("Current password").fill("sam's newest password");
+  await em.getByRole("button", { name: "Change email" }).click();
+  await expect(em).toContainText("That email is already in use.");
+  await em.getByLabel("New email").fill("sam.r@example.com");
+  await em.getByRole("button", { name: "Change email" }).click();
+  await expect(em).toBeHidden();
+  await expect(mine).toContainText("Signed in as sam.r@example.com.");
+
   // Removing Sam ends their access; the account stays, shared.
   await page.reload();
   await page.getByRole("button", { name: "Manage Sam R." }).click();

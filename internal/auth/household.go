@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -231,4 +232,31 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, current, nex
 		return err
 	}
 	return tx.Commit()
+}
+
+// ChangeEmail checks the current password and changes the user's sign-in email. Sessions
+// stay signed in.
+func (s *Service) ChangeEmail(ctx context.Context, userID int64, current, email string) error {
+	q := s.q()
+	u, err := q.GetUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if ok, err := argon2id.ComparePasswordAndHash(current, u.PasswordHash); err != nil {
+		return err
+	} else if !ok {
+		return ErrInvalidCredentials
+	}
+	email = strings.TrimSpace(email)
+	if a, err := mail.ParseAddress(email); err != nil || a.Address != email {
+		return ValidationError{"Enter a valid email address."}
+	}
+	if other, err := q.GetUserByEmail(ctx, email); err == nil && other.ID != userID {
+		return ErrEmailTaken
+	}
+	err = q.SetUserEmail(ctx, db.SetUserEmailParams{Email: email, ID: userID})
+	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		return ErrEmailTaken // lost a race with another signup
+	}
+	return err
 }

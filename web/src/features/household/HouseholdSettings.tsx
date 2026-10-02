@@ -40,6 +40,7 @@ function AccountCard() {
   const [name, setName] = useState("");
   const [changing, setChanging] = useState(false);
   const [changed, setChanged] = useState(false);
+  const [changingEmail, setChangingEmail] = useState(false);
   useEffect(() => setName(session?.user?.name ?? ""), [session?.user?.name]);
   const rename = useMutation({
     mutationFn: (n: string) => api.patch("/me", { name: n }),
@@ -73,10 +74,15 @@ function AccountCard() {
         </Button>
       </form>
       <p className="mt-1 text-xs text-muted">
-        Signed in as {session?.user?.email}.{changed && " Password changed; other devices were signed out."}
+        Signed in as {session?.user?.email}.{" "}
+        <button type="button" className="font-medium text-accent hover:underline" onClick={() => setChangingEmail(true)}>
+          Change email
+        </button>
+        {changed && " Password changed; other devices were signed out."}
       </p>
       <FormError error={rename.error} />
       <PasswordDialog open={changing} onOpenChange={setChanging} onDone={() => setChanged(true)} />
+      <EmailDialog open={changingEmail} onOpenChange={setChangingEmail} current={session?.user?.email ?? ""} />
     </Card>
   );
 }
@@ -131,6 +137,59 @@ function PasswordDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenC
         <Field label="New password" type="password" autoComplete="new-password" minLength={10} hint="At least 10 characters. Other devices will be signed out." value={form.next} onChange={set("next")} />
         <Field label="Confirm new password" type="password" autoComplete="new-password" value={form.confirm} onChange={set("confirm")} />
         <FormError error={localError ?? change.error} />
+      </form>
+    </Dialog>
+  );
+}
+
+/** Change your sign-in email. Takes effect right away: Viceroy can't send a confirmation mail. */
+function EmailDialog({ open, onOpenChange, current }: { open: boolean; onOpenChange: (v: boolean) => void; current: string }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ email: "", password: "" });
+  const change = useMutation({
+    mutationFn: () => api.post("/me/email", { email: form.email, current_password: form.password }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["session"] });
+      qc.invalidateQueries({ queryKey: householdQuery.queryKey });
+      close(false);
+    },
+  });
+  const close = (v: boolean) => {
+    onOpenChange(v);
+    if (!v)
+      setTimeout(() => {
+        setForm({ email: "", password: "" });
+        change.reset();
+      }, 200);
+  };
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={close}
+      title="Change email"
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => close(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" form="change-email" loading={change.isPending} disabled={!form.email.trim() || !form.password}>
+            Change email
+          </Button>
+        </>
+      }
+    >
+      <form
+        id="change-email"
+        className="flex flex-col gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          change.mutate();
+        }}
+      >
+        <Field label="New email" type="email" autoComplete="email" placeholder={current} hint="You'll sign in with this from now on. Double-check it: no confirmation email is sent." value={form.email} onChange={set("email")} autoFocus />
+        <Field label="Current password" type="password" autoComplete="current-password" value={form.password} onChange={set("password")} />
+        <FormError error={change.error} />
       </form>
     </Dialog>
   );
