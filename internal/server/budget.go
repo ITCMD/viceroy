@@ -22,6 +22,7 @@ func (s *Server) budgetRoutes(r chi.Router) {
 	r.Put("/budget/amount", s.handleSetBudgetAmount)
 	r.Get("/budget/history", s.handleBudgetHistory)
 	r.Put("/budget/categories/{id}/chunk", s.handleSetChunk)
+	r.Put("/budget/categories/{id}/hidden", s.handleSetBudgetHidden)
 	r.Get("/goals", s.handleListGoals)
 	r.Post("/goals", s.handleCreateGoal)
 	r.Patch("/goals/{id}", s.handleUpdateGoal)
@@ -160,6 +161,27 @@ func (s *Server) handleSetChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+// PUT /budget/categories/{id}/hidden {hidden}: hide a category the household doesn't budget for.
+func (s *Server) handleSetBudgetHidden(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Hidden bool `json:"hidden"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	ctx, hh, id := r.Context(), HouseholdID(r), txnID(r)
+	q := db.New(s.db)
+	if _, err := q.GetCategory(ctx, db.GetCategoryParams{ID: id, HouseholdID: hh}); err != nil {
+		writeError(w, http.StatusNotFound, "Category not found.")
+		return
+	}
+	if err := q.SetCategoryBudgetHidden(ctx, db.SetCategoryBudgetHiddenParams{BudgetHidden: b2i(in.Hidden), ID: id, HouseholdID: hh}); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type historyMonthDTO struct {

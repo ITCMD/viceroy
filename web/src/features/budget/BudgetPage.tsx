@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight, Download, Target as TargetIcon, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Eye, EyeOff, Target as TargetIcon, Upload } from "lucide-react";
 import { useState } from "react";
 import { Button, Card, CategoryIcon, MoneyText, PageHeader, Segmented } from "@/components/ui";
 import { BudgetEditDialog } from "./BudgetEditDialog";
@@ -33,6 +33,7 @@ export function BudgetPage() {
   const [date, setDate] = useState("");
   const [editing, setEditing] = useState<{ target: Target; line: BudgetLine } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const { data: b } = useQuery(budgetQuery(view, date));
 
   const setView = (v: View) => {
@@ -44,6 +45,8 @@ export function BudgetPage() {
     }
   };
   const isCurrent = b ? b.today >= b.start && b.today <= b.end : true;
+  // Hidden categories stay out of the way unless they have activity this period.
+  const hiddenCount = b?.groups.reduce((n, g) => n + g.lines.filter((l) => l.hidden && l.actual === 0).length, 0) ?? 0;
 
   return (
     <>
@@ -96,8 +99,14 @@ export function BudgetPage() {
           <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
             <div className="order-2 flex flex-col gap-4 lg:order-1">
               {b.groups.map((g) => (
-                <GroupCard key={`${g.kind}-${g.id}`} g={g} showPacing={isCurrent} onEdit={(line) => setEditing({ target: { kind: g.kind === "goals" ? "goal" : "category", id: line.id }, line })} />
+                <GroupCard key={`${g.kind}-${g.id}`} g={g} showPacing={isCurrent} showHidden={showHidden} onEdit={(line) => setEditing({ target: { kind: g.kind === "goals" ? "goal" : "category", id: line.id }, line })} />
               ))}
+              {(hiddenCount > 0 || showHidden) && (
+                <Button variant="ghost" size="sm" className="self-start text-muted" onClick={() => setShowHidden(!showHidden)}>
+                  {showHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {showHidden ? "Hide hidden categories" : `Show ${hiddenCount} hidden ${hiddenCount === 1 ? "category" : "categories"}`}
+                </Button>
+              )}
             </div>
             <Summary b={b} className="order-1 lg:sticky lg:top-18 lg:order-2" />
           </div>
@@ -115,8 +124,10 @@ export function BudgetPage() {
   );
 }
 
-function GroupCard({ g, showPacing, onEdit }: { g: BudgetGroup; showPacing: boolean; onEdit: (l: BudgetLine) => void }) {
+function GroupCard({ g, showPacing, showHidden, onEdit }: { g: BudgetGroup; showPacing: boolean; showHidden: boolean; onEdit: (l: BudgetLine) => void }) {
   const income = g.kind === "income";
+  const lines = g.lines.filter((l) => showHidden || !l.hidden || l.actual !== 0);
+  if (lines.length === 0 && g.lines.length > 0) return null;
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-surface" data-testid={`budget-group-${g.kind}`}>
       <header className={clsx(cols, "border-b border-border px-4 py-2.5 text-[13px]")}>
@@ -137,7 +148,7 @@ function GroupCard({ g, showPacing, onEdit }: { g: BudgetGroup; showPacing: bool
         </div>
       ) : (
         <ul className="divide-y divide-border">
-          {g.lines.map((l) => (
+          {lines.map((l) => (
             <li key={l.id}>
               <LineRow l={l} income={income} showPacing={showPacing} onClick={() => onEdit(l)} />
             </li>
@@ -160,13 +171,14 @@ function LineRow({ l, income, showPacing, onClick }: { l: BudgetLine; income: bo
   const ahead = !income && showPacing && l.expected > 0 && l.actual > l.expected && !over;
   const timing = chunkLabel(l.chunk);
   return (
-    <button onClick={onClick} className={clsx(cols, "w-full px-4 py-2 text-left text-[13px] hover:bg-surface-2")} data-testid="budget-line">
+    <button onClick={onClick} className={clsx(cols, "w-full px-4 py-2 text-left text-[13px] hover:bg-surface-2", l.hidden && "opacity-60")} data-testid="budget-line">
       <span className="flex min-w-0 items-center gap-2.5">
         <CategoryIcon icon={l.icon} size="sm" />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
             <span className="truncate text-sm">{l.name}</span>
             {timing && <span className="hidden shrink-0 text-xs text-muted md:inline">{timing}</span>}
+            {l.hidden && <span className="shrink-0 text-xs text-muted">Hidden</span>}
           </span>
           {(l.budget > 0 || l.actual > 0) && (
             <span className="relative mt-1 block h-1.5 rounded-full bg-surface-2" aria-hidden>

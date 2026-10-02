@@ -103,6 +103,7 @@ type Line struct {
 	Expected    int64        `json:"expected"`     // pacing: allowance through today, 0 outside the period
 	MonthBudget int64        `json:"month_budget"` // the editable monthly amount (month of the period start)
 	Chunk       budget.Chunk `json:"chunk"`
+	Hidden      bool         `json:"hidden"` // hidden from the budget (still counted in totals)
 }
 
 type Group struct {
@@ -288,7 +289,7 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 		})
 		g.Lines = append(g.Lines, Line{
 			ID: c.ID, Name: c.Name, Icon: c.Icon, Budget: l.Budget, Actual: l.Actual, Expected: l.Expected,
-			MonthBudget: budget.Resolve(amounts.Cats[c.ID], month), Chunk: chunk,
+			MonthBudget: budget.Resolve(amounts.Cats[c.ID], month), Chunk: chunk, Hidden: c.BudgetHidden == 1,
 		})
 		g.Budget += l.Budget
 		g.Actual += l.Actual

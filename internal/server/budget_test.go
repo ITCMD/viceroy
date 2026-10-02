@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -129,3 +130,35 @@ func TestBudgetAPI(t *testing.T) {
 		t.Fatalf("goal link kept: %v", out["goal_id"])
 	}
 }
+
+func TestBudgetHiddenCategory(t *testing.T) {
+	c := newTestServer(t)
+	c.do("POST", "/api/setup", `{"name":"A","email":"a@example.com","password":"correct horse battery"}`, true)
+	_, b := c.do("GET", "/api/budget?date=2026-03-01", "", false)
+	water, _ := findLine(t, b, "Water")
+	id := fmt.Sprint(water["id"])
+	if water["hidden"] != false {
+		t.Fatalf("water %v", water)
+	}
+	if code, _ := c.do("PUT", "/api/budget/categories/"+id+"/hidden", `{"hidden":true}`, true); code != 204 {
+		t.Fatalf("hide = %d", code)
+	}
+	_, b = c.do("GET", "/api/budget?date=2026-03-01", "", false)
+	if water, _ = findLine(t, b, "Water"); water["hidden"] != true {
+		t.Fatalf("hidden water %v", water)
+	}
+	// Still a category transactions can use.
+	_, cats := c.do("GET", "/api/categories", "", false)
+	if !strings.Contains(fmt.Sprint(cats), "Water") {
+		t.Fatal("water gone from categories")
+	}
+	c.do("PUT", "/api/budget/categories/"+id+"/hidden", `{"hidden":false}`, true)
+	if _, b = c.do("GET", "/api/budget?date=2026-03-01", "", false); fmt.Sprint(must(findLine(t, b, "Water"))["hidden"]) != "false" {
+		t.Fatal("unhide")
+	}
+	if code, _ := c.do("PUT", "/api/budget/categories/99999/hidden", `{"hidden":true}`, true); code != 404 {
+		t.Fatalf("unknown = %d", code)
+	}
+}
+
+func must(l map[string]any, _ string) map[string]any { return l }

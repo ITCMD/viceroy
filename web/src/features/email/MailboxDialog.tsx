@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Dialog, Field, FormError, Select, Switch, TextArea } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -19,8 +19,20 @@ const securityOptions = [
   { value: "none", label: "None (insecure)" },
 ];
 
-/** Add or edit an IMAP mailbox. Saving tests the login first. */
-export function MailboxDialog({ open, onOpenChange, mailbox }: { open: boolean; onOpenChange: (o: boolean) => void; mailbox: Mailbox | null }) {
+/** Add or edit an IMAP mailbox. Saving tests the login first. `turnOnAI` opens it with AI
+ * reading switched on and scrolled into view (Settings → AI's "Turn on"). */
+export function MailboxDialog({
+  open,
+  onOpenChange,
+  mailbox,
+  turnOnAI,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  mailbox: Mailbox | null;
+  turnOnAI?: boolean;
+}) {
+  const aiSection = useRef<HTMLDivElement>(null);
   const [preset, setPreset] = useState("");
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
@@ -45,9 +57,10 @@ export function MailboxDialog({ open, onOpenChange, mailbox }: { open: boolean; 
     setPassword("");
     setFolder(mailbox?.folder ?? "INBOX");
     setEnabled(mailbox?.enabled ?? true);
-    setAIRead(mailbox?.ai_read ?? false);
+    setAIRead((mailbox?.ai_read ?? false) || !!turnOnAI);
     setAISenders(mailbox?.ai_senders ?? "");
-  }, [open, mailbox]);
+    if (turnOnAI) setTimeout(() => aiSection.current?.scrollIntoView({ block: "center" }), 50);
+  }, [open, mailbox, turnOnAI]);
 
   const choosePreset = (p: string) => {
     setPreset(p);
@@ -59,9 +72,12 @@ export function MailboxDialog({ open, onOpenChange, mailbox }: { open: boolean; 
   };
 
   const save = useEmailMutation(
-    () => {
+    async () => {
       const body = { name, host, port: Number(port) || 0, security, username, password, folder, enabled, ai_read: aiRead, ai_senders: aiSenders };
-      return mailbox ? api.patch<Mailbox>(`/email/mailboxes/${mailbox.id}`, body) : api.post<Mailbox>("/email/mailboxes", body);
+      const saved = await (mailbox ? api.patch<Mailbox>(`/email/mailboxes/${mailbox.id}`, body) : api.post<Mailbox>("/email/mailboxes", body));
+      // Never fail silently: the server must confirm AI reading is on.
+      if (aiRead && !saved.ai_read) throw new Error("AI reading didn't turn on. Check Settings → AI.");
+      return saved;
     },
     () => onOpenChange(false),
   );
@@ -134,7 +150,7 @@ export function MailboxDialog({ open, onOpenChange, mailbox }: { open: boolean; 
         )}
         <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder={username || "Bank alerts"} />
         {mailbox && <Switch label="Watch this mailbox" checked={enabled} onCheckedChange={setEnabled} />}
-        <div className="flex flex-col gap-3 border-t border-border pt-4">
+        <div ref={aiSection} className="flex flex-col gap-3 border-t border-border pt-4">
           <Switch
             label="Read unmatched emails with AI"
             hint={

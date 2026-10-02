@@ -139,6 +139,28 @@ test("goals: create, budget a contribution, assign a transaction", async ({ page
   await shot(page, "53-goals");
 });
 
+test("hide a category the household doesn't use", async ({ page }) => {
+  await login(page);
+  await page.goto("/budget");
+  await line(page, "Water").click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("switch", { name: "Hide from budget" }).click();
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(line(page, "Water")).toHaveCount(0);
+
+  // Shown greyed out on request, and can be unhidden from its dialog.
+  await page.getByRole("button", { name: /Show \d+ hidden categor/ }).click();
+  await expect(line(page, "Water")).toContainText("Hidden");
+  await page.screenshot({ path: `${shots}/55-budget-hidden.png`, fullPage: true });
+  await line(page, "Water").click();
+  await dialog.getByRole("switch", { name: "Hide from budget" }).click();
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Hide hidden categories" }).click();
+  await expect(line(page, "Water")).toBeVisible();
+  await expect(line(page, "Water")).not.toContainText("Hidden");
+});
+
 test("mobile budget layout", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);

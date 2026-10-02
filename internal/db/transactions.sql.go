@@ -79,7 +79,7 @@ func (q *Queries) CountCategoryGroups(ctx context.Context, householdID int64) (i
 }
 
 const createCategory = `-- name: CreateCategory :one
-INSERT INTO categories (household_id, group_id, name, icon, sort) VALUES (?, ?, ?, ?, ?) RETURNING id, household_id, group_id, name, icon, sort, archived, chunk
+INSERT INTO categories (household_id, group_id, name, icon, sort) VALUES (?, ?, ?, ?, ?) RETURNING id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden
 `
 
 type CreateCategoryParams struct {
@@ -108,6 +108,7 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 		&i.Sort,
 		&i.Archived,
 		&i.Chunk,
+		&i.BudgetHidden,
 	)
 	return i, err
 }
@@ -229,7 +230,7 @@ func (q *Queries) DeleteRule(ctx context.Context, arg DeleteRuleParams) error {
 }
 
 const getCategory = `-- name: GetCategory :one
-SELECT id, household_id, group_id, name, icon, sort, archived, chunk FROM categories WHERE id = ? AND household_id = ?
+SELECT id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden FROM categories WHERE id = ? AND household_id = ?
 `
 
 type GetCategoryParams struct {
@@ -249,6 +250,7 @@ func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (Categ
 		&i.Sort,
 		&i.Archived,
 		&i.Chunk,
+		&i.BudgetHidden,
 	)
 	return i, err
 }
@@ -539,7 +541,7 @@ func (q *Queries) LinkTransaction(ctx context.Context, arg LinkTransactionParams
 }
 
 const listCategories = `-- name: ListCategories :many
-SELECT id, household_id, group_id, name, icon, sort, archived, chunk FROM categories WHERE household_id = ? ORDER BY sort, id
+SELECT id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden FROM categories WHERE household_id = ? ORDER BY sort, id
 `
 
 func (q *Queries) ListCategories(ctx context.Context, householdID int64) ([]Category, error) {
@@ -560,6 +562,7 @@ func (q *Queries) ListCategories(ctx context.Context, householdID int64) ([]Cate
 			&i.Sort,
 			&i.Archived,
 			&i.Chunk,
+			&i.BudgetHidden,
 		); err != nil {
 			return nil, err
 		}

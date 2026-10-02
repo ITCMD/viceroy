@@ -62,6 +62,7 @@ export function BudgetEditDialog({
   const [forward, setForward] = useState(forwardDefault);
   const [chunk, setChunk] = useState<Chunk>({ kind: "even" });
   const [timingOpen, setTimingOpen] = useState(false);
+  const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
     if (!line) return;
@@ -69,6 +70,7 @@ export function BudgetEditDialog({
     setForward(forwardDefault);
     setChunk(line.chunk);
     setTimingOpen(line.chunk.kind !== "even");
+    setHidden(line.hidden);
   }, [line, forwardDefault]);
 
   const save = useBudgetMutation(async () => {
@@ -76,6 +78,9 @@ export function BudgetEditDialog({
     await api.put("/budget/amount", { [`${target.kind}_id`]: target.id, month, amount, apply_forward: forward });
     if (target.kind === "category" && !sameChunk(chunk, line.chunk)) {
       await api.put(`/budget/categories/${target.id}/chunk`, chunk);
+    }
+    if (target.kind === "category" && hidden !== line.hidden) {
+      await api.put(`/budget/categories/${target.id}/hidden`, { hidden });
     }
   }, onClose);
 
@@ -201,6 +206,14 @@ export function BudgetEditDialog({
         )}
 
         <Switch label="Apply to all future months" hint={`Also use this amount after ${monthLabel(month)}.`} checked={forward} onCheckedChange={setForward} />
+        {target?.kind === "category" && (
+          <Switch
+            label="Hide from budget"
+            hint="For a category you don't use, like Water when it's included in rent. You can still pick it for transactions, and it shows up again if it has spending."
+            checked={hidden}
+            onCheckedChange={setHidden}
+          />
+        )}
         <FormError error={save.error} />
         <button type="submit" hidden />
       </form>

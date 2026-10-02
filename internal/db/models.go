@@ -89,14 +89,15 @@ type BudgetAmount struct {
 }
 
 type Category struct {
-	ID          int64  `json:"id"`
-	HouseholdID int64  `json:"household_id"`
-	GroupID     int64  `json:"group_id"`
-	Name        string `json:"name"`
-	Icon        string `json:"icon"`
-	Sort        int64  `json:"sort"`
-	Archived    int64  `json:"archived"`
-	Chunk       string `json:"chunk"`
+	ID           int64  `json:"id"`
+	HouseholdID  int64  `json:"household_id"`
+	GroupID      int64  `json:"group_id"`
+	Name         string `json:"name"`
+	Icon         string `json:"icon"`
+	Sort         int64  `json:"sort"`
+	Archived     int64  `json:"archived"`
+	Chunk        string `json:"chunk"`
+	BudgetHidden int64  `json:"budget_hidden"`
 }
 
 type CategoryGroup struct {

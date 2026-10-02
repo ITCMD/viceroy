@@ -74,3 +74,6 @@ UPDATE transactions SET goal_id = ? WHERE id = ? AND household_id = ?;
 
 -- name: GetCategoryGroupKind :one
 SELECT kind FROM category_groups WHERE id = ?;
+
+-- name: SetCategoryBudgetHidden :exec
+UPDATE categories SET budget_hidden = ? WHERE id = ? AND household_id = ?;

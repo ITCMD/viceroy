@@ -18,6 +18,8 @@ export type BudgetLine = {
   expected: number;
   month_budget: number;
   chunk: Chunk;
+  /** Hidden from the budget (still counted in totals). */
+  hidden: boolean;
 };
 
 export type GroupKind = "income" | "fixed" | "flexible" | "non_monthly" | "goals";

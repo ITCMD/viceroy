@@ -381,6 +381,21 @@ func (q *Queries) ListHouseholdSettings(ctx context.Context, householdID int64) 
 	return items, nil
 }
 
+const setCategoryBudgetHidden = `-- name: SetCategoryBudgetHidden :exec
+UPDATE categories SET budget_hidden = ? WHERE id = ? AND household_id = ?
+`
+
+type SetCategoryBudgetHiddenParams struct {
+	BudgetHidden int64 `json:"budget_hidden"`
+	ID           int64 `json:"id"`
+	HouseholdID  int64 `json:"household_id"`
+}
+
+func (q *Queries) SetCategoryBudgetHidden(ctx context.Context, arg SetCategoryBudgetHiddenParams) error {
+	_, err := q.db.ExecContext(ctx, setCategoryBudgetHidden, arg.BudgetHidden, arg.ID, arg.HouseholdID)
+	return err
+}
+
 const setCategoryChunk = `-- name: SetCategoryChunk :exec
 UPDATE categories SET chunk = ? WHERE id = ? AND household_id = ?
 `

@@ -48,8 +48,8 @@ test("AI reads unmatched bank emails: payment due, security alert, purchase hint
   await aiCard.getByTestId("ai-mailbox-row").first().getByRole("button", { name: "Turn on" }).click();
   const dialog = page.getByRole("dialog");
   const toggle = dialog.getByRole("switch", { name: /Read unmatched emails with AI/ });
-  await expect(toggle).toBeEnabled();
-  await toggle.click();
+  // "Turn on" opens the mailbox with AI reading already switched on.
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
   await dialog.getByLabel("Only from these senders").fill("cardco.example");
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(dialog).toHaveCount(0);
@@ -87,9 +87,14 @@ test("AI reads unmatched bank emails: payment due, security alert, purchase hint
   await page.keyboard.press("Escape");
 
   // The purchase alert has no filter: it stays in Emails to review with the AI's hint.
-  await page.goto("/settings");
+  // The AI reads queued emails one at a time, and the watcher may only pick up the last delivery
+  // on its next check: ask for a check and reload until it's read.
   const row = page.getByTestId("review-email-row").filter({ hasText: "Purchase alert" });
-  await expect(row.getByTestId("email-ai-note")).toContainText("looks like a purchase alert");
+  await expect(async () => {
+    for (const m of await (await req.get("/api/email/mailboxes")).json()) await req.post(`/api/email/mailboxes/${m.id}/check`, { headers: { "X-Viceroy-CSRF": "1" } });
+    await page.goto("/settings");
+    await expect(row.getByTestId("email-ai-note")).toContainText("looks like a purchase alert", { timeout: 3000 });
+  }).toPass({ timeout: 30_000 });
   await expect(page.getByTestId("review-email-row").filter({ hasText: "Unusual activity" })).toHaveCount(0);
 
   // An order email: the AI finds the $60.00 Luna Trattoria charge (from the email + SimpleFIN spec)

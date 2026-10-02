@@ -21,6 +21,7 @@ export function AISettingsCard() {
   const models = useQuery(modelsQuery("openrouter", !!s));
   const localModels = useQuery(modelsQuery("email", !!s?.email_base_url));
   const [editing, setEditing] = useState<Mailbox | null>(null);
+  const [turnOn, setTurnOn] = useState(false);
   const [open, setOpen] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [key, setKey] = useState("");
@@ -48,8 +49,9 @@ export function AISettingsCard() {
     },
   });
   const test = useMutation({ mutationFn: (target: Target) => api.post<TestResult>("/settings/ai/test", { target }) });
-  const edit = (m: Mailbox | null) => {
+  const edit = (m: Mailbox | null, turnOnAI = false) => {
     setEditing(m);
+    setTurnOn(turnOnAI);
     setOpen(true);
   };
   const canEdit = !!s?.can_edit;
@@ -237,7 +239,7 @@ export function AISettingsCard() {
                     <div className="truncate text-xs text-muted">{m.ai_read ? senderSummary(m.ai_senders) : "AI reading off"}</div>
                   </div>
                   {m.ai_read && <Badge tone="positive">On</Badge>}
-                  <Button size="sm" variant="secondary" onClick={() => edit(m)}>
+                  <Button size="sm" variant="secondary" onClick={() => edit(m, !m.ai_read && !!s?.email_ready)}>
                     {m.ai_read ? "Edit" : "Turn on"}
                   </Button>
                 </li>
@@ -246,7 +248,7 @@ export function AISettingsCard() {
           )}
         </div>
       </div>
-      <MailboxDialog open={open} onOpenChange={setOpen} mailbox={editing} />
+      <MailboxDialog open={open} onOpenChange={setOpen} mailbox={editing} turnOnAI={turnOn} />
     </Card>
   );
 }
