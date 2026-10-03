@@ -24,3 +24,10 @@ export function timeUntil(unix: number) {
   if (s < 86400) return `in ${Math.round(s / 3600)}h`;
   return `in ${Math.round(s / 86400)}d`;
 }
+
+/** An AI cost in millionths of a dollar: "$1.23", or "$0.0024" below a dollar. */
+export function formatMicros(micros: number) {
+  if (micros === 0) return "$0.00";
+  if (micros < 1_000_000) return `$${(micros / 1_000_000).toFixed(4)}`;
+  return formatMoney(Math.round(micros / 10_000));
+}

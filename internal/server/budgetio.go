@@ -228,6 +228,7 @@ func (s *Server) handleBudgetImportPreview(w http.ResponseWriter, r *http.Reques
 			s.internalError(w, err)
 			return
 		}
+		client.Feature = "budget_import"
 		if !client.Configured() {
 			bad("Add an OpenRouter API key in Settings → AI to read budgets with AI.")
 			return

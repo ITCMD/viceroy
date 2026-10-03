@@ -5,7 +5,8 @@ import { Badge, Button, Card, Field, FormError, Switch } from "@/components/ui";
 import { mailboxesQuery, type Mailbox } from "@/features/email/api";
 import { MailboxDialog } from "@/features/email/MailboxDialog";
 import { api } from "@/lib/api";
-import { aiSettingsQuery, modelsQuery, type AISettings } from "./ai";
+import { formatMicros } from "@/lib/format";
+import { aiSettingsQuery, aiUsageQuery, featureLabels, modelsQuery, type AISettings } from "./ai";
 import { ModelPicker } from "./ModelPicker";
 
 type Patch = Partial<{ openrouter_key: string; chat_model: string; email_model: string; email_base_url: string; vision_model: string; categorize: boolean; categorize_review: boolean }>;
@@ -74,6 +75,8 @@ export function AISettingsCard() {
             detail={s?.vision_ready ? s.vision_model || s.chat_model : "Needs an API key"}
           />
         </div>
+
+        <AICost />
 
         <div className="flex flex-col gap-3 border-t border-border pt-4">
           {s && !canEdit && <p className="text-[13px] text-muted">Only an admin can change these.</p>}
@@ -288,6 +291,54 @@ function Status({ ok, label, detail }: { ok?: boolean; label: string; detail: Re
       <Icon size={16} className={ok ? "shrink-0 text-positive" : "shrink-0 text-muted"} />
       <span className="font-medium">{label}</span>
       <span className="truncate text-muted">· {detail}</span>
+    </div>
+  );
+}
+
+/** What AI requests cost this month (as OpenRouter reported), per feature, and last month. */
+function AICost() {
+  const { data } = useQuery(aiUsageQuery);
+  const [open, setOpen] = useState(false);
+  if (!data) return null;
+  const { month: m, previous: p } = data;
+  return (
+    <div className="border-t border-border pt-4" data-testid="ai-cost">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <div className="text-[13px] text-muted">AI cost this month</div>
+          <div className="text-xl font-semibold tabular" data-testid="ai-cost-month">
+            {formatMicros(m.cost_micros)}
+            {m.unpriced > 0 && <span className="text-muted">+</span>}
+          </div>
+          <div className="text-xs text-muted">
+            {m.requests} request{m.requests === 1 ? "" : "s"} · last month {formatMicros(p.cost_micros)}
+          </div>
+        </div>
+        {m.features.length > 0 && (
+          <Button variant="ghost" size="sm" className="text-muted" onClick={() => setOpen(!open)} aria-expanded={open}>
+            {open ? "Hide" : "Show"} breakdown
+          </Button>
+        )}
+      </div>
+      {open && (
+        <ul className="mt-2 flex flex-col divide-y divide-border rounded-lg border border-border text-[13px]">
+          {m.features.map((f) => (
+            <li key={f.feature} className="flex items-center gap-3 px-3 py-2">
+              <span className="min-w-0 flex-1 truncate">{featureLabels[f.feature] ?? f.feature}</span>
+              <span className="text-xs text-muted">
+                {f.requests} req · {f.tokens.toLocaleString()} tokens
+              </span>
+              <span className="w-20 text-right font-medium tabular">{formatMicros(f.cost_micros)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {m.unpriced > 0 && (
+        <p className="mt-2 text-xs text-muted">
+          {m.unpriced} request{m.unpriced === 1 ? " has" : "s have"} no reported cost (a self-hosted endpoint, or the provider didn't say), so the total may be a little low.
+        </p>
+      )}
+      <p className="mt-1 text-xs text-muted">Costs as OpenRouter reports them per request; your OpenRouter account has the exact bill.</p>
     </div>
   );
 }

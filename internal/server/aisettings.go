@@ -11,6 +11,7 @@ import (
 
 	"viceroy/internal/ai"
 	"viceroy/internal/aisettings"
+	"viceroy/internal/db"
 )
 
 func (s *Server) aiSettingsRoutes(r chi.Router) {
@@ -18,6 +19,7 @@ func (s *Server) aiSettingsRoutes(r chi.Router) {
 	r.Patch("/settings/ai", s.handleSaveAISettings)
 	r.Post("/settings/ai/test", s.handleTestAI)
 	r.Get("/settings/ai/models", s.handleListModels)
+	r.Get("/settings/ai/usage", s.handleAIUsage)
 }
 
 // modelCache keeps each endpoint's model list for an hour (OpenRouter's is ~1 MB).
@@ -96,7 +98,7 @@ func (s *Server) handleGetAISettings(w http.ResponseWriter, r *http.Request) {
 	out := aiSettingsDTO{
 		CanEdit: CurrentUser(r).IsAdmin == 1, KeySet: st.APIKey != "", KeySource: st.KeySource,
 		ChatModel: st.ChatModel, EmailModel: st.EmailModel, EmailBaseURL: st.EmailBaseURL, VisionModel: st.VisionModel, ConfigChatModel: st.ConfigChatModel,
-		Categorize:  st.Categorize, CatReview: st.CatReview,
+		Categorize: st.Categorize, CatReview: st.CatReview,
 		ChatReady:   st.Chat(s.ai.Config.BaseURL, "").Configured(),
 		EmailReady:  st.Email(s.ai.Config.BaseURL, "").Configured(),
 		VisionReady: st.Vision(s.ai.Config.BaseURL, "").Configured(),
@@ -157,6 +159,7 @@ func (s *Server) handleTestAI(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
+	client.Feature = "test"
 	if !client.Configured() {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "Add an OpenRouter API key first."})
 		return
@@ -173,4 +176,61 @@ func (s *Server) handleTestAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "model": client.Model})
+}
+
+type aiUsageFeature struct {
+	Feature    string `json:"feature"`
+	Requests   int64  `json:"requests"`
+	CostMicros int64  `json:"cost_micros"`
+	Unpriced   int64  `json:"unpriced"`
+	Tokens     int64  `json:"tokens"`
+}
+
+type aiUsageMonth struct {
+	Month      string           `json:"month"`
+	Requests   int64            `json:"requests"`
+	CostMicros int64            `json:"cost_micros"` // millionths of a dollar, as OpenRouter reported
+	Unpriced   int64            `json:"unpriced"`    // requests with no reported cost
+	Features   []aiUsageFeature `json:"features"`
+}
+
+func (s *Server) aiUsageMonth(ctx context.Context, hh int64, m time.Time) (aiUsageMonth, error) {
+	from := time.Date(m.Year(), m.Month(), 1, 0, 0, 0, 0, time.Local)
+	rows, err := db.New(s.db).AIUsageByFeature(ctx, db.AIUsageByFeatureParams{HouseholdID: hh, FromTs: from.Unix(), ToTs: from.AddDate(0, 1, 0).Unix()})
+	out := aiUsageMonth{Month: from.Format("2006-01"), Features: []aiUsageFeature{}}
+	if err != nil {
+		return out, err
+	}
+	for _, r := range rows {
+		out.Features = append(out.Features, aiUsageFeature{r.Feature, r.Requests, r.CostMicros, r.Unpriced, r.Tokens})
+		out.Requests += r.Requests
+		out.CostMicros += r.CostMicros
+		out.Unpriced += r.Unpriced
+	}
+	return out, nil
+}
+
+// GET /settings/ai/usage?month=YYYY-MM: AI requests and their cost in a month (default this
+// one), per feature, plus the month before for comparison.
+func (s *Server) handleAIUsage(w http.ResponseWriter, r *http.Request) {
+	m := time.Now()
+	if v := r.URL.Query().Get("month"); v != "" {
+		t, err := time.ParseInLocation("2006-01", v, time.Local)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "month must be YYYY-MM")
+			return
+		}
+		m = t
+	}
+	cur, err := s.aiUsageMonth(r.Context(), HouseholdID(r), m)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	prev, err := s.aiUsageMonth(r.Context(), HouseholdID(r), time.Date(m.Year(), m.Month()-1, 1, 0, 0, 0, 0, time.Local))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"month": cur, "previous": prev})
 }

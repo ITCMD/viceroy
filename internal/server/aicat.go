@@ -32,7 +32,7 @@ func (s *Server) handleAICategorize(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
-	client := st.Email(s.ai.Config.BaseURL, s.ai.Referer)
+	client := s.ai.Track(st.Email(s.ai.Config.BaseURL, s.ai.Referer), hh, "categorize")
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	res, err := aicat.Run(ctx, s.db, client, hh, aicat.Options{

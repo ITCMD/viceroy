@@ -6,7 +6,7 @@ import { Popover } from "radix-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState, Markdown, Sheet } from "@/components/ui";
 import { api } from "@/lib/api";
-import { timeAgo } from "@/lib/format";
+import { formatMicros, timeAgo } from "@/lib/format";
 import { chatInfoQuery, chatThreadQuery, toolLabels, useChatStream, type ChatContext, type ChatMessage, type ChatThread } from "./api";
 
 const suggestions = [
@@ -167,7 +167,17 @@ export function ChatSheet({ open, onOpenChange, context }: { open: boolean; onOp
               </button>
             )}
           </form>
-          {info?.model && <p className="-mt-1 px-4 pb-2 text-[11px] text-muted">Answers by {info.model} via OpenRouter. Check important numbers.</p>}
+          {info?.model && (
+            <p className="-mt-1 px-4 pb-2 text-[11px] text-muted">
+              Answers by {info.model} via OpenRouter. Check important numbers.
+              {thread && thread.thread.id === threadId && thread.cost.requests > 0 && (
+                <span data-testid="chat-cost" title={`${thread.cost.requests} AI request${thread.cost.requests === 1 ? "" : "s"}${thread.cost.unpriced ? `, ${thread.cost.unpriced} without a reported cost` : ""}`}>
+                  {" "}This chat: {formatMicros(thread.cost.cost_micros)}
+                  {thread.cost.unpriced > 0 && "+"}
+                </span>
+              )}
+            </p>
+          )}
         </>
       )}
     </Sheet>

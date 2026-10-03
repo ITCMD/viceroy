@@ -117,6 +117,75 @@ type Client struct {
 	Referer string
 	// Local marks a self-hosted endpoint (Ollama, llama.cpp) that needs no API key.
 	Local bool
+	// Feature names what the client is used for ("chat", "email"...); Ref is an id within
+	// it (the chat thread). Both are passed through to OnUsage.
+	Feature string
+	Ref     int64
+	// OnUsage, when set, gets the tokens and cost of every completed request.
+	OnUsage func(Usage)
+}
+
+// Usage is what one request used. OpenRouter reports the cost (in USD, as credits) when asked
+// with usage.include; CostMicros is it in millionths of a dollar, CostKnown false when the
+// endpoint didn't say (a local endpoint costs nothing).
+type Usage struct {
+	Feature          string
+	Ref              int64
+	Model            string
+	Local            bool
+	PromptTokens     int64
+	CompletionTokens int64
+	CostMicros       int64
+	CostKnown        bool
+}
+
+type usageJSON struct {
+	PromptTokens     int64       `json:"prompt_tokens"`
+	CompletionTokens int64       `json:"completion_tokens"`
+	Cost             json.Number `json:"cost"`
+}
+
+// report passes a reply's usage to OnUsage (nothing reported: tokens unknown, cost unknown).
+func (c *Client) report(u *usageJSON) {
+	if c.OnUsage == nil {
+		return
+	}
+	out := Usage{Feature: c.Feature, Ref: c.Ref, Model: c.Model, Local: c.Local}
+	if u != nil {
+		out.PromptTokens, out.CompletionTokens = u.PromptTokens, u.CompletionTokens
+		out.CostMicros, out.CostKnown = Micros(string(u.Cost))
+	}
+	if c.Local {
+		out.CostMicros, out.CostKnown = 0, true
+	}
+	c.OnUsage(out)
+}
+
+// Micros converts a decimal dollar amount ("0.0001234") to millionths of a dollar, rounded.
+func Micros(s string) (int64, bool) {
+	r, ok := new(big.Rat).SetString(strings.TrimSpace(s))
+	if !ok || r.Sign() < 0 {
+		return 0, false
+	}
+	r.Mul(r, big.NewRat(1_000_000, 1))
+	r.Add(r, big.NewRat(1, 2))
+	n := new(big.Int).Quo(r.Num(), r.Denom())
+	if !n.IsInt64() {
+		return 0, false
+	}
+	return n.Int64(), true
+}
+
+// withUsage asks OpenRouter to include usage and cost in the reply (self-hosted endpoints
+// aren't sent the extra fields).
+func (c *Client) withUsage(body map[string]any) {
+	if c.Local {
+		return
+	}
+	body["usage"] = map[string]bool{"include": true}
+	if body["stream"] == true {
+		body["stream_options"] = map[string]bool{"include_usage": true}
+	}
 }
 
 func New(baseURL, key, model string) *Client {
@@ -173,10 +242,12 @@ func (c *Client) CompleteJSON(ctx context.Context, msgs []Message) (string, erro
 	if !c.Configured() {
 		return "", ErrNotConfigured
 	}
-	resp, err := c.post(ctx, map[string]any{
+	body := map[string]any{
 		"model": c.Model, "messages": msgs, "temperature": 0,
 		"response_format": map[string]string{"type": "json_object"},
-	})
+	}
+	c.withUsage(body)
+	resp, err := c.post(ctx, body)
 	if err != nil {
 		return "", err
 	}
@@ -187,11 +258,13 @@ func (c *Client) CompleteJSON(ctx context.Context, msgs []Message) (string, erro
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
-		Error *apiError `json:"error"`
+		Error *apiError  `json:"error"`
+		Usage *usageJSON `json:"usage"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
 		return "", fmt.Errorf("%s: unreadable reply: %w", c.name(), err)
 	}
+	c.report(out.Usage)
 	if out.Error != nil {
 		return "", fmt.Errorf("%s: %s", c.name(), out.Error.Message)
 	}
@@ -226,7 +299,8 @@ type chunk struct {
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
-	Error *apiError `json:"error"`
+	Error *apiError  `json:"error"`
+	Usage *usageJSON `json:"usage"`
 }
 
 type apiError struct {
@@ -249,6 +323,7 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTex
 		}
 		body["tools"] = specs
 	}
+	c.withUsage(body)
 	resp, err := c.post(ctx, body)
 	if err != nil {
 		return Message{}, err
@@ -259,6 +334,8 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTex
 	var text strings.Builder
 	calls := map[int]*ToolCall{}
 	order := []int{}
+	var usage *usageJSON
+	defer func() { c.report(usage) }() // also when the stream breaks off: the request was paid for
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
 	for sc.Scan() {
@@ -276,6 +353,9 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTex
 		}
 		if ch.Error != nil {
 			return Message{}, fmt.Errorf("OpenRouter: %s", ch.Error.Message)
+		}
+		if ch.Usage != nil {
+			usage = ch.Usage
 		}
 		for _, choice := range ch.Choices {
 			if d := choice.Delta.Content; d != "" {

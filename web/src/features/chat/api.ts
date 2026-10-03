@@ -17,8 +17,11 @@ export const chatInfoQuery = queryOptions({
 export const chatThreadQuery = (id: number) =>
   queryOptions({
     queryKey: ["chat", "thread", id],
-    queryFn: () => api.get<{ thread: ChatThread; messages: ChatMessage[] }>(`/chat/threads/${id}`),
+    queryFn: () => api.get<{ thread: ChatThread; messages: ChatMessage[]; cost: AICost }>(`/chat/threads/${id}`),
   });
+
+/** What AI requests cost: cost_micros in millionths of a dollar; unpriced = requests with no reported cost. */
+export type AICost = { requests: number; cost_micros: number; unpriced: number };
 
 export const toolLabels: Record<string, string> = {
   budget_status: "Checked your budget",

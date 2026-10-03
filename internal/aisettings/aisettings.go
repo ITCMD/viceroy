@@ -8,7 +8,9 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"strings"
+	"time"
 
 	"viceroy/internal/ai"
 	"viceroy/internal/config"
@@ -32,6 +34,7 @@ type Store struct {
 	Box     *secrets.Box
 	Config  config.AIConfig // fallbacks from viceroy.toml
 	Referer string
+	Log     *slog.Logger // optional; usage that can't be recorded is logged
 }
 
 // Settings is the effective setup. Source says where the key came from.
@@ -194,7 +197,7 @@ func (s *Store) VisionClient(ctx context.Context, hh int64) (*ai.Client, error) 
 	if err != nil {
 		return nil, err
 	}
-	return st.Vision(s.Config.BaseURL, s.Referer), nil
+	return s.Track(st.Vision(s.Config.BaseURL, s.Referer), hh, "vision"), nil
 }
 
 // ChatClient loads the household's settings and returns its chat client.
@@ -203,7 +206,7 @@ func (s *Store) ChatClient(ctx context.Context, hh int64) (*ai.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return st.Chat(s.Config.BaseURL, s.Referer), nil
+	return s.Track(st.Chat(s.Config.BaseURL, s.Referer), hh, "chat"), nil
 }
 
 // EmailClient loads the household's settings and returns its email-reading client.
@@ -212,5 +215,27 @@ func (s *Store) EmailClient(ctx context.Context, hh int64) (*ai.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return st.Email(s.Config.BaseURL, s.Referer), nil
+	return s.Track(st.Email(s.Config.BaseURL, s.Referer), hh, "email"), nil
+}
+
+// Track records every request c makes (tokens, cost) for household hh under feature, which a
+// caller may still change on the client (c.Feature) before using it.
+func (s *Store) Track(c *ai.Client, hh int64, feature string) *ai.Client {
+	c.Feature = feature
+	c.OnUsage = func(u ai.Usage) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		p := db.InsertAIUsageParams{
+			HouseholdID: hh, CreatedAt: time.Now().Unix(), Feature: u.Feature, Model: u.Model,
+			PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens,
+			RefID: sql.NullInt64{Int64: u.Ref, Valid: u.Ref != 0}, CostMicros: sql.NullInt64{Int64: u.CostMicros, Valid: u.CostKnown},
+		}
+		if u.Local {
+			p.Local = 1
+		}
+		if err := db.New(s.DB).InsertAIUsage(ctx, p); err != nil && s.Log != nil {
+			s.Log.Warn("ai usage", "err", err)
+		}
+	}
+	return c
 }

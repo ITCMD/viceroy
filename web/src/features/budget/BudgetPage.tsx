@@ -1,11 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { ChevronDown, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Target as TargetIcon, Upload } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Sparkles, Target as TargetIcon, Upload } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Button, Card, CategoryIcon, MoneyText, PageHeader, Segmented } from "@/components/ui";
 import { AccountAvatar } from "@/features/accounts/AccountAvatar";
 import { accountsQuery } from "@/features/accounts/api";
+import { ChatSheet } from "@/features/chat/ChatSheet";
+import type { ChatContext } from "@/features/chat/api";
+import { reportQuery, type Report } from "@/features/reports/api";
+import { dollars } from "@/features/reports/shared";
 import { formatMoney } from "@/lib/format";
 import { BudgetEditDialog } from "./BudgetEditDialog";
 import { BudgetImportDialog } from "./BudgetImportDialog";
@@ -48,7 +52,12 @@ export function BudgetPage() {
   const [importing, setImporting] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [open, setOpenState] = useState<number[]>(loadOpen);
+  const [chatting, setChatting] = useState(false);
   const { data: b } = useQuery(budgetQuery(view, date));
+  // The six months before the one shown, for the chat: what each category really cost.
+  const past = b ? pastMonths(b.month, 6) : null;
+  const { data: history } = useQuery({ ...reportQuery(past?.from ?? "", "month", "category", past?.to ?? ""), enabled: !!past });
+  const chatContext = useMemo(() => (b ? budgetContext(b, history) : undefined), [b, history]);
   const toggleOpen = (id: number) => {
     const next = open.includes(id) ? open.filter((x) => x !== id) : [...open, id];
     setOpenState(next);
@@ -77,6 +86,9 @@ export function BudgetPage() {
         title="Budget"
         actions={
           <>
+            <Button variant="secondary" size="sm" onClick={() => setChatting(true)} disabled={!chatContext} data-testid="budget-chat">
+              <Sparkles size={14} /> Chat
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => setImporting(true)} disabled={!b}>
               <Upload size={14} /> Import
             </Button>
@@ -153,6 +165,7 @@ export function BudgetPage() {
         onClose={() => setEditing(null)}
       />
       <BudgetImportDialog open={importing} onOpenChange={setImporting} month={b?.month ?? ""} />
+      <ChatSheet open={chatting} onOpenChange={setChatting} context={chatContext} />
     </>
   );
 }
@@ -425,4 +438,43 @@ function Summary({ b, className }: { b: Budget; className?: string }) {
       )}
     </Card>
   );
+}
+
+/** The n whole months before month (YYYY-MM), as an inclusive date range. */
+function pastMonths(month: string, n: number) {
+  const [y, m] = month.split("-").map(Number);
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { from: iso(new Date(y, m - 1 - n, 1)), to: iso(new Date(y, m - 1, 0)) };
+}
+
+/** What the chat sees from the budget page: this period line by line, and the months before. */
+function budgetContext(b: Budget, history: Report | undefined): ChatContext {
+  const line = (l: BudgetLine): Record<string, unknown> => ({
+    name: l.name,
+    budget: dollars(l.budget),
+    actual: dollars(l.actual),
+    remaining: dollars(l.budget - l.actual),
+    ...(l.expected ? { planned_by_today: dollars(l.expected) } : {}),
+    ...(l.upcoming ? { recurring_due_soon: dollars(l.upcoming) } : {}),
+    ...(l.rollover ? { rolled_over: dollars(l.rollover) } : {}),
+    ...(l.lines?.length ? { by_debt: l.lines.map(line) } : {}),
+  });
+  const months = history?.buckets.map((k) => k.start.slice(0, 7)) ?? [];
+  const perMonth = (lines: Report["spending"]["lines"]) =>
+    lines.filter((l) => l.total !== 0).map((l) => ({ name: l.name, total: dollars(l.total), by_month: Object.fromEntries(months.map((m, i) => [m, dollars(l.values[i] ?? 0)])) }));
+  return {
+    title: "your budget",
+    page: `Budget › ${periodLabel(b)}`,
+    suggestions: ["How am I doing this month?", "Which budgets are unrealistic compared to past months?", "Where could I cut back?", "Does my budget follow good practice?"],
+    data: {
+      view: b.view,
+      period: { start: b.start, end: b.end, today: b.today },
+      summary: Object.fromEntries(Object.entries(b.summary).map(([k, v]) => [k, k.endsWith("_count") ? v : dollars(v)])),
+      groups: b.groups.map((g) => ({ name: g.name, kind: g.kind, budget: dollars(g.budget), actual: dollars(g.actual), lines: g.lines.map(line) })),
+      past_months: history
+        ? { months, income_by_month: history.income.values.map(dollars), spending_by_month: history.spending.values.map(dollars), spending_by_category: perMonth(history.spending.lines), income_by_category: perMonth(history.income.lines) }
+        : "loading",
+      debt_repayment_counts: b.settings.debt_actual === "paid" ? "total paid to each debt" : "net paydown (payments minus new charges on that debt)",
+    },
+  };
 }

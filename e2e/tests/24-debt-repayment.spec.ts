@@ -74,3 +74,25 @@ test("payoff schedule per debt, saved plan, and Debt Repayment budget lines", as
   await expect.poll(async () => (await (await page.request.get("/api/settings", { headers })).json()).budget.debt_actual).toBe("paid");
   await page.getByTestId("debt-actual-setting").selectOption("net");
 });
+
+test("chat about the budget, and what AI costs", async ({ page }) => {
+  await login(page);
+  await page.goto("/budget");
+  await page.getByTestId("budget-chat").click();
+  await expect(page.getByRole("dialog")).toContainText("Discuss your budget");
+  await page.getByRole("button", { name: "How am I doing this month?" }).click();
+  await expect(page.getByTestId("chat-assistant").last()).toContainText("Looking at your Budget");
+  // Every request's cost (the fake OpenRouter charges $0.0012) adds up per chat...
+  await expect(page.getByTestId("chat-cost")).toContainText("This chat: $0.00");
+  await shot(page, "244-budget-chat");
+  await page.keyboard.press("Escape");
+
+  // ...and per month in Settings › AI.
+  await page.goto("/settings#ai");
+  const cost = page.getByTestId("ai-cost");
+  await expect(page.getByTestId("ai-cost-month")).toHaveText(/^\$\d+\.\d{2,4}\+?$/);
+  await cost.getByRole("button", { name: "Show breakdown" }).click();
+  await expect(cost).toContainText("Chat");
+  await cost.scrollIntoViewIfNeeded();
+  await shot(page, "245-ai-cost");
+});

@@ -27,6 +27,7 @@ func (s *Server) handleSuggestAccountColor(w http.ResponseWriter, r *http.Reques
 		s.internalError(w, err)
 		return
 	}
+	client.Feature = "colors"
 	name := strings.TrimSpace(a.InstitutionName)
 	if name == "" {
 		name = a.Name

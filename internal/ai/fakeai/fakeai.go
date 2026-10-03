@@ -27,6 +27,10 @@ type Request struct {
 		Type string `json:"type"`
 	} `json:"response_format"`
 	Messages []ai.Message `json:"messages"`
+	// Usage asks for token counts and cost in the reply, like OpenRouter's usage accounting.
+	Usage *struct {
+		Include bool `json:"include"`
+	} `json:"usage"`
 	Tools    []struct {
 		Function struct {
 			Name string `json:"name"`
@@ -108,7 +112,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{
-			"role": "assistant", "content": content}}}})
+			"role": "assistant", "content": content}}}, "usage": usage(req)})
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -120,10 +124,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 		}
 	}
+	done := func() {
+		if u := usage(req); u != nil {
+			send(map[string]any{"choices": []any{}, "usage": u})
+		}
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}
 	last := req.Messages[len(req.Messages)-1]
 	if offers(req, "update_transaction") {
 		emailAgent(req, send)
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		done()
 		return
 	}
 	if last.Role == "user" && len(req.Tools) > 0 {
@@ -133,7 +143,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			send(delta(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "call_1", "type": "function",
 				"function": map[string]any{"name": tool, "arguments": args[:1]}}}}, nil))
 			send(delta(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "function": map[string]any{"arguments": args[1:]}}}}, ptr("tool_calls")))
-			fmt.Fprint(w, "data: [DONE]\n\n")
+			done()
 			return
 		}
 	}
@@ -143,10 +153,25 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		send(delta(map[string]any{"content": strings.Join(words[i:min(i+3, len(words))], "")}, nil))
 	}
 	send(delta(map[string]any{}, ptr("stop")))
-	fmt.Fprint(w, "data: [DONE]\n\n")
+	done()
 }
 
 func ptr(s string) *string { return &s }
+
+// FakeCost is what every request costs when the client asks for usage: $0.0012.
+const FakeCost = "0.0012"
+
+// usage is the reply's usage block, or nil when the request didn't ask for it.
+func usage(req Request) map[string]any {
+	if req.Usage == nil || !req.Usage.Include {
+		return nil
+	}
+	n := 0
+	for _, m := range req.Messages {
+		n += len(m.Content)
+	}
+	return map[string]any{"prompt_tokens": n/4 + 1, "completion_tokens": 20, "total_tokens": n/4 + 21, "cost": json.Number(FakeCost)}
+}
 
 func delta(d map[string]any, finish *string) map[string]any {
 	return map[string]any{"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": finish}}}

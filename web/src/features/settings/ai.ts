@@ -37,3 +37,26 @@ export const modelsQuery = (endpoint: "openrouter" | "email", enabled: boolean) 
   staleTime: 30 * 60_000,
   retry: false,
 });
+
+export type AIUsageMonth = {
+  month: string;
+  requests: number;
+  /** Millionths of a dollar, as OpenRouter reported. */
+  cost_micros: number;
+  /** Requests with no reported cost. */
+  unpriced: number;
+  features: { feature: string; requests: number; cost_micros: number; unpriced: number; tokens: number }[];
+};
+
+export const aiUsageQuery = { queryKey: ["settings", "ai", "usage"], queryFn: () => api.get<{ month: AIUsageMonth; previous: AIUsageMonth }>("/settings/ai/usage") };
+
+export const featureLabels: Record<string, string> = {
+  chat: "Chat",
+  email: "Reading bank emails",
+  categorize: "Categorizing transactions",
+  vision: "Reading budgets & screenshots",
+  budget_import: "Budget import",
+  colors: "Bank colors",
+  wishlist: "Wishlist prices",
+  test: "Connection tests",
+};

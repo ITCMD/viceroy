@@ -71,3 +71,16 @@ func TestErrors(t *testing.T) {
 		t.Errorf("no key error = %v", err)
 	}
 }
+
+func TestMicros(t *testing.T) {
+	for in, want := range map[string]int64{"0.0012": 1200, "0.00000049": 0, "0.0000005": 1, "1.5": 1500000, "0": 0} {
+		if got, ok := ai.Micros(in); !ok || got != want {
+			t.Errorf("Micros(%q) = %d %v, want %d", in, got, ok, want)
+		}
+	}
+	for _, in := range []string{"", "-1", "abc"} {
+		if _, ok := ai.Micros(in); ok {
+			t.Errorf("Micros(%q) accepted", in)
+		}
+	}
+}

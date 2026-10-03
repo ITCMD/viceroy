@@ -245,13 +245,17 @@ func runServe(path string) error {
 		subject = cfg.PublicURL
 	}
 	notifier := notify.New(conn, log, keys, subject)
-	aiset := &aisettings.Store{DB: conn, Box: box, Config: cfg.AI, Referer: cfg.PublicURL}
+	aiset := &aisettings.Store{DB: conn, Box: box, Config: cfg.AI, Referer: cfg.PublicURL, Log: log}
 	cat := &aicat.Service{DB: conn, Log: log, Client: func(ctx context.Context, hh int64) (aicat.Client, aicat.Auto, error) {
 		st, err := aiset.Load(ctx, hh)
-		return st.Email(cfg.AI.BaseURL, cfg.PublicURL), aicat.Auto{On: st.Categorize, Review: st.CatReview}, err
+		return aiset.Track(st.Email(cfg.AI.BaseURL, cfg.PublicURL), hh, "categorize"), aicat.Auto{On: st.Categorize, Review: st.CatReview}, err
 	}}
 	colors := &branding.Service{DB: conn, Log: log, Client: func(ctx context.Context, hh int64) (branding.Client, error) {
-		return aiset.EmailClient(ctx, hh)
+		c, err := aiset.EmailClient(ctx, hh)
+		if c != nil {
+			c.Feature = "colors"
+		}
+		return c, err
 	}}
 	changed := func(hh int64) {
 		notifier.Changed(hh)

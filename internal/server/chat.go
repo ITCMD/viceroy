@@ -100,7 +100,7 @@ func (s *Server) handleGetChatThread(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"thread": chatThreadDTO{t.ID, t.Title, t.UpdatedAt}, "messages": msgs})
+	writeJSON(w, http.StatusOK, map[string]any{"thread": chatThreadDTO{t.ID, t.Title, t.UpdatedAt}, "messages": msgs, "cost": s.threadCost(ctx, HouseholdID(r), t.ID)})
 }
 
 func (s *Server) handleDeleteChatThread(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +136,8 @@ func (s *Server) systemPrompt(ctx context.Context, r *http.Request) string {
 Today is %s (%s).
 You can only read data, through the tools. You cannot change anything: if asked to recategorize, edit a budget or similar, say where in the app to do it (Transactions, Budget, Accounts, Goals, Settings).
 Tool amounts are dollar strings; negative transaction amounts are money out. Budget and report spending are positive numbers.
-Always call a tool for numbers; never guess. Keep answers short and concrete: lead with the answer, then a few bullets or a small markdown table. Format money like $1,234.56.`,
+Always call a tool for numbers; never guess. Keep answers short and concrete: lead with the answer, then a few bullets or a small markdown table. Format money like $1,234.56.
+For advice, apply common personal-finance practice to their actual numbers and say when something is a rule of thumb: an emergency fund of 3-6 months of expenses; roughly 50/30/20 needs/wants/savings as a starting point, not a rule; budgets set from what past months really cost (budget_status or spending_report for earlier dates), not wishes; irregular costs (car repairs, gifts, annual bills) saved for monthly in Non-monthly; high-interest debt paid down before extra saving or investing beyond an employer match; savings and goals budgeted like a bill. Don't recommend specific investments.`,
 		CurrentUser(r).Name, name, budget.FormatDate(today), today.Weekday())
 }
 
@@ -227,6 +228,7 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	send(map[string]any{"type": "thread", "thread": chatThreadDTO{thread.ID, thread.Title, now}})
+	client.Ref = thread.ID
 	err = client.Run(ctx, history, s.chatTools(HouseholdID(r)), func(e ai.Event) { send(e) }, save)
 	if err != nil {
 		if ctx.Err() == nil {
@@ -235,7 +237,23 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 		send(ai.Event{Type: "error", Error: err.Error()})
 		return
 	}
+	send(map[string]any{"type": "cost", "cost": s.threadCost(context.WithoutCancel(ctx), HouseholdID(r), thread.ID)})
 	send(ai.Event{Type: "done"})
+}
+
+// threadCost is what a chat thread's requests cost so far.
+type threadCost struct {
+	Requests   int64 `json:"requests"`
+	CostMicros int64 `json:"cost_micros"`
+	Unpriced   int64 `json:"unpriced"` // requests whose cost the endpoint didn't report
+}
+
+func (s *Server) threadCost(ctx context.Context, hh, id int64) threadCost {
+	u, err := db.New(s.db).AIUsageForRef(ctx, db.AIUsageForRefParams{HouseholdID: hh, Feature: "chat", RefID: sql.NullInt64{Int64: id, Valid: true}})
+	if err != nil {
+		return threadCost{}
+	}
+	return threadCost{u.Requests, u.CostMicros, u.Unpriced}
 }
 
 // trimHistory converts stored rows to model messages, keeping at most maxHistory and starting

@@ -175,6 +175,7 @@ var apiDocs = []apiDoc{
 	doc("Settings", "PATCH", "/settings", "Change household settings.", "paper_cash_enabled, logo, budget {forward_default, week_start, pay_schedule}"),
 	doc("Settings", "GET", "/settings/ai", "AI setup (the key itself is never returned).", ""),
 	doc("Settings", "PATCH", "/settings/ai", "Change AI setup (admin).", "openrouter_key, chat_model, email_model, email_base_url, vision_model, categorize"),
+	doc("Settings", "GET", "/settings/ai/usage", "AI requests and what they cost (as OpenRouter reported) in a month, per feature, with the month before.", "month (YYYY-MM)"),
 	doc("Settings", "GET", "/settings/ai/models", "Models the AI endpoint offers, with prices per million tokens and image/tool support (cached for an hour).", "endpoint (openrouter | email)"),
 	doc("Settings", "POST", "/settings/ai/test", "Check the AI key and model (admin).", "target (chat | email | vision)"),
 	only("session", doc("Settings", "GET", "/settings/api", "REST API switch and keys (admin).", "")),

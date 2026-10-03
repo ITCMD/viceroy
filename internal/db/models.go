@@ -75,6 +75,19 @@ type AiChange struct {
 	UndoneAt       sql.NullInt64 `json:"undone_at"`
 }
 
+type AiUsage struct {
+	ID               int64         `json:"id"`
+	HouseholdID      int64         `json:"household_id"`
+	CreatedAt        int64         `json:"created_at"`
+	Feature          string        `json:"feature"`
+	RefID            sql.NullInt64 `json:"ref_id"`
+	Model            string        `json:"model"`
+	Local            int64         `json:"local"`
+	PromptTokens     int64         `json:"prompt_tokens"`
+	CompletionTokens int64         `json:"completion_tokens"`
+	CostMicros       sql.NullInt64 `json:"cost_micros"`
+}
+
 type ApiKey struct {
 	ID          int64         `json:"id"`
 	HouseholdID int64         `json:"household_id"`
