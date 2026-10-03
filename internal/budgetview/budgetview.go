@@ -19,6 +19,7 @@ const (
 	setWeekStart      = "budget.week_start"
 	setPaySchedule    = "budget.pay_schedule"
 	setUpcomingWindow = "budget.upcoming_window"
+	setDebtActual     = "budget.debt_actual"
 )
 
 type Settings struct {
@@ -28,10 +29,13 @@ type Settings struct {
 	// UpcomingWindow is how far ahead the budget marks recurring charges still to come:
 	// "week" (the next 7 days) or "paycheck" (until the next payday).
 	UpcomingWindow string `json:"upcoming_window"`
+	// DebtActual is what a debt account's Debt Repayment line counts as spent: "net" (payments
+	// less new charges on it, so card purchases aren't counted twice) or "paid" (payments).
+	DebtActual string `json:"debt_actual"`
 }
 
 func LoadSettings(ctx context.Context, q *db.Queries, hh int64) (Settings, error) {
-	out := Settings{PaySchedule: budget.DefaultPaySchedule, UpcomingWindow: "week"}
+	out := Settings{PaySchedule: budget.DefaultPaySchedule, UpcomingWindow: "week", DebtActual: DebtActualNet}
 	rows, err := q.ListHouseholdSettings(ctx, hh)
 	if err != nil {
 		return out, err
@@ -48,6 +52,10 @@ func LoadSettings(ctx context.Context, q *db.Queries, hh int64) (Settings, error
 			if r.Value == "week" || r.Value == "paycheck" {
 				out.UpcomingWindow = r.Value
 			}
+		case setDebtActual:
+			if r.Value == DebtActualNet || r.Value == DebtActualPaid {
+				out.DebtActual = r.Value
+			}
 		case setPaySchedule:
 			var ps budget.PaySchedule
 			if json.Unmarshal([]byte(r.Value), &ps) == nil && ps.Validate() == nil {
@@ -59,7 +67,7 @@ func LoadSettings(ctx context.Context, q *db.Queries, hh int64) (Settings, error
 }
 
 // SaveSettings applies the non-nil fields; it returns a user-facing error for bad input.
-func SaveSettings(ctx context.Context, q *db.Queries, hh int64, forward *bool, weekStart *int, pay *budget.PaySchedule, upcoming *string) (string, error) {
+func SaveSettings(ctx context.Context, q *db.Queries, hh int64, forward *bool, weekStart *int, pay *budget.PaySchedule, upcoming, debtActual *string) (string, error) {
 	set := func(k, v string) error {
 		return q.SetHouseholdSetting(ctx, db.SetHouseholdSettingParams{HouseholdID: hh, Key: k, Value: v})
 	}
@@ -76,6 +84,14 @@ func SaveSettings(ctx context.Context, q *db.Queries, hh int64, forward *bool, w
 			return "Upcoming window must be week or paycheck.", nil
 		}
 		if err := set(setUpcomingWindow, *upcoming); err != nil {
+			return "", err
+		}
+	}
+	if debtActual != nil {
+		if *debtActual != DebtActualNet && *debtActual != DebtActualPaid {
+			return "Debt payments must count as net or paid.", nil
+		}
+		if err := set(setDebtActual, *debtActual); err != nil {
 			return "", err
 		}
 	}
@@ -119,11 +135,16 @@ type Line struct {
 	Expected    int64        `json:"expected"`     // pacing: allowance through today, 0 outside the period
 	MonthBudget int64        `json:"month_budget"` // the editable monthly amount (month of the period start)
 	Chunk       budget.Chunk `json:"chunk"`
-	Hidden      bool         `json:"hidden"` // hidden from the budget (still counted in totals)
+	Hidden      bool         `json:"hidden"`   // hidden from the budget (still counted in totals)
 	Upcoming    int64        `json:"upcoming"` // recurring charges still to come in the upcoming window (set by the API)
 	// Rollover is what a non-monthly category carries into this month from earlier ones
 	// (unspent budget, or overspending when negative). Budget already includes it.
 	Rollover int64 `json:"rollover"`
+	// Debt Repayment: Lines splits the category by debt account (AccountID set) plus Other
+	// (the category's own amount); the line's numbers are their sums.
+	Lines     []Line `json:"lines,omitempty"`
+	AccountID int64  `json:"account_id,omitempty"`
+	Other     bool   `json:"other,omitempty"`
 }
 
 type Group struct {
@@ -216,6 +237,7 @@ func LoadGoalTotals(ctx context.Context, q *db.Queries, hh int64, from, to time.
 // Amounts groups stored budget amounts by category and by goal.
 type Amounts struct {
 	Cats, Goals map[int64][]budget.AmountRow
+	Accounts    map[int64][]budget.AmountRow // Debt Repayment amounts per debt account
 }
 
 func LoadAmounts(ctx context.Context, q *db.Queries, hh int64) (Amounts, error) {
@@ -223,10 +245,12 @@ func LoadAmounts(ctx context.Context, q *db.Queries, hh int64) (Amounts, error) 
 	if err != nil {
 		return Amounts{}, err
 	}
-	idx := Amounts{Cats: map[int64][]budget.AmountRow{}, Goals: map[int64][]budget.AmountRow{}}
+	idx := Amounts{Cats: map[int64][]budget.AmountRow{}, Goals: map[int64][]budget.AmountRow{}, Accounts: map[int64][]budget.AmountRow{}}
 	for _, r := range rows {
 		a := budget.AmountRow{Month: r.Month, Amount: r.AmountCents, Forward: r.Forward == 1}
-		if r.CategoryID.Valid {
+		if r.AccountID.Valid {
+			idx.Accounts[r.AccountID.Int64] = append(idx.Accounts[r.AccountID.Int64], a)
+		} else if r.CategoryID.Valid {
 			idx.Cats[r.CategoryID.Int64] = append(idx.Cats[r.CategoryID.Int64], a)
 		} else {
 			idx.Goals[r.GoalID.Int64] = append(idx.Goals[r.GoalID.Int64], a)
@@ -334,8 +358,26 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 			g.Rollover += withCarry.Budget - l.Budget
 			line.Budget, line.Expected, line.Rollover = withCarry.Budget, withCarry.Expected, carry(p.Start)
 		}
+		if c.Builtin == DebtRepaymentKey {
+			split, err := LoadDebtSplit(ctx, q, hh, c.ID, from, p.End, st.DebtActual)
+			if err != nil {
+				return View{}, err
+			}
+			if subs := split.Lines(p, chunk, amounts, month, now); len(subs) > 0 {
+				line.Lines, line.Budget, line.Actual, line.Expected, line.MonthBudget = subs, 0, 0, 0, 0
+				for _, sl := range subs {
+					line.Budget += sl.Budget
+					line.Actual += sl.Actual
+					line.Expected += sl.Expected
+					line.MonthBudget += sl.MonthBudget
+				}
+			}
+		}
 		if chunk.NoPacing {
 			line.Expected = 0
+			for i := range line.Lines {
+				line.Lines[i].Expected = 0
+			}
 		}
 		g.Lines = append(g.Lines, line)
 		g.Budget += line.Budget

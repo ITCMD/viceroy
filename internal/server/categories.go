@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"viceroy/internal/db"
@@ -90,14 +91,22 @@ type categoryIn struct {
 	GroupID int64  `json:"group_id"` // create only
 }
 
+// categoryIconURL is the icon value of a category using an uploaded image.
+func categoryIconURL(id, v int64) string { return fmt.Sprintf("/api/categories/%d/icon?v=%d", id, v) }
+
 // check trims the input and refuses empty, overlong or duplicate names (another category in
-// the household with the same name, ignoring case).
+// the household with the same name, ignoring case). The icon is an emoji, or the category's
+// current uploaded image left as it is (images are set with PUT /categories/{id}/icon).
 func (in *categoryIn) check(cats []db.Category, self int64) string {
 	in.Name, in.Icon = strings.TrimSpace(in.Name), strings.TrimSpace(in.Icon)
 	if in.Name == "" || utf8.RuneCountInString(in.Name) > 60 {
 		return "Give the category a name (up to 60 characters)."
 	}
-	if len(in.Icon) > 32 || utf8.RuneCountInString(in.Icon) > 8 {
+	keep := false
+	for _, c := range cats {
+		keep = keep || (self != 0 && c.ID == self && c.Icon == in.Icon && strings.HasPrefix(c.Icon, "/api/"))
+	}
+	if !keep && (len(in.Icon) > 32 || utf8.RuneCountInString(in.Icon) > 8 || strings.HasPrefix(in.Icon, "/")) {
 		return "The icon should be a single emoji."
 	}
 	for _, c := range cats {
@@ -176,6 +185,12 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
+	if !strings.HasPrefix(in.Icon, "/api/") { // back to an emoji: drop the uploaded image
+		if err := q.DeleteCategoryIcon(ctx, id); err != nil {
+			s.internalError(w, err)
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, categoryDTO{ID: id, Name: in.Name, Icon: in.Icon})
 }
 
@@ -236,4 +251,53 @@ func (s *Server) handleDeleteCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"moved": moved})
+}
+
+// GET /categories/{id}/icon: an uploaded icon image.
+func (s *Server) handleGetCategoryIcon(w http.ResponseWriter, r *http.Request) {
+	l, err := db.New(s.db).GetCategoryIcon(r.Context(), db.GetCategoryIconParams{CategoryID: txnID(r), HouseholdID: HouseholdID(r)})
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", l.Mime)
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable") // the URL carries ?v=
+	w.Header().Set("Content-Security-Policy", "default-src 'none'")
+	w.Write(l.Data)
+}
+
+// PUT /categories/{id}/icon {image: data URL}: use an uploaded image as the category's icon.
+func (s *Server) handlePutCategoryIcon(w http.ResponseWriter, r *http.Request) {
+	ctx, hh, id := r.Context(), HouseholdID(r), txnID(r)
+	q := db.New(s.db)
+	if _, err := q.GetCategory(ctx, db.GetCategoryParams{ID: id, HouseholdID: hh}); err != nil {
+		writeError(w, http.StatusNotFound, "Category not found.")
+		return
+	}
+	data, mime, ok := readImageUpload(w, r)
+	if !ok {
+		return
+	}
+	now := time.Now().UnixNano()
+	icon := categoryIconURL(id, now)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	defer tx.Rollback()
+	qt := db.New(tx)
+	if err := qt.SetCategoryIcon(ctx, db.SetCategoryIconParams{CategoryID: id, Mime: mime, Data: data, UpdatedAt: now}); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if err := qt.SetCategoryIconText(ctx, db.SetCategoryIconTextParams{Icon: icon, ID: id, HouseholdID: hh}); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"icon": icon})
 }

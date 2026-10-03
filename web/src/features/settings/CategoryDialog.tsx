@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button, Dialog, Field, FormError, Select } from "@/components/ui";
+import { Button, Dialog, Field, FormError, IconPicker, isImageIcon, Select, withIcon } from "@/components/ui";
 import { categoriesQuery, useTxnMutation, type CategoryGroup } from "@/features/transactions/api";
 import { api } from "@/lib/api";
 
@@ -33,10 +33,15 @@ export function CategoryDialog({ draft, onClose }: { draft: CategoryDraft | null
     qc.invalidateQueries({ queryKey: ["categories"] });
     onClose();
   };
-  const save = useTxnMutation(
-    () => (cat ? api.patch(`/categories/${cat.id}`, { name, icon }) : api.post("/categories", { name, icon, group_id: draft!.group.id })),
-    done,
-  );
+  const save = useTxnMutation(async () => {
+    // A new upload (data URL) is saved after the category itself; until then keep the old icon.
+    const upload = icon.startsWith("data:") ? icon : "";
+    const text = upload ? (isImageIcon(cat?.icon) ? cat!.icon : "") : icon;
+    const saved = cat
+      ? await api.patch<{ id: number }>(`/categories/${cat.id}`, { name, icon: text })
+      : await api.post<{ id: number }>("/categories", { name, icon: text, group_id: draft!.group.id });
+    if (upload) await api.put(`/categories/${saved.id}/icon`, { image: upload });
+  }, done);
   const del = useTxnMutation(() => api.del(`/categories/${cat!.id}${moveTo ? `?move_to=${moveTo}` : ""}`), done);
   useEffect(() => {
     if (!draft) {
@@ -46,7 +51,7 @@ export function CategoryDialog({ draft, onClose }: { draft: CategoryDraft | null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft]);
 
-  const others = (data?.groups ?? []).flatMap((g) => g.categories.filter((c) => c.id !== cat?.id).map((c) => ({ value: String(c.id), label: `${g.name} · ${c.icon} ${c.name}` })));
+  const others = (data?.groups ?? []).flatMap((g) => g.categories.filter((c) => c.id !== cat?.id).map((c) => ({ value: String(c.id), label: `${g.name} · ${withIcon(c.icon, c.name)}` })));
   const count = usage.data?.transactions ?? 0;
 
   return (
@@ -110,7 +115,7 @@ export function CategoryDialog({ draft, onClose }: { draft: CategoryDraft | null
           data-testid="category-dialog"
         >
           <div className="grid grid-cols-[4rem_1fr] gap-3">
-            <Field label="Icon" value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={8} className="text-center" placeholder="📦" />
+            <IconPicker value={icon} onChange={setIcon} allowUpload />
             <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Pet care" autoFocus />
           </div>
           <FormError error={save.error} />

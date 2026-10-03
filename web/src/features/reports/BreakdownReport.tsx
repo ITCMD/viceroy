@@ -6,7 +6,7 @@ import { Legend } from "@/components/charts/Legend";
 import { SeriesChart, type Series } from "@/components/charts/SeriesChart";
 import { Treemap } from "@/components/charts/Treemap";
 import { useChartTokens, type ChartTokens } from "@/components/charts/tokens";
-import { Button, Card, CategoryIcon, MoneyText, StatTile } from "@/components/ui";
+import { Button, Card, CategoryIcon, MoneyText, StatTile, withIcon } from "@/components/ui";
 import type { ChatContext } from "@/features/chat/api";
 import { txnSearch } from "@/features/transactions/api";
 import { shade } from "@/lib/color";
@@ -193,7 +193,7 @@ function SpendingMap({ root, side, win }: { root: TreeNode; side: "spending" | "
                     {i === 0 ? title : l.node.name}
                   </button>
                 ) : (
-                  <span>{i === 0 ? title : `${l.node.icon ? l.node.icon + " " : ""}${l.node.name}`}</span>
+                  <span>{i === 0 ? title : withIcon(l.node.icon, l.node.name)}</span>
                 )}
               </span>
             ))}

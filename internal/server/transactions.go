@@ -37,6 +37,8 @@ func (s *Server) transactionRoutes(r chi.Router) {
 	r.Post("/categories", s.handleCreateCategory)
 	r.Patch("/categories/{id}", s.handleUpdateCategory)
 	r.Get("/categories/{id}/usage", s.handleCategoryUsage)
+	r.Get("/categories/{id}/icon", s.handleGetCategoryIcon)
+	r.Put("/categories/{id}/icon", s.handlePutCategoryIcon)
 	r.Delete("/categories/{id}", s.handleDeleteCategory)
 	r.Get("/tags", s.handleListTags)
 	r.Get("/rules", s.handleListRules)

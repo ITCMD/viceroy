@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FileSpreadsheet, Upload } from "lucide-react";
 import { useState } from "react";
-import { Button, Dialog, Field, FormError, Select } from "@/components/ui";
+import { Button, Dialog, Field, FormError, Select, withIcon } from "@/components/ui";
 import { accountLabel, accountsQuery, typeLabels } from "@/features/accounts/api";
 import { categoriesQuery } from "@/features/transactions/api";
 import { api } from "@/lib/api";
@@ -123,7 +123,7 @@ export function MonarchImportDialog({ open, onOpenChange }: { open: boolean; onO
   const catOptions = (name: string) => [
     { value: "none", label: "Leave uncategorized" },
     ...(name ? groups.map((g) => ({ value: `new:${g.id}`, label: `New “${name}” in ${g.name}` })) : []),
-    ...groups.flatMap((g) => g.categories.map((c) => ({ value: String(c.id), label: `${c.icon} ${c.name}` }))),
+    ...groups.flatMap((g) => g.categories.map((c) => ({ value: String(c.id), label: withIcon(c.icon, c.name) }))),
   ];
   const existing = (acctData?.accounts ?? []).filter((a) => a.status !== "closed" && a.status !== "ignored");
   const acctOptions = [

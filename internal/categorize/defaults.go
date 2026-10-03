@@ -18,7 +18,7 @@ var defaults = []defaultGroup{
 	}},
 	{"Fixed", "fixed", [][2]string{
 		{"Rent", "🏠"}, {"Mortgage", "🏡"}, {"Insurance", "🛡️"}, {"Gas & Electric", "⚡"}, {"Water", "💧"},
-		{"Internet & Cable", "🌐"}, {"Phone", "📱"}, {"Loan Repayment", "🏦"}, {"Student Loans", "🎓"}, {"Childcare", "👶"},
+		{"Internet & Cable", "🌐"}, {"Phone", "📱"}, {DebtRepaymentName, "🏦"}, {"Student Loans", "🎓"}, {"Childcare", "👶"},
 	}},
 	{"Flexible", "flexible", [][2]string{
 		{"Groceries", "🛒"}, {"Restaurants & Bars", "🍽️"}, {"Coffee Shops", "☕"}, {"Gas", "⛽"},
@@ -35,6 +35,13 @@ var defaults = []defaultGroup{
 	}},
 }
 
+// DebtRepayment is the builtin key of the category the budget splits into one line per debt
+// account (migration 00024 marked existing "Loan Repayment" categories with it).
+const (
+	DebtRepayment     = "debt_repayment"
+	DebtRepaymentName = "Debt Repayment"
+)
+
 // SeedDefaults creates the starter categories when the household has none.
 func SeedDefaults(ctx context.Context, q *db.Queries, householdID int64) error {
 	n, err := q.CountCategoryGroups(ctx, householdID)
@@ -47,10 +54,16 @@ func SeedDefaults(ctx context.Context, q *db.Queries, householdID int64) error {
 			return err
 		}
 		for ci, c := range g.cats {
-			if _, err := q.CreateCategory(ctx, db.CreateCategoryParams{
+			cat, err := q.CreateCategory(ctx, db.CreateCategoryParams{
 				HouseholdID: householdID, GroupID: grp.ID, Name: c[0], Icon: c[1], Sort: int64(ci),
-			}); err != nil {
+			})
+			if err != nil {
 				return err
+			}
+			if c[0] == DebtRepaymentName {
+				if err := q.SetCategoryBuiltin(ctx, db.SetCategoryBuiltinParams{Builtin: DebtRepayment, ID: cat.ID, HouseholdID: householdID}); err != nil {
+					return err
+				}
 			}
 		}
 	}

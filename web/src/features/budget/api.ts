@@ -25,6 +25,10 @@ export type BudgetLine = {
   upcoming: number;
   /** Non-monthly: unspent budget (or overspending, negative) carried in from earlier months; `budget` includes it. */
   rollover: number;
+  /** Debt Repayment: one sub-line per debt account (account_id set), then "Other debt payments" (other). */
+  lines?: BudgetLine[];
+  account_id?: number;
+  other?: boolean;
 };
 
 export type GroupKind = "income" | "fixed" | "flexible" | "non_monthly" | "goals";
@@ -33,7 +37,10 @@ export type BudgetGroup = { id: number; name: string; kind: GroupKind; budget: n
 
 export type PaySchedule = { kind: "weekly" | "biweekly" | "semimonthly" | "monthly"; anchor?: string; days?: number[] };
 
-export type BudgetSettings = { forward_default: boolean; week_start: number; pay_schedule: PaySchedule; upcoming_window: "week" | "paycheck" };
+export type BudgetSettings = { forward_default: boolean; week_start: number; pay_schedule: PaySchedule; upcoming_window: "week" | "paycheck";
+  /** What a debt account's Debt Repayment line counts: payments less new charges, or payments. */
+  debt_actual: "net" | "paid";
+};
 
 export type Budget = {
   view: View;
@@ -58,17 +65,38 @@ export type Budget = {
   };
 };
 
+export type DebtLineInfo = {
+  balance: number;
+  apr_bps: number;
+  apr_source: "user" | "missing";
+  min_payment: number;
+  min_payment_source: "user" | "bill" | "missing";
+  /** Every debt has its terms, so the payoff plan exists. */
+  ready: boolean;
+  strategy: "snowball" | "avalanche";
+  extra: number;
+  /** What the saved plan pays on this debt in the month; null before this month or without a plan. */
+  plan_payment: number | null;
+  plan_months: number;
+  mode: "net" | "paid";
+};
+
 export type History = {
   month: string;
   month_budget: number;
-  history: { month: string; budget: number; actual: number }[];
+  /** paid/charged: debt account lines only. */
+  history: { month: string; budget: number; actual: number; paid?: number; charged?: number }[];
   last_month: number;
   average: number;
   chunk: Chunk;
+  debt?: DebtLineInfo;
 };
 
-/** A budget line is either a category or a goal. */
-export type Target = { kind: "category" | "goal"; id: number };
+/**
+ * A budget line is a category, a goal, or a debt account under Debt Repayment. `other` is the
+ * Debt Repayment category's own "Other debt payments" line.
+ */
+export type Target = { kind: "category" | "goal" | "account"; id: number; other?: boolean; /** account: the Debt Repayment category (its timing paces the line). */ categoryId?: number };
 
 export const budgetQuery = (view: View, date: string) =>
   queryOptions({
@@ -79,8 +107,8 @@ export const budgetQuery = (view: View, date: string) =>
 
 export const historyQuery = (t: Target, month: string) =>
   queryOptions({
-    queryKey: ["budget", "history", t.kind, t.id, month],
-    queryFn: () => api.get<History>(`/budget/history?${t.kind}_id=${t.id}&month=${month}`),
+    queryKey: ["budget", "history", t.kind, t.id, !!t.other, month],
+    queryFn: () => api.get<History>(`/budget/history?${t.kind}_id=${t.id}&month=${month}${t.other ? "&part=other" : ""}`),
   });
 
 /** Mutations that change budget numbers refresh every budget view and the goals list. */

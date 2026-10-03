@@ -22,7 +22,8 @@ const views: { value: NonNullable<TxnFilters["view"]>; label: string }[] = [
 export function TransactionsPage() {
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
-  const [account, setAccount] = useState(0);
+  // ?account= (from a budget line) preselects the account filter.
+  const [account, setAccount] = useState(() => Number(new URLSearchParams(window.location.search).get("account")) || 0);
   const [owner, setOwner] = useState(-1); // -1 = everyone, 0 = shared
   const members = useQuery(householdQuery).data?.members ?? [];
   const [view, setView] = useState<NonNullable<TxnFilters["view"]>>("all");

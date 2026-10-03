@@ -11,9 +11,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"viceroy/internal/accounts"
 	"viceroy/internal/budget"
 	"viceroy/internal/budgetview"
 	"viceroy/internal/db"
+	"viceroy/internal/debt"
 	"viceroy/internal/money"
 )
 
@@ -106,10 +108,25 @@ func budgetTarget(ctx context.Context, q *db.Queries, hh int64, catID, goalID *i
 	return cat, goal, "Pick a category or a goal."
 }
 
+// debtTarget checks that accountID is one of hh's debt accounts and finds the household's
+// Debt Repayment category, which its budget amounts belong to.
+func debtTarget(ctx context.Context, q *db.Queries, hh, accountID int64) (cat, acct sql.NullInt64, msg string) {
+	a, err := q.GetAccount(ctx, db.GetAccountParams{ID: accountID, HouseholdID: hh})
+	if err != nil || !accounts.IsLiability(a.Type) {
+		return cat, acct, "Unknown debt account."
+	}
+	c, err := q.GetBuiltinCategory(ctx, db.GetBuiltinCategoryParams{HouseholdID: hh, Builtin: budgetview.DebtRepaymentKey})
+	if err != nil {
+		return cat, acct, "There's no Debt Repayment category."
+	}
+	return sql.NullInt64{Int64: c.ID, Valid: true}, sql.NullInt64{Int64: a.ID, Valid: true}, ""
+}
+
 func (s *Server) handleSetBudgetAmount(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		CategoryID   *int64 `json:"category_id"`
 		GoalID       *int64 `json:"goal_id"`
+		AccountID    *int64 `json:"account_id"` // a debt account's Debt Repayment line
 		Month        string `json:"month"`
 		Amount       string `json:"amount"`
 		ApplyForward bool   `json:"apply_forward"`
@@ -138,7 +155,13 @@ func (s *Server) handleSetBudgetAmount(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	q := db.New(tx)
-	cat, goal, msg := budgetTarget(ctx, q, hh, in.CategoryID, in.GoalID)
+	var cat, goal, acct sql.NullInt64
+	var msg string
+	if in.AccountID != nil {
+		cat, acct, msg = debtTarget(ctx, q, hh, *in.AccountID)
+	} else {
+		cat, goal, msg = budgetTarget(ctx, q, hh, in.CategoryID, in.GoalID)
+	}
 	if msg != "" {
 		bad(msg)
 		return
@@ -151,15 +174,17 @@ func (s *Server) handleSetBudgetAmount(w http.ResponseWriter, r *http.Request) {
 	rows := idx.Cats[cat.Int64]
 	if goal.Valid {
 		rows = idx.Goals[goal.Int64]
+	} else if acct.Valid {
+		rows = idx.Accounts[acct.Int64]
 	}
 	rows = budget.SetAmount(rows, in.Month, amt, in.ApplyForward)
-	if err := q.DeleteBudgetAmountsFor(ctx, db.DeleteBudgetAmountsForParams{HouseholdID: hh, CategoryID: cat, GoalID: goal}); err != nil {
+	if err := q.DeleteBudgetAmountsFor(ctx, db.DeleteBudgetAmountsForParams{HouseholdID: hh, CategoryID: cat, GoalID: goal, AccountID: acct}); err != nil {
 		s.internalError(w, err)
 		return
 	}
 	for _, a := range rows {
 		if err := q.InsertBudgetAmount(ctx, db.InsertBudgetAmountParams{
-			HouseholdID: hh, CategoryID: cat, GoalID: goal, Month: a.Month, AmountCents: a.Amount, Forward: b2i(a.Forward),
+			HouseholdID: hh, CategoryID: cat, GoalID: goal, AccountID: acct, Month: a.Month, AmountCents: a.Amount, Forward: b2i(a.Forward),
 		}); err != nil {
 			s.internalError(w, err)
 			return
@@ -225,6 +250,26 @@ type historyMonthDTO struct {
 	Month  string `json:"month"`
 	Budget int64  `json:"budget"`
 	Actual int64  `json:"actual"`
+	// Debt account lines: money paid in and charged that month (Actual is their difference in
+	// net mode, Paid in paid mode).
+	Paid    *int64 `json:"paid,omitempty"`
+	Charged *int64 `json:"charged,omitempty"`
+}
+
+// debtLineInfo backs a debt account's budget editor: its terms and what the saved payoff plan
+// pays on it in the month being edited.
+type debtLineInfo struct {
+	Balance          int64         `json:"balance"`
+	APRBps           int64         `json:"apr_bps"`
+	APRSource        string        `json:"apr_source"`
+	MinPayment       int64         `json:"min_payment"`
+	MinPaymentSource string        `json:"min_payment_source"`
+	Ready            bool          `json:"ready"` // every debt has its terms, so a plan exists
+	Strategy         debt.Strategy `json:"strategy"`
+	Extra            int64         `json:"extra"`
+	PlanPayment      *int64        `json:"plan_payment"` // nil: no plan, or a month before this one
+	PlanMonths       int           `json:"plan_months"`  // when the plan pays this debt off (1 = this month, 0 = never)
+	Mode             string        `json:"mode"`         // budget.debt_actual: net | paid
 }
 
 // handleBudgetHistory backs the edit dialog: the month's amount plus the six months before it.
@@ -234,6 +279,10 @@ func (s *Server) handleBudgetHistory(w http.ResponseWriter, r *http.Request) {
 	m, err := budget.ParseMonth(r.URL.Query().Get("month"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "month must be YYYY-MM")
+		return
+	}
+	if v, ok := queryInt(r, "account_id"); ok {
+		s.debtLineHistory(w, r, v, m)
 		return
 	}
 	var catID, goalID *int64
@@ -269,7 +318,15 @@ func (s *Server) handleBudgetHistory(w http.ResponseWriter, r *http.Request) {
 		if kind, err := q.GetCategoryGroupKind(ctx, c.GroupID); err == nil && kind != "income" {
 			sign = -1
 		}
-		totals, err = budgetview.LoadCategoryTotals(ctx, q, hh, first, end)
+		if c.Builtin == budgetview.DebtRepaymentKey && r.URL.Query().Get("part") == "other" {
+			// Other debt payments: Debt Repayment spending no debt account line explains.
+			var split *budgetview.DebtSplit
+			if split, err = budgetview.LoadDebtSplit(ctx, q, hh, id, first, end, budgetview.DebtActualNet); err == nil {
+				totals, sign = budgetview.Totals{id: split.Other[0]}, 1
+			}
+		} else {
+			totals, err = budgetview.LoadCategoryTotals(ctx, q, hh, first, end)
+		}
 	} else {
 		rows = idx.Goals[goal.Int64]
 		totals, err = budgetview.LoadGoalTotals(ctx, q, hh, first, end)
@@ -478,4 +535,92 @@ func (s *Server) handleDeleteGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// debtLineHistory is handleBudgetHistory for a debt account's Debt Repayment line.
+func (s *Server) debtLineHistory(w http.ResponseWriter, r *http.Request, accountID int64, m time.Time) {
+	ctx, hh := r.Context(), HouseholdID(r)
+	q := db.New(s.db)
+	cat, acct, msg := debtTarget(ctx, q, hh, accountID)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	st, err := budgetview.LoadSettings(ctx, q, hh)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	c, err := q.GetCategory(ctx, db.GetCategoryParams{ID: cat.Int64, HouseholdID: hh})
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	idx, err := budgetview.LoadAmounts(ctx, q, hh)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	first, end := m.AddDate(0, -6, 0), m.AddDate(0, 1, 0)
+	split, err := budgetview.LoadDebtSplit(ctx, q, hh, cat.Int64, first, end, st.DebtActual)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	rows := idx.Accounts[acct.Int64]
+	spent := split.Spent(acct.Int64)
+	hist := []historyMonthDTO{}
+	var sum int64
+	for i := 0; i <= 6; i++ {
+		ms := first.AddDate(0, i, 0)
+		me := ms.AddDate(0, 1, 0)
+		paid, charged := split.Paid.Sum(acct.Int64, ms, me), split.Charged.Sum(acct.Int64, ms, me)
+		a := spent(ms, me)
+		hist = append(hist, historyMonthDTO{Month: budget.MonthKey(ms), Budget: budget.Resolve(rows, budget.MonthKey(ms)), Actual: a, Paid: &paid, Charged: &charged})
+		if i < 6 {
+			sum += a
+		}
+	}
+
+	info := debtLineInfo{Mode: st.DebtActual, APRSource: "missing", MinPaymentSource: "missing"}
+	plan, err := s.loadDebtPlan(ctx, hh)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	info.Strategy, info.Extra = plan.Strategy, plan.Extra
+	rep, err := s.debtReport(ctx, hh, plan.Extra)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	info.Ready = rep.Ready && len(rep.Plans) > 0
+	for _, d := range rep.Debts {
+		if d.AccountID == acct.Int64 {
+			info.Balance, info.APRBps, info.APRSource, info.MinPayment, info.MinPaymentSource = d.Balance, d.APRBps, d.APRSource, d.MinPayment, d.MinPaymentSource
+		}
+	}
+	// Plan month 1 is this month; earlier months have no suggestion.
+	if p, ok := rep.Plans[string(plan.Strategy)]; ok && info.Ready {
+		today := budgetview.Today()
+		k := (m.Year()-today.Year())*12 + int(m.Month()-today.Month()) + 1
+		for _, d := range p.Debts {
+			if d.ID == acct.Int64 {
+				info.PlanMonths = d.Months
+				if k >= 1 {
+					v := p.PaymentIn(d.ID, k)
+					info.PlanPayment = &v
+				}
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"month":        budget.MonthKey(m),
+		"month_budget": budget.Resolve(rows, budget.MonthKey(m)),
+		"history":      hist,
+		"last_month":   hist[5].Actual,
+		"average":      (sum + 3) / 6,
+		"chunk":        budgetview.ParseChunk(c.Chunk),
+		"debt":         info,
+	})
 }

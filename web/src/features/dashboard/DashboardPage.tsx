@@ -6,7 +6,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Legend } from "@/components/charts/Legend";
 import { SeriesChart, type Series } from "@/components/charts/SeriesChart";
 import { useChartTokens } from "@/components/charts/tokens";
-import { Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader } from "@/components/ui";
+import { Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader, Glyph } from "@/components/ui";
 import { ChatSheet } from "@/features/chat/ChatSheet";
 import { accountsQuery, accountSubtitle } from "@/features/accounts/api";
 import { NetWorthCard } from "@/features/accounts/NetWorthCard";
@@ -243,7 +243,7 @@ function GoalsCard() {
               <li key={g.id}>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <span className="truncate font-medium">
-                    {g.icon && <span aria-hidden>{g.icon} </span>}
+                    {g.icon && <><Glyph icon={g.icon} />{" "}</>}
                     {g.name}
                   </span>
                   <span className="text-[13px] text-muted tabular">

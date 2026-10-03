@@ -118,7 +118,7 @@ func (q *Queries) CountCategoryTransactions(ctx context.Context, arg CountCatego
 }
 
 const createCategory = `-- name: CreateCategory :one
-INSERT INTO categories (household_id, group_id, name, icon, sort) VALUES (?, ?, ?, ?, ?) RETURNING id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden
+INSERT INTO categories (household_id, group_id, name, icon, sort) VALUES (?, ?, ?, ?, ?) RETURNING id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden, builtin
 `
 
 type CreateCategoryParams struct {
@@ -148,6 +148,7 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 		&i.Archived,
 		&i.Chunk,
 		&i.BudgetHidden,
+		&i.Builtin,
 	)
 	return i, err
 }
@@ -267,6 +268,15 @@ func (q *Queries) DeleteCategory(ctx context.Context, arg DeleteCategoryParams) 
 	return result.RowsAffected()
 }
 
+const deleteCategoryIcon = `-- name: DeleteCategoryIcon :exec
+DELETE FROM category_icons WHERE category_id = ?
+`
+
+func (q *Queries) DeleteCategoryIcon(ctx context.Context, categoryID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteCategoryIcon, categoryID)
+	return err
+}
+
 const deleteManualTransaction = `-- name: DeleteManualTransaction :exec
 DELETE FROM transactions WHERE id = ? AND household_id = ? AND source = 'manual'
 `
@@ -296,7 +306,7 @@ func (q *Queries) DeleteRule(ctx context.Context, arg DeleteRuleParams) error {
 }
 
 const getCategory = `-- name: GetCategory :one
-SELECT id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden FROM categories WHERE id = ? AND household_id = ?
+SELECT id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden, builtin FROM categories WHERE id = ? AND household_id = ?
 `
 
 type GetCategoryParams struct {
@@ -317,7 +327,32 @@ func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (Categ
 		&i.Archived,
 		&i.Chunk,
 		&i.BudgetHidden,
+		&i.Builtin,
 	)
+	return i, err
+}
+
+const getCategoryIcon = `-- name: GetCategoryIcon :one
+
+SELECT i.mime, i.data FROM category_icons i JOIN categories c ON c.id = i.category_id
+WHERE i.category_id = ? AND c.household_id = ?
+`
+
+type GetCategoryIconParams struct {
+	CategoryID  int64 `json:"category_id"`
+	HouseholdID int64 `json:"household_id"`
+}
+
+type GetCategoryIconRow struct {
+	Mime string `json:"mime"`
+	Data []byte `json:"data"`
+}
+
+// ---- uploaded category icons ----
+func (q *Queries) GetCategoryIcon(ctx context.Context, arg GetCategoryIconParams) (GetCategoryIconRow, error) {
+	row := q.db.QueryRowContext(ctx, getCategoryIcon, arg.CategoryID, arg.HouseholdID)
+	var i GetCategoryIconRow
+	err := row.Scan(&i.Mime, &i.Data)
 	return i, err
 }
 
@@ -622,7 +657,7 @@ func (q *Queries) LinkTransaction(ctx context.Context, arg LinkTransactionParams
 }
 
 const listCategories = `-- name: ListCategories :many
-SELECT id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden FROM categories WHERE household_id = ? ORDER BY sort, id
+SELECT id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden, builtin FROM categories WHERE household_id = ? ORDER BY sort, id
 `
 
 func (q *Queries) ListCategories(ctx context.Context, householdID int64) ([]Category, error) {
@@ -644,6 +679,7 @@ func (q *Queries) ListCategories(ctx context.Context, householdID int64) ([]Cate
 			&i.Archived,
 			&i.Chunk,
 			&i.BudgetHidden,
+			&i.Builtin,
 		); err != nil {
 			return nil, err
 		}
@@ -1580,6 +1616,43 @@ type RenameMerchantParams struct {
 
 func (q *Queries) RenameMerchant(ctx context.Context, arg RenameMerchantParams) error {
 	_, err := q.db.ExecContext(ctx, renameMerchant, arg.Name, arg.ID, arg.HouseholdID)
+	return err
+}
+
+const setCategoryIcon = `-- name: SetCategoryIcon :exec
+INSERT INTO category_icons (category_id, mime, data, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT (category_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, updated_at = excluded.updated_at
+`
+
+type SetCategoryIconParams struct {
+	CategoryID int64  `json:"category_id"`
+	Mime       string `json:"mime"`
+	Data       []byte `json:"data"`
+	UpdatedAt  int64  `json:"updated_at"`
+}
+
+func (q *Queries) SetCategoryIcon(ctx context.Context, arg SetCategoryIconParams) error {
+	_, err := q.db.ExecContext(ctx, setCategoryIcon,
+		arg.CategoryID,
+		arg.Mime,
+		arg.Data,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
+const setCategoryIconText = `-- name: SetCategoryIconText :exec
+UPDATE categories SET icon = ? WHERE id = ? AND household_id = ?
+`
+
+type SetCategoryIconTextParams struct {
+	Icon        string `json:"icon"`
+	ID          int64  `json:"id"`
+	HouseholdID int64  `json:"household_id"`
+}
+
+func (q *Queries) SetCategoryIconText(ctx context.Context, arg SetCategoryIconTextParams) error {
+	_, err := q.db.ExecContext(ctx, setCategoryIconText, arg.Icon, arg.ID, arg.HouseholdID)
 	return err
 }
 

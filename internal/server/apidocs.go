@@ -93,6 +93,8 @@ var apiDocs = []apiDoc{
 	doc("Transactions", "GET", "/categories", "Category groups and their categories.", ""),
 	doc("Transactions", "POST", "/categories", "Add a category at the end of a group.", "name, icon, group_id"),
 	doc("Transactions", "PATCH", "/categories/{id}", "Rename a category or change its icon.", "name, icon"),
+	doc("Transactions", "GET", "/categories/{id}/icon", "A category's uploaded icon image.", ""),
+	doc("Transactions", "PUT", "/categories/{id}/icon", "Use an uploaded image (PNG, JPEG, WebP or GIF data URL, 256 KB at most) as a category's icon; setting an emoji with PATCH removes it.", "image"),
 	doc("Transactions", "GET", "/categories/{id}/usage", "How many transactions use a category.", ""),
 	doc("Transactions", "DELETE", "/categories/{id}", "Delete a category; its transactions and rules move to move_to or become uncategorized.", "move_to (category id, optional)"),
 	doc("Transactions", "PUT", "/categories/layout", "Reorder categories and move them between Fixed, Flexible and Non-monthly.", "groups [{id, category_ids in order}]"),
@@ -129,7 +131,8 @@ var apiDocs = []apiDoc{
 
 	doc("Reports", "GET", "/reports", "Income and spending per period, broken down by category, group or merchant.", "from (YYYY-MM-DD or all), to, interval (month | quarter | year), by (category | group | merchant)"),
 	doc("Reports", "GET", "/reports/tree", "Income by category and merchant, spending by group, category and merchant (plus goal contributions and uncategorized).", "from (YYYY-MM-DD or all), to"),
-	doc("Reports", "GET", "/reports/debt", "Debts with APR, minimum payment and interest, owed balances over two years, and payoff plans (minimum, snowball, avalanche).", "extra (dollars a month beyond the minimums)"),
+	doc("Reports", "GET", "/reports/debt", "Debts with APR, minimum payment and interest, owed balances over two years, and payoff plans (minimum, snowball, avalanche).", "extra (dollars a month beyond the minimums; default: the saved plan's)"),
+	doc("Reports", "PUT", "/reports/debt/plan", "Save the payoff plan the household follows (the budget suggests its payments).", "strategy (snowball | avalanche), extra (dollars a month)"),
 	doc("Reports", "GET", "/reports/spending-pace", "Cumulative spending by day, this month vs last.", "month (YYYY-MM)"),
 	doc("Recurring", "GET", "/recurring", "Tracked recurring items, suggestions, what's due before the next payday, and due dates in a range.", "from, to (YYYY-MM-DD; default this month)"),
 	doc("Recurring", "PUT", "/recurring/dismissed", "Hide or restore a suggested recurring series.", "key, dismissed"),

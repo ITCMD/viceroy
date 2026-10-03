@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -45,29 +46,99 @@ type debtReport struct {
 	History         []debtHistoryPoint   `json:"history"`
 	Start           string               `json:"start"` // YYYY-MM of plan month 0 (this month)
 	Extra           int64                `json:"extra"`
-	Ready           bool                 `json:"ready"` // every debt has an APR and a minimum; plans are empty until then
+	Strategy        debt.Strategy        `json:"strategy"` // the saved plan's strategy (snowball | avalanche)
+	Ready           bool                 `json:"ready"`    // every debt has an APR and a minimum; plans are empty until then
 	Plans           map[string]debt.Plan `json:"plans"`
 }
 
+const setDebtPlan = "debt.plan"
+
+// debtPlan is the payoff plan the household follows: saved from Debt Free Future, read by the
+// budget to suggest each debt's payment.
+type debtPlan struct {
+	Strategy debt.Strategy `json:"strategy"`
+	Extra    int64         `json:"extra"` // cents a month beyond the minimums
+}
+
+func (s *Server) loadDebtPlan(ctx context.Context, hh int64) (debtPlan, error) {
+	p := debtPlan{Strategy: debt.Avalanche, Extra: 10000}
+	rows, err := db.New(s.db).ListHouseholdSettings(ctx, hh)
+	if err != nil {
+		return p, err
+	}
+	for _, r := range rows {
+		if r.Key == setDebtPlan {
+			var v debtPlan
+			if json.Unmarshal([]byte(r.Value), &v) == nil && (v.Strategy == debt.Snowball || v.Strategy == debt.Avalanche) && v.Extra >= 0 {
+				p = v
+			}
+		}
+	}
+	return p, nil
+}
+
+func parseExtra(v string) (int64, bool) {
+	c, err := money.ParseCents(strings.TrimSpace(v))
+	return c, err == nil && c >= 0 && c <= 100_000_000
+}
+
 // GET /reports/debt?extra=200: debts owed with their cost, two years of balances, and payoff
-// plans (minimums only, snowball and avalanche with extra dollars a month on top). Rates and
-// minimums are never guessed: the plans are only run once the user has entered them all.
+// plans (minimums only, snowball and avalanche with extra dollars a month on top; extra
+// defaults to the saved plan's). Rates and minimums are never guessed: the plans are only run
+// once the user has entered them all.
 func (s *Server) handleDebtReport(w http.ResponseWriter, r *http.Request) {
-	var extra int64
-	if v := strings.TrimSpace(r.URL.Query().Get("extra")); v != "" {
-		c, err := money.ParseCents(v)
-		if err != nil || c < 0 || c > 100_000_000 {
+	ctx, hh := r.Context(), HouseholdID(r)
+	plan, err := s.loadDebtPlan(ctx, hh)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	extra := plan.Extra
+	if v := r.URL.Query().Get("extra"); strings.TrimSpace(v) != "" {
+		c, ok := parseExtra(v)
+		if !ok {
 			writeError(w, http.StatusBadRequest, "extra must be a dollar amount like 200")
 			return
 		}
 		extra = c
 	}
-	rep, err := s.debtReport(r.Context(), HouseholdID(r), extra)
+	rep, err := s.debtReport(ctx, hh, extra)
 	if err != nil {
 		s.internalError(w, err)
 		return
 	}
+	rep.Strategy = plan.Strategy
 	writeJSON(w, http.StatusOK, rep)
+}
+
+// PUT /reports/debt/plan {strategy, extra}: the plan to follow.
+func (s *Server) handleSaveDebtPlan(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Strategy debt.Strategy `json:"strategy"`
+		Extra    string        `json:"extra"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.Strategy != debt.Snowball && in.Strategy != debt.Avalanche {
+		writeError(w, http.StatusBadRequest, "Strategy must be snowball or avalanche.")
+		return
+	}
+	p := debtPlan{Strategy: in.Strategy}
+	if strings.TrimSpace(in.Extra) != "" {
+		c, ok := parseExtra(in.Extra)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Extra must be a dollar amount like 200.")
+			return
+		}
+		p.Extra = c
+	}
+	b, _ := json.Marshal(p)
+	if err := db.New(s.db).SetHouseholdSetting(r.Context(), db.SetHouseholdSettingParams{HouseholdID: HouseholdID(r), Key: setDebtPlan, Value: string(b)}); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
 }
 
 func (s *Server) debtReport(ctx context.Context, hh int64, extra int64) (debtReport, error) {

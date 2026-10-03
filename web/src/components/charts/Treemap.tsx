@@ -1,3 +1,4 @@
+import { Glyph } from "@/components/ui";
 import clsx from "clsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { inkFor } from "@/lib/color";
@@ -109,7 +110,7 @@ export function Treemap({
                 {!tiny && (
                   <span className="min-w-0">
                     <span className={clsx("block truncate font-medium leading-tight", roomy ? "text-[13px]" : "text-[11px]")}>
-                      {it.icon && <span className="mr-1">{it.icon}</span>}
+                      {it.icon && <Glyph icon={it.icon} className="mr-1" />}
                       {it.label}
                     </span>
                     {r.h > 34 && <span className="block truncate text-[11px] leading-tight opacity-90">{formatMoney(it.value, { whole: true })}</span>}

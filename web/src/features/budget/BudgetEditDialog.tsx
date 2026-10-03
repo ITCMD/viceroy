@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Info, List as ListIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BarChart } from "@/components/charts/BarChart";
-import { Button, Dialog, Field, FormError, MoneyText, Segmented, Select, Switch } from "@/components/ui";
+import { Button, Dialog, Field, FormError, MoneyText, Segmented, Select, Switch, Glyph } from "@/components/ui";
 import { api } from "@/lib/api";
+import { formatMoney } from "@/lib/format";
 import {
   centsToInput,
   historyQuery,
@@ -14,6 +15,8 @@ import {
   useBudgetMutation,
   type BudgetLine,
   type Chunk,
+  type DebtLineInfo,
+  type History,
   type Target,
 } from "./api";
 
@@ -82,14 +85,17 @@ export function BudgetEditDialog({
     setHidden(line.hidden);
   }, [line, forwardDefault]);
 
+  // Debt Repayment lines (a debt account, or Other) share the category's timing.
+  const chunkCategory = target?.kind === "category" ? target.id : target?.kind === "account" ? target.categoryId : undefined;
+  const plainCategory = target?.kind === "category" && !target.other;
   const save = useBudgetMutation(async () => {
     if (!target || !line) return;
     await api.put("/budget/amount", { [`${target.kind}_id`]: target.id, month, amount, apply_forward: forward });
     const full: Chunk = noPacing ? { ...chunk, no_pacing: true } : chunk;
-    if (target.kind === "category" && !sameChunk(full, line.chunk)) {
-      await api.put(`/budget/categories/${target.id}/chunk`, full);
+    if (chunkCategory && !sameChunk(full, line.chunk)) {
+      await api.put(`/budget/categories/${chunkCategory}/chunk`, full);
     }
-    if (target.kind === "category" && hidden !== line.hidden) {
+    if (plainCategory && hidden !== line.hidden) {
       await api.put(`/budget/categories/${target.id}/hidden`, { hidden });
     }
   }, onClose);
@@ -114,7 +120,7 @@ export function BudgetEditDialog({
       onOpenChange={(o) => !o && onClose()}
       title={
         <span className="flex items-center gap-2">
-          {line?.icon && <span aria-hidden>{line.icon}</span>}
+          <Glyph icon={line?.icon} />
           {line?.name}
         </span>
       }
@@ -158,13 +164,14 @@ export function BudgetEditDialog({
           autoFocus
           data-testid="budget-amount"
         />
+        {hist?.debt && <DebtSuggestions d={hist.debt} month={month} onUse={(c) => setAmount(centsToInput(c))} />}
 
         <div>
           <BarChart
             labels={past.map((h) => shortMonth(h.month))}
             values={past.map((h) => Math.max(0, h.actual))}
             target={past.map((h) => h.budget)}
-            valueLabel={target?.kind === "goal" ? "Contributed" : "Spent"}
+            valueLabel={target?.kind === "goal" ? "Contributed" : target?.kind === "account" ? (hist?.debt?.mode === "paid" ? "Paid" : "Paid down") : "Spent"}
             highlight={past.length - 1}
             height={150}
           />
@@ -182,6 +189,7 @@ export function BudgetEditDialog({
               </dd>
             </div>
           </dl>
+          {hist?.debt && <PaidBreakdown h={hist} />}
           {!!line?.rollover && (
             <p className="mt-2 text-[13px] text-muted" data-testid="budget-rollover-note">
               {line.rollover > 0 ? "Unspent" : "Overspent"} in earlier months:{" "}
@@ -191,14 +199,14 @@ export function BudgetEditDialog({
           )}
         </div>
 
-        {target?.kind === "category" && (
+        {chunkCategory && (
           <label className="flex items-center gap-2 text-[13px]" title="Use this if this happens randomly all at once in a month.">
             <input type="checkbox" className="size-4 accent-accent" checked={noPacing} onChange={(e) => setNoPacing(e.target.checked)} />
             <span className="font-medium">Exclude from pacing</span>
             <Info size={13} className="text-muted" aria-label="Use this if this happens randomly all at once in a month." />
           </label>
         )}
-        {target?.kind === "category" && (
+        {chunkCategory && (
           <div className="rounded-lg border border-border">
             <button
               type="button"
@@ -206,7 +214,7 @@ export function BudgetEditDialog({
               onClick={() => setTimingOpen((o) => !o)}
               aria-expanded={timingOpen}
             >
-              <span className="font-medium">When is this spent?</span>
+              <span className="font-medium">{plainCategory ? "When is this spent?" : "When are debt payments made?"}</span>
               <span className="text-muted">{kinds.find((k) => k.value === chunk.kind)?.label}</span>
             </button>
             {timingOpen && (
@@ -236,14 +244,17 @@ export function BudgetEditDialog({
                     <Field label="Starting from" type="date" value={chunk.anchor} onChange={(e) => setChunk({ ...chunk, anchor: e.target.value })} />
                   </div>
                 )}
-                <p className="text-xs text-muted">{kindHints[chunk.kind]} Weekly and paycheck views use this to decide how much of the month's budget each period gets.</p>
+                <p className="text-xs text-muted">
+                  {kindHints[chunk.kind]} Weekly and paycheck views use this to decide how much of the month's budget each period gets.
+                  {!plainCategory && " Applies to every Debt Repayment line."}
+                </p>
               </div>
             )}
           </div>
         )}
 
         <Switch label="Apply to all future months" hint={`Also use this amount after ${monthLabel(month)}.`} checked={forward} onCheckedChange={setForward} />
-        {target?.kind === "category" && (
+        {plainCategory && (
           <Switch
             label="Hide from budget"
             hint="For a category you don't use, like Water when it's included in rent. You can still pick it for transactions, and it shows up again if it has spending."
@@ -255,5 +266,74 @@ export function BudgetEditDialog({
         <button type="submit" hidden />
       </form>
     </Dialog>
+  );
+}
+
+const strategyName = { snowball: "Snowball", avalanche: "Avalanche" };
+
+/** A debt's minimum and what the saved payoff plan pays on it this month, each one click to use. */
+function DebtSuggestions({ d, month, onUse }: { d: DebtLineInfo; month: string; onUse: (cents: number) => void }) {
+  const tile = (label: string, cents: number, hint: string, testid: string) => (
+    <div className="flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2" data-testid={testid}>
+      <div className="min-w-0">
+        <div className="text-xs text-muted">{label}</div>
+        <div className="text-sm font-semibold tabular">{formatMoney(cents)}</div>
+        <div className="truncate text-[11px] text-muted">{hint}</div>
+      </div>
+      <Button type="button" variant="secondary" size="sm" onClick={() => onUse(cents)}>
+        Use
+      </Button>
+    </div>
+  );
+  const planLink = (
+    <Link to={"/reports" as string} className="font-medium text-accent hover:underline">
+      Debt Free Future
+    </Link>
+  );
+  return (
+    <div className="flex flex-col gap-2" data-testid="budget-debt">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {d.min_payment_source !== "missing" ? (
+          tile("Minimum payment", d.min_payment, d.min_payment_source === "bill" ? "From your bank's statement email" : "From your statement", "budget-debt-min")
+        ) : (
+          <div className="rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted">No minimum entered yet. Set it on {planLink}.</div>
+        )}
+        {d.ready && d.plan_payment !== null ? (
+          tile(
+            `${strategyName[d.strategy]} plan`,
+            d.plan_payment,
+            d.plan_payment === 0 ? "Paid off before this month" : `${formatMoney(d.extra, { whole: true })} extra a month across your debts`,
+            "budget-debt-plan",
+          )
+        ) : (
+          <div className="rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted">
+            {d.ready ? `The plan starts this month, so there's nothing to suggest for ${monthLabel(month)}.` : <>Enter every debt's APR and minimum on {planLink} to see what your payoff plan pays here.</>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** This month on a debt account: payments in, new charges, and what counts toward the budget. */
+function PaidBreakdown({ h }: { h: History }) {
+  const cur = h.history.at(-1);
+  if (!cur || cur.paid === undefined) return null;
+  const net = h.debt?.mode !== "paid";
+  return (
+    <p className="mt-2 text-[13px] text-muted" data-testid="budget-debt-breakdown">
+      This month: paid <MoneyText cents={cur.paid} className="font-medium text-text" />
+      {net && (
+        <>
+          {" · "}new charges <MoneyText cents={cur.charged ?? 0} className="font-medium text-text" />
+          {" · "}paid down <MoneyText cents={cur.actual} className={clsx("font-medium", cur.actual < 0 ? "text-negative" : "text-text")} />
+        </>
+      )}
+      .{" "}
+      {net
+        ? "Purchases already count in their own categories, so only the paydown counts here."
+        : "The whole payment counts here."}{" "}
+      Settings › Budget changes this.
+    </p>
   );
 }

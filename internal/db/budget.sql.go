@@ -10,6 +10,63 @@ import (
 	"database/sql"
 )
 
+const categoryTxns = `-- name: CategoryTxns :many
+SELECT t.id, t.account_id, t.date, t.amount_cents
+FROM transactions t JOIN accounts a ON a.id = t.account_id
+WHERE t.household_id = ?1 AND t.category_id = ?2
+  AND t.date >= ?3 AND t.date < ?4
+  AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+ORDER BY t.date, t.id
+`
+
+type CategoryTxnsParams struct {
+	HouseholdID int64         `json:"household_id"`
+	CategoryID  sql.NullInt64 `json:"category_id"`
+	FromDate    string        `json:"from_date"`
+	ToDate      string        `json:"to_date"`
+}
+
+type CategoryTxnsRow struct {
+	ID          int64  `json:"id"`
+	AccountID   int64  `json:"account_id"`
+	Date        string `json:"date"`
+	AmountCents int64  `json:"amount_cents"`
+}
+
+// Single transactions in one category over [from, to), with the account they're on.
+func (q *Queries) CategoryTxns(ctx context.Context, arg CategoryTxnsParams) ([]CategoryTxnsRow, error) {
+	rows, err := q.db.QueryContext(ctx, categoryTxns,
+		arg.HouseholdID,
+		arg.CategoryID,
+		arg.FromDate,
+		arg.ToDate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CategoryTxnsRow
+	for rows.Next() {
+		var i CategoryTxnsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Date,
+			&i.AmountCents,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const clearGoalTransactions = `-- name: ClearGoalTransactions :exec
 UPDATE transactions SET goal_id = NULL WHERE goal_id = ? AND household_id = ?
 `
@@ -150,6 +207,62 @@ func (q *Queries) DailyCategoryTotals(ctx context.Context, arg DailyCategoryTota
 	return items, nil
 }
 
+const dailyDebtAccountFlows = `-- name: DailyDebtAccountFlows :many
+
+SELECT t.account_id, t.date,
+  CAST(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents ELSE 0 END) AS INTEGER) AS paid,
+  CAST(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END) AS INTEGER) AS charged
+FROM transactions t JOIN accounts a ON a.id = t.account_id
+WHERE t.household_id = ?1 AND t.date >= ?2 AND t.date < ?3
+  AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+  AND a.type IN ('credit_card', 'loan', 'mortgage', 'other_liability')
+GROUP BY t.account_id, t.date
+`
+
+type DailyDebtAccountFlowsParams struct {
+	HouseholdID int64  `json:"household_id"`
+	FromDate    string `json:"from_date"`
+	ToDate      string `json:"to_date"`
+}
+
+type DailyDebtAccountFlowsRow struct {
+	AccountID int64  `json:"account_id"`
+	Date      string `json:"date"`
+	Paid      int64  `json:"paid"`
+	Charged   int64  `json:"charged"`
+}
+
+// ---- debt repayment ----
+// Money in (payments, refunds) and out (charges, interest) per day on debt accounts over
+// [from, to), with the same exclusions as DailyCategoryTotals.
+func (q *Queries) DailyDebtAccountFlows(ctx context.Context, arg DailyDebtAccountFlowsParams) ([]DailyDebtAccountFlowsRow, error) {
+	rows, err := q.db.QueryContext(ctx, dailyDebtAccountFlows, arg.HouseholdID, arg.FromDate, arg.ToDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DailyDebtAccountFlowsRow
+	for rows.Next() {
+		var i DailyDebtAccountFlowsRow
+		if err := rows.Scan(
+			&i.AccountID,
+			&i.Date,
+			&i.Paid,
+			&i.Charged,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const dailyGoalTotals = `-- name: DailyGoalTotals :many
 SELECT t.goal_id AS goal_id, t.date, CAST(SUM(ABS(t.amount_cents)) AS INTEGER) AS total
 FROM transactions t JOIN accounts a ON a.id = t.account_id
@@ -195,21 +308,73 @@ func (q *Queries) DailyGoalTotals(ctx context.Context, arg DailyGoalTotalsParams
 	return items, nil
 }
 
+const debtAccountPayments = `-- name: DebtAccountPayments :many
+SELECT t.account_id, t.date, t.amount_cents
+FROM transactions t JOIN accounts a ON a.id = t.account_id
+WHERE t.household_id = ?1 AND t.date >= ?2 AND t.date < ?3
+  AND t.amount_cents > 0 AND t.hidden = 0 AND t.linked_txn_id IS NULL AND a.status != 'ignored'
+  AND a.type IN ('credit_card', 'loan', 'mortgage', 'other_liability')
+ORDER BY t.date, t.id
+`
+
+type DebtAccountPaymentsParams struct {
+	HouseholdID int64  `json:"household_id"`
+	FromDate    string `json:"from_date"`
+	ToDate      string `json:"to_date"`
+}
+
+type DebtAccountPaymentsRow struct {
+	AccountID   int64  `json:"account_id"`
+	Date        string `json:"date"`
+	AmountCents int64  `json:"amount_cents"`
+}
+
+// Single payments into debt accounts over [from, to): the other side of a payment made from
+// a bank account, used to tell which debt a Debt Repayment transaction paid.
+func (q *Queries) DebtAccountPayments(ctx context.Context, arg DebtAccountPaymentsParams) ([]DebtAccountPaymentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, debtAccountPayments, arg.HouseholdID, arg.FromDate, arg.ToDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DebtAccountPaymentsRow
+	for rows.Next() {
+		var i DebtAccountPaymentsRow
+		if err := rows.Scan(&i.AccountID, &i.Date, &i.AmountCents); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteBudgetAmountsFor = `-- name: DeleteBudgetAmountsFor :exec
 DELETE FROM budget_amounts
 WHERE household_id = ?1
-  AND category_id IS ?2 AND goal_id IS ?3
+  AND category_id IS ?2 AND goal_id IS ?3 AND account_id IS ?4
 `
 
 type DeleteBudgetAmountsForParams struct {
 	HouseholdID int64         `json:"household_id"`
 	CategoryID  sql.NullInt64 `json:"category_id"`
 	GoalID      sql.NullInt64 `json:"goal_id"`
+	AccountID   sql.NullInt64 `json:"account_id"`
 }
 
-// All rows of one category or goal are rewritten together (see budget.SetAmount).
+// All rows of one category, goal or debt account are rewritten together (see budget.SetAmount).
 func (q *Queries) DeleteBudgetAmountsFor(ctx context.Context, arg DeleteBudgetAmountsForParams) error {
-	_, err := q.db.ExecContext(ctx, deleteBudgetAmountsFor, arg.HouseholdID, arg.CategoryID, arg.GoalID)
+	_, err := q.db.ExecContext(ctx, deleteBudgetAmountsFor,
+		arg.HouseholdID,
+		arg.CategoryID,
+		arg.GoalID,
+		arg.AccountID,
+	)
 	return err
 }
 
@@ -225,6 +390,33 @@ type DeleteGoalParams struct {
 func (q *Queries) DeleteGoal(ctx context.Context, arg DeleteGoalParams) error {
 	_, err := q.db.ExecContext(ctx, deleteGoal, arg.ID, arg.HouseholdID)
 	return err
+}
+
+const getBuiltinCategory = `-- name: GetBuiltinCategory :one
+SELECT id, household_id, group_id, name, icon, sort, archived, chunk, budget_hidden, builtin FROM categories WHERE household_id = ? AND builtin = ?
+`
+
+type GetBuiltinCategoryParams struct {
+	HouseholdID int64  `json:"household_id"`
+	Builtin     string `json:"builtin"`
+}
+
+func (q *Queries) GetBuiltinCategory(ctx context.Context, arg GetBuiltinCategoryParams) (Category, error) {
+	row := q.db.QueryRowContext(ctx, getBuiltinCategory, arg.HouseholdID, arg.Builtin)
+	var i Category
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.GroupID,
+		&i.Name,
+		&i.Icon,
+		&i.Sort,
+		&i.Archived,
+		&i.Chunk,
+		&i.BudgetHidden,
+		&i.Builtin,
+	)
+	return i, err
 }
 
 const getBuiltinGoal = `-- name: GetBuiltinGoal :one
@@ -295,14 +487,15 @@ func (q *Queries) GetGoal(ctx context.Context, arg GetGoalParams) (Goal, error) 
 }
 
 const insertBudgetAmount = `-- name: InsertBudgetAmount :exec
-INSERT INTO budget_amounts (household_id, category_id, goal_id, month, amount_cents, forward)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO budget_amounts (household_id, category_id, goal_id, account_id, month, amount_cents, forward)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertBudgetAmountParams struct {
 	HouseholdID int64         `json:"household_id"`
 	CategoryID  sql.NullInt64 `json:"category_id"`
 	GoalID      sql.NullInt64 `json:"goal_id"`
+	AccountID   sql.NullInt64 `json:"account_id"`
 	Month       string        `json:"month"`
 	AmountCents int64         `json:"amount_cents"`
 	Forward     int64         `json:"forward"`
@@ -313,6 +506,7 @@ func (q *Queries) InsertBudgetAmount(ctx context.Context, arg InsertBudgetAmount
 		arg.HouseholdID,
 		arg.CategoryID,
 		arg.GoalID,
+		arg.AccountID,
 		arg.Month,
 		arg.AmountCents,
 		arg.Forward,
@@ -322,7 +516,7 @@ func (q *Queries) InsertBudgetAmount(ctx context.Context, arg InsertBudgetAmount
 
 const listBudgetAmounts = `-- name: ListBudgetAmounts :many
 
-SELECT id, household_id, category_id, goal_id, month, amount_cents, forward FROM budget_amounts WHERE household_id = ? ORDER BY month
+SELECT id, household_id, category_id, goal_id, month, amount_cents, forward, account_id FROM budget_amounts WHERE household_id = ? ORDER BY month
 `
 
 // ---- budget amounts ----
@@ -343,6 +537,7 @@ func (q *Queries) ListBudgetAmounts(ctx context.Context, householdID int64) ([]B
 			&i.Month,
 			&i.AmountCents,
 			&i.Forward,
+			&i.AccountID,
 		); err != nil {
 			return nil, err
 		}
@@ -468,6 +663,21 @@ type SetCategoryBudgetHiddenParams struct {
 
 func (q *Queries) SetCategoryBudgetHidden(ctx context.Context, arg SetCategoryBudgetHiddenParams) error {
 	_, err := q.db.ExecContext(ctx, setCategoryBudgetHidden, arg.BudgetHidden, arg.ID, arg.HouseholdID)
+	return err
+}
+
+const setCategoryBuiltin = `-- name: SetCategoryBuiltin :exec
+UPDATE categories SET builtin = ? WHERE id = ? AND household_id = ?
+`
+
+type SetCategoryBuiltinParams struct {
+	Builtin     string `json:"builtin"`
+	ID          int64  `json:"id"`
+	HouseholdID int64  `json:"household_id"`
+}
+
+func (q *Queries) SetCategoryBuiltin(ctx context.Context, arg SetCategoryBuiltinParams) error {
+	_, err := q.db.ExecContext(ctx, setCategoryBuiltin, arg.Builtin, arg.ID, arg.HouseholdID)
 	return err
 }
 

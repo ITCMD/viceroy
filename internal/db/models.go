@@ -102,6 +102,7 @@ type BudgetAmount struct {
 	Month       string        `json:"month"`
 	AmountCents int64         `json:"amount_cents"`
 	Forward     int64         `json:"forward"`
+	AccountID   sql.NullInt64 `json:"account_id"`
 }
 
 type Category struct {
@@ -114,6 +115,7 @@ type Category struct {
 	Archived     int64  `json:"archived"`
 	Chunk        string `json:"chunk"`
 	BudgetHidden int64  `json:"budget_hidden"`
+	Builtin      string `json:"builtin"`
 }
 
 type CategoryGroup struct {
@@ -122,6 +124,13 @@ type CategoryGroup struct {
 	Name        string `json:"name"`
 	Kind        string `json:"kind"`
 	Sort        int64  `json:"sort"`
+}
+
+type CategoryIcon struct {
+	CategoryID int64  `json:"category_id"`
+	Mime       string `json:"mime"`
+	Data       []byte `json:"data"`
+	UpdatedAt  int64  `json:"updated_at"`
 }
 
 type ChatMessage struct {

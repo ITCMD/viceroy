@@ -17,6 +17,7 @@ func (s *Server) reportRoutes(r chi.Router) {
 	r.Get("/reports/spending-pace", s.handleSpendingPace)
 	r.Get("/reports/tree", s.handleReportTree)
 	r.Get("/reports/debt", s.handleDebtReport)
+	r.Put("/reports/debt/plan", s.handleSaveDebtPlan)
 }
 
 func parseDate(s string) (time.Time, bool) {

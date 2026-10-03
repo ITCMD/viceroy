@@ -111,7 +111,8 @@ export type DebtPlan = {
   payment: number;
   never: boolean;
   balances: number[];
-  debts: { id: number; months: number; interest: number; order: number }[];
+  /** months: plan month it's paid off in (1 = this month, 0 = never). payments: paid each plan month, from this month. */
+  debts: { id: number; months: number; interest: number; order: number; payments: number[] }[];
 };
 export type DebtReport = {
   debts: Debt[];
@@ -121,22 +122,25 @@ export type DebtReport = {
   history: { date: string; total: number; accounts: Record<string, number> }[];
   start: string;
   extra: number;
+  /** The saved plan's strategy; extra defaults to the saved plan's too. */
+  strategy: "snowball" | "avalanche";
   /** Every debt has an APR and a minimum; plans is empty until then. */
   ready: boolean;
   plans: Partial<Record<DebtPlan["strategy"], DebtPlan>>;
 };
 
-export const debtQuery = (extraCents: number) =>
+/** The debt report; extraCents null = the saved plan's extra. */
+export const debtQuery = (extraCents: number | null) =>
   queryOptions({
     queryKey: ["reports", "debt", extraCents],
-    queryFn: () => api.get<DebtReport>(`/reports/debt?extra=${(extraCents / 100).toFixed(2)}`),
+    queryFn: () => api.get<DebtReport>(`/reports/debt${extraCents === null ? "" : `?extra=${(extraCents / 100).toFixed(2)}`}`),
     placeholderData: keepPreviousData,
   });
 
-/** "Mar 2028" for the month n months after start (YYYY-MM). */
-export function planMonth(start: string, n: number) {
+/** "Mar 2028" for plan month n (1 = start, this month; start is YYYY-MM). */
+export function planMonth(start: string, n: number, o: Intl.DateTimeFormatOptions = { month: "short", year: "numeric" }) {
   const [y, m] = start.split("-").map(Number);
-  return new Date(y, m - 1 + n, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  return new Date(y, m - 2 + n, 1).toLocaleDateString("en-US", o);
 }
 
 export type SpendingPace = { month: string; prev_month: string; today: string; days_in_month: number; this: number[]; last: number[] };

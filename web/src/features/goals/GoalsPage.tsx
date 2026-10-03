@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Target, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button, Card, Dialog, EmptyState, Field, FormError, MoneyText, PageHeader, Switch } from "@/components/ui";
+import { Button, Card, Dialog, EmptyState, Field, FormError, MoneyText, PageHeader, Switch, IconPicker } from "@/components/ui";
 import { centsToInput, useBudgetMutation } from "@/features/budget/api";
 import { api } from "@/lib/api";
 import { goalsQuery, type Goal } from "./api";
@@ -157,7 +157,7 @@ function GoalDialog({ open, onOpenChange, goal }: { open: boolean; onOpenChange:
         }}
       >
         <div className="grid grid-cols-[4rem_1fr] gap-3">
-          <Field label="Icon" value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={8} className="text-center" />
+          <IconPicker value={icon} onChange={setIcon} placeholder="🎯" />
           <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Vacation" autoFocus />
         </div>
         <div className="grid grid-cols-2 gap-3">

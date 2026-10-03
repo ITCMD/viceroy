@@ -275,3 +275,19 @@ SELECT COUNT(*) FROM transactions WHERE category_id = ? AND household_id = ?;
 
 -- name: SetTransactionOwner :exec
 UPDATE transactions SET owner_user_id = ? WHERE id = ? AND household_id = ?;
+
+-- ---- uploaded category icons ----
+
+-- name: GetCategoryIcon :one
+SELECT i.mime, i.data FROM category_icons i JOIN categories c ON c.id = i.category_id
+WHERE i.category_id = ? AND c.household_id = ?;
+
+-- name: SetCategoryIcon :exec
+INSERT INTO category_icons (category_id, mime, data, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT (category_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, updated_at = excluded.updated_at;
+
+-- name: DeleteCategoryIcon :exec
+DELETE FROM category_icons WHERE category_id = ?;
+
+-- name: SetCategoryIconText :exec
+UPDATE categories SET icon = ? WHERE id = ? AND household_id = ?;

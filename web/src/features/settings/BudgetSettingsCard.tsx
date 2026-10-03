@@ -65,6 +65,23 @@ export function BudgetSettingsCard() {
           />
           <p className="mt-1 text-xs text-muted">Budget bars get a blue segment for recurring charges coming up in this window.</p>
         </div>
+        <div>
+          <Select
+            label="Debt Repayment counts"
+            value={data?.budget.debt_actual ?? "net"}
+            disabled={!data}
+            onChange={(e) => save.mutate({ debt_actual: e.target.value as BudgetSettings["debt_actual"] })}
+            options={[
+              { value: "net", label: "Net paydown (payments minus new charges)" },
+              { value: "paid", label: "Total paid" },
+            ]}
+            className="max-w-80"
+            data-testid="debt-actual-setting"
+          />
+          <p className="mt-1 text-xs text-muted">
+            What each debt's line under Debt Repayment shows as spent. Card purchases already count in their own categories, so total paid counts them twice.
+          </p>
+        </div>
         {pay && (
           <div className="flex flex-col gap-3 border-t border-border pt-4">
             <div>

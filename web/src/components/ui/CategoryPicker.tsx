@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { Popover } from "radix-ui";
 import { useId, useMemo, useState } from "react";
-import { CategoryPill } from "./CategoryPill";
+import { CategoryPill, Glyph } from "./CategoryPill";
 
 type Cat = { id: number; name: string; icon: string };
 type Group = { id: number; name: string; categories: Cat[] };
@@ -96,7 +96,7 @@ function Option({ selected, onClick, label, icon }: { selected: boolean; onClick
       onClick={onClick}
       className={clsx("flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-2", selected && "font-medium")}
     >
-      <span aria-hidden className="w-5 text-center">{icon}</span>
+      <span aria-hidden className="w-5 text-center"><Glyph icon={icon} /></span>
       <span className="flex-1 truncate">{label}</span>
       {selected && <Check size={14} className="text-accent" />}
     </button>

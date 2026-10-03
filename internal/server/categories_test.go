@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -154,4 +155,41 @@ func TestCategoryCRUDAndNoPacing(t *testing.T) {
 	if code, _ := c.do("DELETE", "/api/categories/"+id, "", true); code != 404 {
 		t.Fatalf("delete again = %d", code)
 	}
+}
+
+func TestCategoryIconUpload(t *testing.T) {
+	c := newTestServer(t)
+	c.do("POST", "/api/setup", `{"name":"A","email":"a@example.com","password":"correct horse battery"}`, true)
+	_, b := c.do("GET", "/api/budget", "", false)
+	l, _ := findLine(t, b, "Groceries")
+	id := l["id"]
+	// A 1×1 PNG.
+	png := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+	code, out := c.do("PUT", fmt.Sprintf("/api/categories/%v/icon", id), fmt.Sprintf(`{"image":%q}`, png), true)
+	icon, _ := out["icon"].(string)
+	if code != 200 || !strings.HasPrefix(icon, fmt.Sprintf("/api/categories/%v/icon?v=", id)) {
+		t.Fatalf("upload = %d %v", code, out)
+	}
+	if code, _ := c.do("PUT", fmt.Sprintf("/api/categories/%v/icon", id), `{"image":"data:image/svg+xml;base64,PHN2Zy8+"}`, true); code != 400 {
+		t.Fatalf("svg upload = %d", code)
+	}
+	if code := iconCode(c, icon); code != 200 {
+		t.Fatalf("get icon = %d", code)
+	}
+	// Renaming keeps the image; a made-up URL isn't an icon; an emoji replaces the image.
+	if code, out := c.do("PATCH", fmt.Sprint("/api/categories/", id), fmt.Sprintf(`{"name":"Food","icon":%q}`, icon), true); code != 200 {
+		t.Fatalf("rename with image = %d %v", code, out)
+	}
+	if code, _ := c.do("PATCH", fmt.Sprint("/api/categories/", id), `{"name":"Food","icon":"/api/categories/1/icon?v=1"}`, true); code != 400 {
+		t.Fatalf("forged icon url = %d", code)
+	}
+	c.do("PATCH", fmt.Sprint("/api/categories/", id), `{"name":"Food","icon":"🥦"}`, true)
+	if code := iconCode(c, icon); code != 404 {
+		t.Fatalf("image kept after switching to an emoji: %d", code)
+	}
+}
+
+func iconCode(c *client, path string) int {
+	code, _ := c.do("GET", path, "", false)
+	return code
 }

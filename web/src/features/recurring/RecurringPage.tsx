@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { Check, ChevronLeft, ChevronRight, Plus, Repeat, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader } from "@/components/ui";
+import { Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader, Glyph } from "@/components/ui";
 import { cadenceLabels, dueLabel, recurringQuery, useDismissRecurring, type Occurrence, type RecurringSeries } from "./api";
 import { RecurringItemDialog, type RecurringDraft } from "./RecurringItemDialog";
 
@@ -254,7 +254,7 @@ function Calendar({ month, today, payday, occurrences, onOpen }: { month: string
               {pickedList.map((o) => (
                 <li key={o.key}>
                   <button className="flex w-full items-center gap-2 py-2 text-left text-sm" onClick={() => onOpen(o)}>
-                    <span aria-hidden>{o.category_icon || "•"}</span>
+                    {o.category_icon ? <Glyph icon={o.category_icon} /> : <span aria-hidden>•</span>}
                     <span className="flex-1 truncate">{o.name}</span>
                     <StatusText o={o} />
                     <MoneyText cents={o.amount} colored />
@@ -300,7 +300,7 @@ function Chip({ o, onOpen }: { o: Occurrence; onOpen: (o: Occurrence) => void })
       )}
       data-testid="cal-chip"
     >
-      {o.status === "paid" ? <Check size={10} className="shrink-0" /> : <span aria-hidden className="shrink-0">{o.category_icon || "•"}</span>}
+      {o.status === "paid" ? <Check size={10} className="shrink-0" /> : <Glyph icon={o.category_icon || "•"} className="shrink-0" />}
       <span className="hidden truncate md:inline">{o.name}</span>
       <MoneyText cents={Math.abs(o.amount)} whole className="ml-auto hidden shrink-0 lg:inline" />
     </button>

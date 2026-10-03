@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { CheckCircle2, FileSpreadsheet, ImagePlus, Sparkles, Upload, X } from "lucide-react";
 import { useState, type ClipboardEvent } from "react";
-import { Badge, Button, CategoryIcon, Dialog, Field, FormError, Select, Tabs, TextArea } from "@/components/ui";
+import { Badge, Button, CategoryIcon, Dialog, Field, FormError, Select, Tabs, TextArea, withIcon } from "@/components/ui";
 import { aiSettingsQuery } from "@/features/settings/ai";
 import { api } from "@/lib/api";
 import { shrinkImage } from "@/lib/image";
@@ -137,7 +137,7 @@ export function BudgetImportDialog({ open, onOpenChange, month }: { open: boolea
       g.kind === "goals" ? { value: "new:goals", label: `New goal “${newName(r)}”` } : { value: `new:${g.id}`, label: `New “${newName(r)}” in ${g.name}` },
     ),
     ...(budget?.groups ?? []).flatMap((g) =>
-      g.lines.map((l) => ({ value: `${g.kind === "goals" ? "goal" : "cat"}:${l.id}`, label: `${g.name} · ${l.icon} ${l.name}` })),
+      g.lines.map((l) => ({ value: `${g.kind === "goals" ? "goal" : "cat"}:${l.id}`, label: `${g.name} · ${withIcon(l.icon, l.name)}` })),
     ),
   ];
   const status = (r: Row): { tone: "neutral" | "accent" | "positive"; label: string } => {

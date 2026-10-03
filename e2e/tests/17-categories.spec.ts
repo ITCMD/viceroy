@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const shots = process.env.SCREENSHOT_DIR ?? "test-results/screens";
+const shot = (page: Page, name: string) => page.screenshot({ path: `${shots}/${name}.png` });
 const admin = { email: "admin@example.com", password: "correct horse battery" };
 const csrf = { "X-Viceroy-CSRF": "1" };
 
@@ -71,7 +72,12 @@ test("categories: add, rename and delete a custom category; exclude one from pac
   const flexible = page.getByTestId("category-group-flexible");
   await page.getByRole("button", { name: "Add category to Flexible" }).click();
   const dlg = page.getByTestId("category-dialog");
-  await dlg.getByLabel("Icon").fill("🐾");
+  // The icon is picked from a searchable emoji grid.
+  await dlg.getByTestId("icon-picker").click();
+  await shot(page, "171-icon-picker");
+  await page.getByLabel("Search emoji").fill("dog");
+  await page.getByRole("option", { name: "dog" }).click();
+  await expect(dlg.getByTestId("icon-picker")).toHaveText("🐶");
   await dlg.getByLabel("Name").fill("Dog walker");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(flexible.getByTestId("category-row").last()).toContainText("Dog walker");
@@ -85,8 +91,14 @@ test("categories: add, rename and delete a custom category; exclude one from pac
 
   await page.getByRole("button", { name: "Edit Dog walker" }).click();
   await page.getByTestId("category-dialog").getByLabel("Name").fill("Dog care");
+  // Or uploaded as an image.
+  await page.getByTestId("category-dialog").getByTestId("icon-picker").click();
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await page.getByTestId("icon-upload").setInputFiles({ name: "paw.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByTestId("category-dialog").getByTestId("icon-picker").locator("img")).toBeVisible();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(flexible).toContainText("Dog care");
+  await expect(flexible.getByTestId("category-row").filter({ hasText: "Dog care" }).locator("img")).toHaveAttribute("src", /\/api\/categories\/\d+\/icon\?v=/);
 
   // Exclude it from pacing in the budget editor.
   await page.goto("/budget");

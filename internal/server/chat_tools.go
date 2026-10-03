@@ -421,9 +421,10 @@ func debtForModel(rep debtReport) map[string]any {
 	}
 }
 
+// debtMonth is the calendar month of plan month n (1 = start, this month).
 func debtMonth(start string, n int) string {
 	t, _ := time.Parse("2006-01", start)
-	return t.AddDate(0, n, 0).Format("January 2006")
+	return t.AddDate(0, n-1, 0).Format("January 2006")
 }
 
 func (s *Server) searchTransactions(ctx context.Context, q *db.Queries, hh int64, text, fromS, toS, category, account string, minRaw, maxRaw json.RawMessage, limit int) (any, error) {

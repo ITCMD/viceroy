@@ -104,3 +104,38 @@ func TestPromo(t *testing.T) {
 		t.Fatalf("avalanche %d should not cost more than snowball %d here", ava.Interest, static.Interest)
 	}
 }
+
+func TestPayments(t *testing.T) {
+	ds := []Debt{
+		{ID: 1, Name: "Card", Balance: 300000, APRBps: 2400, MinPayment: 9000},
+		{ID: 2, Name: "Car", Balance: 800000, APRBps: 500, MinPayment: 25000},
+	}
+	p := Simulate(ds, Avalanche, 20000)
+	for i, d := range p.Debts {
+		if len(d.Payments) != p.Months {
+			t.Fatalf("debt %d: %d payments for a %d month plan", d.ID, len(d.Payments), p.Months)
+		}
+		var sum int64
+		for _, v := range d.Payments {
+			sum += v
+		}
+		if sum != ds[i].Balance+d.Interest {
+			t.Fatalf("debt %d: paid %d, owed %d + interest %d", d.ID, sum, ds[i].Balance, d.Interest)
+		}
+		if d.Payments[d.Months-1] == 0 || (d.Months < p.Months && d.Payments[d.Months] != 0) {
+			t.Fatalf("debt %d: payments should stop after month %d: %v", d.ID, d.Months, d.Payments)
+		}
+	}
+	// While both are open the whole budget goes out: card gets minimum + extra, car its minimum.
+	if p.PaymentIn(1, 1) != 29000 || p.PaymentIn(2, 1) != 25000 || p.PaymentIn(1, 1)+p.PaymentIn(2, 1) != p.Payment {
+		t.Fatalf("month 1 = %d + %d, plan pays %d", p.PaymentIn(1, 1), p.PaymentIn(2, 1), p.Payment)
+	}
+	// Once the card is gone its payment rolls onto the car.
+	card := p.Debts[0].Months
+	if got := p.PaymentIn(2, card+1); got != p.Payment {
+		t.Fatalf("car after the card = %d, want %d", got, p.Payment)
+	}
+	if p.PaymentIn(2, p.Months+1) != 0 || p.PaymentIn(9, 1) != 0 {
+		t.Fatal("no payment past the plan or for an unknown debt")
+	}
+}

@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight, Download, Eye, EyeOff, Target as TargetIcon, Upload } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Target as TargetIcon, Upload } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Button, Card, CategoryIcon, MoneyText, PageHeader, Segmented } from "@/components/ui";
+import { AccountAvatar } from "@/features/accounts/AccountAvatar";
+import { accountsQuery } from "@/features/accounts/api";
 import { formatMoney } from "@/lib/format";
 import { BudgetEditDialog } from "./BudgetEditDialog";
 import { BudgetImportDialog } from "./BudgetImportDialog";
@@ -16,6 +18,16 @@ const views: { value: View; label: string }[] = [
 ];
 
 const VIEW_KEY = "viceroy.budget.view";
+const OPEN_KEY = "viceroy.budget.open"; // ids of split lines (Debt Repayment) shown expanded
+
+function loadOpen(): number[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "number") : [];
+  } catch {
+    return [];
+  }
+}
 
 function initialView(): View {
   try {
@@ -35,7 +47,17 @@ export function BudgetPage() {
   const [editing, setEditing] = useState<{ target: Target; line: BudgetLine } | null>(null);
   const [importing, setImporting] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
+  const [open, setOpenState] = useState<number[]>(loadOpen);
   const { data: b } = useQuery(budgetQuery(view, date));
+  const toggleOpen = (id: number) => {
+    const next = open.includes(id) ? open.filter((x) => x !== id) : [...open, id];
+    setOpenState(next);
+    try {
+      localStorage.setItem(OPEN_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
 
   const setView = (v: View) => {
     setViewState(v);
@@ -100,7 +122,16 @@ export function BudgetPage() {
           <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
             <div className="order-2 flex flex-col gap-4 lg:order-1">
               {b.groups.map((g) => (
-                <GroupCard key={`${g.kind}-${g.id}`} g={g} period={b} showPacing={isCurrent} showHidden={showHidden} onEdit={(line) => setEditing({ target: { kind: g.kind === "goals" ? "goal" : "category", id: line.id }, line })} />
+                <GroupCard
+                  key={`${g.kind}-${g.id}`}
+                  g={g}
+                  period={b}
+                  showPacing={isCurrent}
+                  showHidden={showHidden}
+                  open={open}
+                  onToggle={toggleOpen}
+                  onEdit={(line, target) => setEditing({ target: target ?? { kind: g.kind === "goals" ? "goal" : "category", id: line.id }, line })}
+                />
               ))}
               {(hiddenCount > 0 || showHidden) && (
                 <Button variant="ghost" size="sm" className="self-start text-muted" onClick={() => setShowHidden(!showHidden)}>
@@ -138,15 +169,20 @@ function GroupCard({
   period,
   showPacing,
   showHidden,
+  open,
+  onToggle,
   onEdit,
 }: {
   g: BudgetGroup;
   period: Period;
   showPacing: boolean;
   showHidden: boolean;
-  onEdit: (l: BudgetLine) => void;
+  open: number[];
+  onToggle: (id: number) => void;
+  onEdit: (l: BudgetLine, t?: Target) => void;
 }) {
   const income = g.kind === "income";
+  const accounts = useQuery(accountsQuery).data?.accounts ?? [];
   const lines = g.lines.filter((l) => showHidden || !l.hidden || l.actual !== 0);
   if (lines.length === 0 && g.lines.length > 0) return null;
   return (
@@ -172,17 +208,48 @@ function GroupCard({
         </div>
       ) : (
         <ul className="divide-y divide-border">
-          {lines.map((l) => (
-            <li key={l.id}>
-              <LineRow
-                l={l}
-                income={income}
-                showPacing={showPacing}
-                onClick={() => onEdit(l)}
-                txns={lineTransactions(g.kind === "goals" ? "goal" : "category", l.id, period)}
-              />
-            </li>
-          ))}
+          {lines.map((l) => {
+            const subs = l.lines ?? [];
+            const expanded = open.includes(l.id);
+            return (
+              <li key={l.id}>
+                <LineRow
+                  l={l}
+                  income={income}
+                  showPacing={showPacing}
+                  onClick={() => (subs.length ? onToggle(l.id) : onEdit(l))}
+                  expanded={subs.length ? expanded : undefined}
+                  txns={lineTransactions(g.kind === "goals" ? "goal" : "category", l.id, period)}
+                />
+                {subs.length > 0 && expanded && (
+                  <ul className="divide-y divide-border border-t border-border bg-surface-2/30" data-testid="budget-sublines">
+                    {subs.map((sl) => {
+                      const acct = sl.account_id ? accounts.find((a) => a.id === sl.account_id) : undefined;
+                      return (
+                        <li key={`${sl.account_id ?? 0}-${sl.id}`}>
+                          <LineRow
+                            l={sl}
+                            income={false}
+                            showPacing={showPacing}
+                            indent
+                            leading={
+                              sl.account_id ? (
+                                <AccountAvatar account={acct ?? { name: sl.name, institution_name: "", color: "", logo_url: null }} size={20} />
+                              ) : undefined
+                            }
+                            onClick={() =>
+                              onEdit(sl, sl.account_id ? { kind: "account", id: sl.account_id, categoryId: l.id } : { kind: "category", id: l.id, other: true })
+                            }
+                            txns={sl.account_id ? { account: sl.account_id, from: period.start, to: period.end } : lineTransactions("category", l.id, period)}
+                          />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       <footer className={clsx(cols, "border-t border-border bg-surface-2/50 px-4 py-2 text-[13px] font-semibold")}>
@@ -201,12 +268,20 @@ function LineRow({
   showPacing,
   onClick,
   txns,
+  expanded,
+  indent,
+  leading,
 }: {
   l: BudgetLine;
   income: boolean;
   showPacing: boolean;
   onClick: () => void;
   txns: Record<string, string | number>;
+  /** Set on a line with sub-lines: clicking it opens or closes them. */
+  expanded?: boolean;
+  indent?: boolean;
+  /** Replaces the category icon (an account avatar on debt lines). */
+  leading?: ReactNode;
 }) {
   const pct = l.budget > 0 ? Math.min(1, l.actual / l.budget) : l.actual > 0 ? 1 : 0;
   const over = !income && l.actual > l.budget;
@@ -227,14 +302,26 @@ function LineRow({
           onClick();
         }
       }}
-      className={clsx(cols, "w-full cursor-pointer px-4 py-2 text-left text-[13px] outline-none hover:bg-surface-2 focus-visible:bg-surface-2", l.hidden && "opacity-60")}
-      data-testid="budget-line"
+      className={clsx(
+        cols,
+        "w-full cursor-pointer py-2 pr-4 text-left text-[13px] outline-none hover:bg-surface-2 focus-visible:bg-surface-2",
+        indent ? "pl-11" : "pl-4",
+        l.hidden && "opacity-60",
+      )}
+      aria-expanded={expanded}
+      data-testid={indent ? "budget-subline" : "budget-line"}
     >
       <span className="flex min-w-0 items-center gap-2.5">
-        <CategoryIcon icon={l.icon} size="sm" />
+        {leading ?? <CategoryIcon icon={l.icon || (l.other ? "🏦" : "")} size="sm" />}
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
             <span className="truncate text-sm">{l.name}</span>
+            {expanded !== undefined && (
+              <span className="flex shrink-0 items-center gap-0.5 text-xs text-muted">
+                {l.lines?.filter((x) => x.account_id).length} debts
+                <ChevronDown size={14} className={clsx("transition-transform", expanded && "rotate-180")} aria-hidden />
+              </span>
+            )}
             {timing && <span className="hidden shrink-0 text-xs text-muted md:inline">{timing}</span>}
             {l.hidden && <span className="shrink-0 text-xs text-muted">Hidden</span>}
             {soon > 0 && (

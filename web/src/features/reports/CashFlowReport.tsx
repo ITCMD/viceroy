@@ -4,7 +4,7 @@ import { Legend } from "@/components/charts/Legend";
 import { SankeyChart, type FlowLink, type FlowNode } from "@/components/charts/SankeyChart";
 import { SeriesChart, type Series } from "@/components/charts/SeriesChart";
 import { useChartTokens } from "@/components/charts/tokens";
-import { Card, MoneyText, StatTile } from "@/components/ui";
+import { Card, MoneyText, StatTile, withIcon } from "@/components/ui";
 import type { ChatContext } from "@/features/chat/api";
 import { txnSearch, type TxnLink } from "@/features/transactions/api";
 import { shade } from "@/lib/color";
@@ -173,7 +173,7 @@ function buildFlow(tree: ReportTree, t: ReturnType<typeof useChartTokens>) {
   const rest = sources.slice(MAX_INCOME).reduce((a, n) => a + n.total, 0);
   shown.forEach((n, k) => {
     const key = `in:${n.key}`;
-    nodes.push({ key, label: `${n.icon ? n.icon + " " : ""}${n.name}`, sub: sub(n.total), color: shade(t.positive, [0, 0.18, -0.15, 0.32, -0.28][k % 5]), depth: 0, clickable: true });
+    nodes.push({ key, label: withIcon(n.icon, n.name), sub: sub(n.total), color: shade(t.positive, [0, 0.18, -0.15, 0.32, -0.28][k % 5]), depth: 0, clickable: true });
     links.push({ source: key, target: hub, value: n.total });
     lookup.set(key, { node: n, side: "income" });
   });
@@ -192,7 +192,7 @@ function buildFlow(tree: ReportTree, t: ReturnType<typeof useChartTokens>) {
   sections.forEach((s, i) => {
     const color = sectionColor(s, t, i);
     const key = `s:${s.key}`;
-    nodes.push({ key, label: `${s.icon ? s.icon + " " : ""}${s.name}`, sub: sub(s.total), color, depth: 2, clickable: s.kind !== "contributions" });
+    nodes.push({ key, label: withIcon(s.icon, s.name), sub: sub(s.total), color, depth: 2, clickable: s.kind !== "contributions" });
     links.push({ source: hub, target: key, value: s.total });
     lookup.set(key, { node: s, side: "spending" });
     if (s.kind === "uncategorized") {
@@ -204,7 +204,7 @@ function buildFlow(tree: ReportTree, t: ReturnType<typeof useChartTokens>) {
     const other = kids.slice(MAX_PER_SECTION).reduce((a, c) => a + c.total, 0);
     top.forEach((c, k) => {
       const ck = `c:${s.key}/${c.key}`;
-      nodes.push({ key: ck, label: `${c.icon ? c.icon + " " : ""}${c.name}`, sub: sub(c.total), color: childColor(color, k), depth: 3, clickable: true });
+      nodes.push({ key: ck, label: withIcon(c.icon, c.name), sub: sub(c.total), color: childColor(color, k), depth: 3, clickable: true });
       links.push({ source: key, target: ck, value: c.total });
       lookup.set(ck, { node: c, parent: s, side: "spending" });
     });

@@ -65,27 +65,8 @@ func (s *Server) handlePutAccountLogo(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in struct {
-		Image string `json:"image"`
-	}
-	if !readJSONLimit(w, r, &in, maxLogoBytes*2) {
-		return
-	}
-	_, b64, found := strings.Cut(in.Image, ";base64,")
-	data, err := base64.StdEncoding.DecodeString(b64)
-	if !found || err != nil || len(data) == 0 {
-		writeError(w, http.StatusBadRequest, "Upload a PNG, JPEG, WebP or GIF image.")
-		return
-	}
-	if len(data) > maxLogoBytes {
-		writeError(w, http.StatusBadRequest, "That image is too large (256 KB at most).")
-		return
-	}
-	sniffed := http.DetectContentType(data) // what's served, whatever the data URL claimed
-	switch sniffed {
-	case "image/png", "image/jpeg", "image/webp", "image/gif":
-	default:
-		writeError(w, http.StatusBadRequest, "Upload a PNG, JPEG, WebP or GIF image.")
+	data, sniffed, ok := readImageUpload(w, r)
+	if !ok {
 		return
 	}
 	if err := db.New(s.db).SetAccountLogo(r.Context(), db.SetAccountLogoParams{AccountID: a.ID, Mime: sniffed, Data: data, UpdatedAt: time.Now().UnixNano()}); err != nil {
@@ -105,4 +86,33 @@ func (s *Server) handleDeleteAccountLogo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// readImageUpload reads {image: <data URL>} and checks it's a PNG, JPEG, WebP or GIF (by its
+// bytes, whatever the data URL claimed; no SVG, which could carry script) of at most
+// maxLogoBytes. It writes the error response when it returns false.
+func readImageUpload(w http.ResponseWriter, r *http.Request) (data []byte, mime string, ok bool) {
+	var in struct {
+		Image string `json:"image"`
+	}
+	if !readJSONLimit(w, r, &in, maxLogoBytes*2) {
+		return nil, "", false
+	}
+	_, b64, found := strings.Cut(in.Image, ";base64,")
+	data, err := base64.StdEncoding.DecodeString(b64)
+	if !found || err != nil || len(data) == 0 {
+		writeError(w, http.StatusBadRequest, "Upload a PNG, JPEG, WebP or GIF image.")
+		return nil, "", false
+	}
+	if len(data) > maxLogoBytes {
+		writeError(w, http.StatusBadRequest, "That image is too large (256 KB at most).")
+		return nil, "", false
+	}
+	mime = http.DetectContentType(data)
+	switch mime {
+	case "image/png", "image/jpeg", "image/webp", "image/gif":
+		return data, mime, true
+	}
+	writeError(w, http.StatusBadRequest, "Upload a PNG, JPEG, WebP or GIF image.")
+	return nil, "", false
 }

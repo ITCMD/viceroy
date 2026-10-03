@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { PartyPopper, Pencil } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, PartyPopper, Pencil } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Legend } from "@/components/charts/Legend";
 import { SeriesChart, type Series } from "@/components/charts/SeriesChart";
 import { useChartTokens } from "@/components/charts/tokens";
@@ -15,25 +15,14 @@ import { dollars } from "./shared";
 
 type Strategy = "snowball" | "avalanche";
 
-const EXTRA_KEY = "viceroy.debt.extra";
-
-function loadExtra() {
-  try {
-    const v = Number(localStorage.getItem(EXTRA_KEY));
-    return Number.isFinite(v) && v >= 0 ? v : 10000;
-  } catch {
-    return 10000;
-  }
-}
-
 const aprText = (bps: number) => `${(bps / 100).toFixed(2).replace(/\.?0+$/, "")}%`;
 const dayText = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 const when = (r: Report, p: DebtPlan) => (p.never ? "Never at this pace" : p.months === 0 ? "Now" : planMonth(r.start, p.months));
-/** "2027-03" for the month n months after start (YYYY-MM). */
+/** "2027-03" for plan month n (1 = start). */
 const planKey = (start: string, n: number) => {
   const [y, m] = start.split("-").map(Number);
-  const d = new Date(y, m - 1 + n, 1);
+  const d = new Date(y, m - 2 + n, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
 
@@ -49,25 +38,46 @@ const span = (months: number) => {
 
 export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void }) {
   const t = useChartTokens();
-  const [extraText, setExtraText] = useState(() => String(loadExtra() / 100));
-  const [extra, setExtra] = useState(loadExtra);
+  const qc = useQueryClient();
+  // null until the saved plan has loaded; the first request uses the saved extra.
+  const [extra, setExtra] = useState<number | null>(null);
+  const [extraText, setExtraText] = useState("");
   const [strategy, setStrategy] = useState<Strategy>("avalanche");
   const [editing, setEditing] = useState<Debt | null>(null);
+  const { data: r } = useQuery(debtQuery(extra));
   useEffect(() => {
+    if (r && extra === null) {
+      setExtra(r.extra);
+      setExtraText(String(r.extra / 100));
+      setStrategy(r.strategy);
+    }
+  }, [r, extra]);
+  useEffect(() => {
+    if (extra === null) return;
     const id = setTimeout(() => {
       const v = Math.round(Number(extraText.replace(/[$,]/g, "")) * 100);
-      if (Number.isFinite(v) && v >= 0) {
-        setExtra(v);
-        try {
-          localStorage.setItem(EXTRA_KEY, String(v));
-        } catch {
-          /* ignore */
-        }
-      }
+      if (Number.isFinite(v) && v >= 0) setExtra(v);
     }, 300);
     return () => clearTimeout(id);
-  }, [extraText]);
-  const { data: r } = useQuery(debtQuery(extra));
+  }, [extraText, extra]);
+  // The plan saves as it changes; the budget suggests its payments.
+  const savePlan = useMutation({
+    mutationFn: (p: { strategy: Strategy; extra: number }) => api.put("/reports/debt/plan", { strategy: p.strategy, extra: (p.extra / 100).toFixed(2) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["budget", "history"] }),
+  });
+  const saved = useRef<string>("");
+  useEffect(() => {
+    if (extra === null || !r) return;
+    const key = `${strategy}:${extra}`;
+    if (!saved.current) saved.current = `${r.strategy}:${r.extra}`; // what the server has
+    if (key === saved.current) return;
+    const id = setTimeout(() => {
+      saved.current = key;
+      savePlan.mutate({ strategy, extra });
+    }, 400);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strategy, extra, r]);
 
   const colors = useMemo(() => new Map((r?.debts ?? []).map((d, i) => [d.account_id, d.color || t.series[i % t.series.length]])), [r, t]);
   const history = useMemo(() => {
@@ -250,7 +260,15 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
 
       <Card title="Payoff plan">
         {r.ready ? (
-          <PayoffPlan r={r} strategy={strategy} setStrategy={setStrategy} extraText={extraText} setExtraText={setExtraText} projection={projection} />
+          <PayoffPlan
+            r={r}
+            strategy={strategy}
+            setStrategy={setStrategy}
+            extraText={extraText}
+            setExtraText={setExtraText}
+            projection={projection}
+            saveState={savePlan.isPending ? "saving" : savePlan.isError ? "error" : savePlan.isSuccess ? "saved" : ""}
+          />
         ) : (
           <div className="flex flex-col gap-3" data-testid="debt-needs-terms">
             <p className="text-[13px] text-muted">
@@ -286,6 +304,7 @@ function PayoffPlan({
   extraText,
   setExtraText,
   projection,
+  saveState,
 }: {
   r: Report;
   strategy: Strategy;
@@ -293,7 +312,9 @@ function PayoffPlan({
   extraText: string;
   setExtraText: (v: string) => void;
   projection: { labels: string[]; series: Series[] };
+  saveState: "" | "saving" | "saved" | "error";
 }) {
+  const [monthly, setMonthly] = useState(false);
   const plan = r.plans[strategy]!;
   const other = r.plans[strategy === "snowball" ? "avalanche" : "snowball"]!;
   const base = r.plans.minimum!;
@@ -317,6 +338,9 @@ function PayoffPlan({
             ]}
           />
         )}
+        <span className="mb-5 text-xs text-muted" data-testid="debt-plan-saved" title="Budget › Debt Repayment suggests this plan's payments">
+          {saveState === "saving" ? "Saving…" : saveState === "error" ? <span className="text-negative">Couldn't save the plan</span> : "Plan saved · used by your budget"}
+        </span>
       </div>
       <div className={clsx("grid gap-3", same ? "sm:grid-cols-2" : "sm:grid-cols-3")} data-testid="debt-plans">
         <PlanTile title="Minimums only" plan={base} r={r} muted />
@@ -332,16 +356,35 @@ function PayoffPlan({
           {order.map((o) => {
             const d = byId.get(o.id);
             if (!d) return null;
+            const segs = segments(o.payments);
             return (
-              <li key={o.id} className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
+              <li key={o.id} className="flex gap-3 rounded-lg bg-surface-2 px-3 py-2 text-[13px]" data-testid="debt-order-item">
                 <span className="grid size-6 shrink-0 place-items-center rounded-full bg-surface text-xs font-semibold">{o.order}</span>
-                <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
-                <span className="text-muted">{o.months ? `Paid off ${planMonth(r.start, o.months)}` : "Not paid off at this pace"}</span>
-                <span className="hidden w-32 text-right text-muted sm:block">{formatMoney(o.interest, { whole: true })} interest</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-3">
+                    <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
+                    <span className="text-muted">{o.months ? `Paid off ${planMonth(r.start, o.months)}` : "Not paid off at this pace"}</span>
+                    <span className="hidden w-32 text-right text-muted sm:block">{formatMoney(o.interest, { whole: true })} interest</span>
+                  </div>
+                  <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted" data-testid="debt-schedule">
+                    {segs.map((g, i) => (
+                      <li key={g.from}>
+                        <span className={clsx(i === 0 && "font-medium text-text")}>{segmentLabel(r.start, g)}</span>
+                        {" · "}
+                        <span className="tabular text-text">{formatMoney(g.amount)}</span>
+                        {g.to > g.from ? "/mo" : segs.length > 1 && i === segs.length - 1 && o.months ? " last payment" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </li>
             );
           })}
         </ol>
+        <Button variant="ghost" size="sm" className="mt-2 text-muted" onClick={() => setMonthly(!monthly)} aria-expanded={monthly}>
+          {monthly ? <ChevronUp size={14} /> : <ChevronDown size={14} />} {monthly ? "Hide" : "Show"} month by month
+        </Button>
+        {monthly && <MonthlySchedule r={r} plan={plan} order={order} byId={byId} />}
       </div>
     </div>
   );
@@ -463,5 +506,64 @@ function DebtTermsDialog({ debt, onClose }: { debt: Debt | null; onClose: () => 
         <button type="submit" hidden />
       </form>
     </Dialog>
+  );
+}
+
+type Segment = { from: number; to: number; amount: number };
+
+/** Runs of plan months (1 = this month) with the same payment, leaving out months after payoff. */
+function segments(payments: number[]): Segment[] {
+  const out: Segment[] = [];
+  payments.forEach((a, i) => {
+    if (a === 0) return;
+    const last = out.at(-1);
+    if (last && last.amount === a && last.to === i) last.to = i + 1;
+    else out.push({ from: i + 1, to: i + 1, amount: a });
+  });
+  return out;
+}
+
+function segmentLabel(start: string, g: Segment) {
+  if (g.from === g.to) return planMonth(start, g.from);
+  const sameYear = planMonth(start, g.from, { year: "numeric" }) === planMonth(start, g.to, { year: "numeric" });
+  return `${planMonth(start, g.from, sameYear ? { month: "short" } : undefined)} – ${planMonth(start, g.to)}`;
+}
+
+/** Every month of the plan: what goes to each debt, and the total. */
+function MonthlySchedule({ r, plan, order, byId }: { r: Report; plan: DebtPlan; order: DebtPlan["debts"]; byId: Map<number, Debt> }) {
+  const months = Math.min(Math.max(0, ...order.map((o) => o.payments.length)), 360);
+  return (
+    <div className="mt-2 max-h-96 overflow-auto rounded-lg border border-border" data-testid="debt-monthly">
+      <table className="w-full min-w-[480px] text-[13px]">
+        <thead className="sticky top-0 bg-surface">
+          <tr className="text-left text-xs text-muted">
+            <th className="px-3 py-2 font-medium">Month</th>
+            {order.map((o) => (
+              <th key={o.id} className="px-3 py-2 text-right font-medium">
+                {byId.get(o.id)?.name}
+              </th>
+            ))}
+            <th className="px-3 py-2 text-right font-medium">Total</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {Array.from({ length: months }, (_, i) => {
+            const total = order.reduce((s, o) => s + (o.payments[i] ?? 0), 0);
+            return (
+              <tr key={i}>
+                <td className="px-3 py-1.5">{planMonth(r.start, i + 1)}</td>
+                {order.map((o) => (
+                  <td key={o.id} className={clsx("px-3 py-1.5 text-right tabular", !o.payments[i] && "text-muted")}>
+                    {o.payments[i] ? formatMoney(o.payments[i]) : "—"}
+                  </td>
+                ))}
+                <td className="px-3 py-1.5 text-right font-medium tabular">{formatMoney(total)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {plan.never && <p className="px-3 py-2 text-xs text-muted">Shows the first {months} months; this pace never pays everything off.</p>}
+    </div>
   );
 }

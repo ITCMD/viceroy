@@ -2,7 +2,7 @@ import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query
 import clsx from "clsx";
 import { Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button, Dialog, Field, FormError, MoneyText } from "@/components/ui";
+import { Button, Dialog, Field, FormError, MoneyText, IconPicker } from "@/components/ui";
 import { shortDate } from "@/features/transactions/api";
 import { TxnPicker } from "@/features/transactions/TxnPicker";
 import { api } from "@/lib/api";
@@ -101,7 +101,7 @@ export function NetWorthNoteDialog({ draft, onClose }: { draft: NoteDraft | null
         data-testid="networth-note-dialog"
       >
         <div className="grid grid-cols-[4rem_1fr] gap-3">
-          <Field label="Icon" value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={8} className="text-center" placeholder="📌" />
+          <IconPicker value={icon} onChange={setIcon} placeholder="📌" />
           <Field label="Name" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Bought a car" autoFocus />
         </div>
         <div className="flex flex-wrap gap-1" aria-label="Icon suggestions">

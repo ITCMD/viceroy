@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button, CategoryPicker, Field, Segmented } from "@/components/ui";
+import { Button, CategoryPicker, Field, Segmented, withIcon } from "@/components/ui";
 import { goalsQuery } from "@/features/goals/api";
 import { formatMoney } from "@/lib/format";
 import { categoriesQuery, shortDate, tagsQuery, type TxnLink } from "./api";
@@ -134,7 +134,7 @@ export function TxnFilterChips({ link, onChange }: { link: TxnLink; onChange: (n
   const tag = tags?.tags.find((t) => t.id === link.tag);
   const usd = (v: number) => formatMoney(Math.round(v * 100), { whole: Number.isInteger(v) });
   const chips: { key: string; label: string; clear: Partial<TxnLink> }[] = [];
-  if (link.category) chips.push({ key: "category", label: cat ? `${cat.icon} ${cat.name}` : "Category", clear: { category: undefined } });
+  if (link.category) chips.push({ key: "category", label: cat ? withIcon(cat.icon, cat.name) : "Category", clear: { category: undefined } });
   if (link.group) chips.push({ key: "group", label: group ? group.name : "Group", clear: { group: undefined } });
   if (link.goal) chips.push({ key: "goal", label: goal ? `${goal.icon} ${goal.name}` : "Goal", clear: { goal: undefined } });
   if (link.uncategorized) chips.push({ key: "uncategorized", label: "Uncategorized", clear: { uncategorized: undefined } });

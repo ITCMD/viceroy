@@ -44,6 +44,9 @@ type Payoff struct {
 	Months   int   `json:"months"`   // 0 = never (within MaxMonths)
 	Interest int64 `json:"interest"` // interest charged until paid off
 	Order    int   `json:"order"`    // 1 = targeted (or paid off) first
+	// Payments is what the plan pays on this debt each month, from month 1 (this month) to
+	// the plan's last month; 0 once it's paid off.
+	Payments []int64 `json:"payments"`
 }
 
 type Plan struct {
@@ -100,6 +103,7 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 	for i, d := range debts {
 		bal[i] = max(d.Balance, 0)
 		payoffs[i].ID = d.ID
+		payoffs[i].Payments = []int64{}
 		budget += d.MinPayment
 	}
 	order := Order(debts, s)
@@ -133,6 +137,7 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 	}
 	for m := 1; m <= MaxMonths && open(); m++ {
 		left := budget
+		paid := make([]int64, len(debts))
 		for i, d := range debts {
 			if bal[i] <= 0 {
 				continue
@@ -144,6 +149,7 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 			pay := min(d.MinPayment, bal[i])
 			bal[i] -= pay
 			left -= pay
+			paid[i] += pay
 		}
 		if s != Minimum {
 			if s == Avalanche && promos {
@@ -159,10 +165,12 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 				}
 				bal[i] -= pay
 				left -= pay
+				paid[i] += pay
 			}
 		}
 		var total int64
 		for i := range debts {
+			payoffs[i].Payments = append(payoffs[i].Payments, paid[i])
 			if bal[i] <= 0 && payoffs[i].Months == 0 && debts[i].Balance > 0 {
 				payoffs[i].Months = m
 				ranked(i)
@@ -185,4 +193,14 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 // MonthLabel is the month n months after from, as YYYY-MM.
 func MonthLabel(from time.Time, n int) string {
 	return time.Date(from.Year(), from.Month()+time.Month(n), 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
+}
+
+// PaymentIn is what a plan pays on debt id in plan month m (1 = this month); 0 past the plan.
+func (p Plan) PaymentIn(id int64, m int) int64 {
+	for _, d := range p.Debts {
+		if d.ID == id && m >= 1 && m <= len(d.Payments) {
+			return d.Payments[m-1]
+		}
+	}
+	return 0
 }

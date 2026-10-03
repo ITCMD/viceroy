@@ -59,6 +59,9 @@ func (s *Server) handleBudgetExport(w http.ResponseWriter, r *http.Request) {
 	for _, g := range v.Groups {
 		for _, l := range g.Lines {
 			row := budgetio.Row{Group: g.Name, Category: l.Name, Icon: l.Icon, Amount: l.MonthBudget}
+			if strings.HasPrefix(row.Icon, "/api/") { // an uploaded image doesn't travel in a CSV
+				row.Icon = ""
+			}
 			if g.Kind != "goals" {
 				row.Timing = &l.Chunk
 			}
