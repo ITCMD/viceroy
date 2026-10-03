@@ -17,12 +17,22 @@ const (
 )
 
 // Debt is one balance owed. Balance is positive; APRBps is the yearly rate in basis points.
+// PromoMonths is how many plan months an intro 0% rate still covers before APRBps applies.
 type Debt struct {
-	ID         int64
-	Name       string
-	Balance    int64
-	APRBps     int64
-	MinPayment int64
+	ID          int64
+	Name        string
+	Balance     int64
+	APRBps      int64
+	MinPayment  int64
+	PromoMonths int
+}
+
+// rate is the yearly rate charged in plan month m (1-based).
+func (d Debt) rate(m int) int64 {
+	if m <= d.PromoMonths {
+		return 0
+	}
+	return d.APRBps
 }
 
 // MaxMonths caps a plan; debts not paid by then never will be at that pace.
@@ -33,7 +43,7 @@ type Payoff struct {
 	ID       int64 `json:"id"`
 	Months   int   `json:"months"`   // 0 = never (within MaxMonths)
 	Interest int64 `json:"interest"` // interest charged until paid off
-	Order    int   `json:"order"`    // 1 = targeted first
+	Order    int   `json:"order"`    // 1 = targeted (or paid off) first
 }
 
 type Plan struct {
@@ -54,16 +64,22 @@ func MonthlyInterest(balance, aprBps int64) int64 {
 	return (balance*aprBps + 60000) / 120000
 }
 
-// Order lists debt indexes in the order a strategy targets them.
+// Order lists debt indexes in the order a strategy targets them, by their regular rates.
 func Order(debts []Debt, s Strategy) []int {
+	return orderAt(debts, s, MaxMonths+1)
+}
+
+// orderAt is the order in plan month m: avalanche goes by the rate charged that month, so a
+// debt still on an intro 0% rate waits until it ends.
+func orderAt(debts []Debt, s Strategy, m int) []int {
 	idx := make([]int, len(debts))
 	for i := range idx {
 		idx[i] = i
 	}
 	sort.SliceStable(idx, func(a, b int) bool {
 		x, y := debts[idx[a]], debts[idx[b]]
-		if s == Avalanche && x.APRBps != y.APRBps {
-			return x.APRBps > y.APRBps
+		if s == Avalanche && x.rate(m) != y.rate(m) {
+			return x.rate(m) > y.rate(m)
 		}
 		if x.Balance != y.Balance {
 			return x.Balance < y.Balance
@@ -75,7 +91,8 @@ func Order(debts []Debt, s Strategy) []int {
 
 // Simulate runs a plan. With Snowball or Avalanche, the monthly payment stays at the sum of
 // minimums plus extra the whole way: what a paid-off debt freed up rolls onto the next target.
-// Minimum pays each debt's minimum and nothing more (extra is ignored).
+// Minimum pays each debt's minimum and nothing more (extra is ignored). A debt's Order is when
+// the plan first put extra toward it or it was paid off, whichever came first.
 func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 	bal := make([]int64, len(debts))
 	payoffs := make([]Payoff, len(debts))
@@ -86,8 +103,21 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 		budget += d.MinPayment
 	}
 	order := Order(debts, s)
-	for rank, i := range order {
-		payoffs[i].Order = rank + 1
+	rank := 0
+	ranked := func(i int) {
+		if payoffs[i].Order == 0 {
+			rank++
+			payoffs[i].Order = rank
+		}
+	}
+	if s == Minimum {
+		for _, i := range order {
+			ranked(i)
+		}
+	}
+	promos := false
+	for _, d := range debts {
+		promos = promos || d.PromoMonths > 0
 	}
 	if s != Minimum {
 		budget += max(extra, 0)
@@ -107,7 +137,7 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 			if bal[i] <= 0 {
 				continue
 			}
-			in := MonthlyInterest(bal[i], d.APRBps)
+			in := MonthlyInterest(bal[i], d.rate(m))
 			bal[i] += in
 			payoffs[i].Interest += in
 			plan.Interest += in
@@ -116,11 +146,17 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 			left -= pay
 		}
 		if s != Minimum {
+			if s == Avalanche && promos {
+				order = orderAt(debts, s, m)
+			}
 			for _, i := range order {
 				if left <= 0 {
 					break
 				}
 				pay := min(left, bal[i])
+				if pay > 0 {
+					ranked(i)
+				}
 				bal[i] -= pay
 				left -= pay
 			}
@@ -129,6 +165,7 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 		for i := range debts {
 			if bal[i] <= 0 && payoffs[i].Months == 0 && debts[i].Balance > 0 {
 				payoffs[i].Months = m
+				ranked(i)
 			}
 			total += max(bal[i], 0)
 		}
@@ -138,6 +175,9 @@ func Simulate(debts []Debt, s Strategy, extra int64) Plan {
 		}
 	}
 	plan.Never = open()
+	for _, i := range order { // never targeted nor paid off at this pace
+		ranked(i)
+	}
 	plan.Debts = payoffs
 	return plan
 }

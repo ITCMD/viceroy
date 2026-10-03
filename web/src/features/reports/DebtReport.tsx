@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Legend } from "@/components/charts/Legend";
 import { SeriesChart, type Series } from "@/components/charts/SeriesChart";
 import { useChartTokens } from "@/components/charts/tokens";
-import { Badge, Button, Card, Dialog, EmptyState, Field, FormError, MoneyText, Segmented, StatTile } from "@/components/ui";
+import { Badge, Button, Card, Dialog, EmptyState, Field, FormError, MoneyText, Segmented, StatTile, Switch } from "@/components/ui";
 import { AccountAvatar } from "@/features/accounts/AccountAvatar";
 import type { ChatContext } from "@/features/chat/api";
 import { api } from "@/lib/api";
@@ -27,8 +27,16 @@ function loadExtra() {
 }
 
 const aprText = (bps: number) => `${(bps / 100).toFixed(2).replace(/\.?0+$/, "")}%`;
+const dayText = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 const when = (r: Report, p: DebtPlan) => (p.never ? "Never at this pace" : p.months === 0 ? "Now" : planMonth(r.start, p.months));
+/** "2027-03" for the month n months after start (YYYY-MM). */
+const planKey = (start: string, n: number) => {
+  const [y, m] = start.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
 /** Same payoff order means the same simulation, so the two plans are identical. */
 const sameOrder = (a: DebtPlan, b: DebtPlan) => a.debts.every((d, i) => d.order === b.debts[i]?.order);
 const needsTerms = (d: Debt) => d.apr_source === "missing" || d.min_payment_source === "missing";
@@ -115,6 +123,7 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
           owed: dollars(d.balance),
           apr_percent: d.apr_bps / 100,
           apr_source: d.apr_source,
+          zero_percent_intro_until: d.promo_until,
           min_payment: dollars(d.min_payment),
           min_payment_source: d.min_payment_source,
           monthly_interest: dollars(d.monthly_interest),
@@ -206,7 +215,18 @@ export function DebtReport({ onContext }: { onContext: (c: ChatContext) => void 
                     <MoneyText cents={d.balance} />
                   </td>
                   <td className="py-2 text-right tabular">
-                    {d.apr_source === "missing" ? <Badge>Not set</Badge> : aprText(d.apr_bps)}
+                    {d.apr_source === "missing" ? (
+                      <Badge>Not set</Badge>
+                    ) : d.promo_until ? (
+                      <>
+                        <div>0%</div>
+                        <div className="text-[11px] text-muted">
+                          until {dayText(d.promo_until)}, then {aprText(d.apr_bps)}
+                        </div>
+                      </>
+                    ) : (
+                      aprText(d.apr_bps)
+                    )}
                   </td>
                   <td className="py-2 text-right tabular">
                     {d.min_payment_source === "missing" ? (
@@ -365,6 +385,13 @@ function Insight({ r, strategy, saved, same }: { r: Report; strategy: Strategy; 
       lines.push(`Both strategies start with ${sf.name}: it's the smallest balance and the highest rate.`);
     }
   }
+  for (const d of r.debts) {
+    const months = r.plans[strategy]!.debts.find((x) => x.id === d.account_id)?.months ?? 0;
+    // Plan month n ends n months from now; past the intro's month, interest is being charged.
+    if (d.promo_until && (months === 0 || planKey(r.start, months) > d.promo_until.slice(0, 7))) {
+      lines.push(`${d.name}'s 0% rate ends ${dayText(d.promo_until)}, before this plan pays it off; ${aprText(d.apr_bps)} applies after that.`);
+    }
+  }
   const top = [...r.debts].sort((a, b) => b.monthly_interest - a.monthly_interest)[0];
   if (top && top.monthly_interest > 0) lines.push(`${top.name} costs the most: about ${formatMoney(top.monthly_interest, { whole: true })} in interest every month.`);
   if (lines.length === 0) return null;
@@ -381,13 +408,17 @@ function DebtTermsDialog({ debt, onClose }: { debt: Debt | null; onClose: () => 
   const qc = useQueryClient();
   const [apr, setApr] = useState("");
   const [min, setMin] = useState("");
+  const [promo, setPromo] = useState(false);
+  const [until, setUntil] = useState("");
   useEffect(() => {
     if (!debt) return;
     setApr(debt.apr_source === "user" ? String(debt.apr_bps / 100) : "");
     setMin(debt.min_payment_source === "user" ? (debt.min_payment / 100).toFixed(2) : "");
+    setPromo(!!debt.promo_until);
+    setUntil(debt.promo_until ?? "");
   }, [debt]);
   const save = useMutation({
-    mutationFn: () => api.patch(`/accounts/${debt!.account_id}`, { apr, min_payment: min }),
+    mutationFn: () => api.patch(`/accounts/${debt!.account_id}`, { apr, min_payment: min, promo_until: promo ? until : "" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["reports", "debt"] });
       qc.invalidateQueries({ queryKey: ["accounts"] });
@@ -405,7 +436,7 @@ function DebtTermsDialog({ debt, onClose }: { debt: Debt | null; onClose: () => 
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => save.mutate()} loading={save.isPending}>
+          <Button onClick={() => save.mutate()} loading={save.isPending} disabled={promo && !until}>
             Save
           </Button>
         </>
@@ -415,10 +446,12 @@ function DebtTermsDialog({ debt, onClose }: { debt: Debt | null; onClose: () => 
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
-          save.mutate();
+          if (!promo || until) save.mutate();
         }}
       >
-        <Field label="APR (%)" inputMode="decimal" placeholder="e.g. 24.99" value={apr} onChange={(e) => setApr(e.target.value)} />
+        <Switch label="0% intro APR" hint="A promo or balance transfer rate that ends on a date." checked={promo} onCheckedChange={setPromo} />
+        {promo && <Field label="0% until" type="date" required value={until} onChange={(e) => setUntil(e.target.value)} />}
+        <Field label={promo ? "APR after the intro (%)" : "APR (%)"} inputMode="decimal" placeholder="e.g. 24.99" value={apr} onChange={(e) => setApr(e.target.value)} />
         <Field
           label="Minimum payment ($)"
           inputMode="decimal"

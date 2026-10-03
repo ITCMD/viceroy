@@ -152,6 +152,27 @@ func TestDebtReport(t *testing.T) {
 	if snow["months"].(float64) >= min["months"].(float64) || snow["interest"].(float64) >= min["interest"].(float64) || snow["never"] != false {
 		t.Fatalf("plans: minimum %v / snowball %v", min["months"], snow["months"])
 	}
+	// A 0% intro rate: no interest until it ends, and a sooner plan than without it.
+	if code, _ := c.do("PATCH", fmt.Sprint("/api/accounts/", card["id"]), `{"promo_until":"next spring"}`, true); code != 400 {
+		t.Fatalf("bad promo date = %d", code)
+	}
+	until := budgetview.Today().AddDate(1, 0, 0).Format(time.DateOnly)
+	if code, out := c.do("PATCH", fmt.Sprint("/api/accounts/", card["id"]), fmt.Sprintf(`{"promo_until":%q}`, until), true); code != 204 {
+		t.Fatalf("set promo = %d %v", code, out)
+	}
+	_, rp := c.do("GET", "/api/reports/debt?extra=200", "", false)
+	visa = rp["debts"].([]any)[1].(map[string]any)
+	if visa["promo_until"] != until || visa["monthly_interest"] != float64(0) || visa["apr_bps"] != float64(2499) {
+		t.Fatalf("visa with promo = %v", visa)
+	}
+	if pi := rp["plans"].(map[string]any)["avalanche"].(map[string]any)["interest"].(float64); pi >= plans["avalanche"].(map[string]any)["interest"].(float64) {
+		t.Fatalf("promo plan interest %v not below %v", pi, plans["avalanche"].(map[string]any)["interest"])
+	}
+	c.do("PATCH", fmt.Sprint("/api/accounts/", card["id"]), `{"promo_until":""}`, true)
+	if _, rp := c.do("GET", "/api/reports/debt", "", false); rp["debts"].([]any)[1].(map[string]any)["promo_until"] != nil {
+		t.Fatalf("promo not cleared")
+	}
+
 	if h := r["history"].([]any); len(h) == 0 || h[len(h)-1].(map[string]any)["total"] != float64(1100000+4510) {
 		t.Fatalf("history = %v", h)
 	}

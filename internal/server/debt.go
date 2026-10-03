@@ -23,7 +23,8 @@ type debtDTO struct {
 	LogoURL          *string `json:"logo_url"`
 	Balance          int64   `json:"balance"` // owed, positive
 	APRBps           int64   `json:"apr_bps"`
-	APRSource        string  `json:"apr_source"` // user | missing
+	APRSource        string  `json:"apr_source"`            // user | missing
+	PromoUntil       string  `json:"promo_until,omitempty"` // 0% through this date, then APRBps; only while it hasn't ended
 	MinPayment       int64   `json:"min_payment"`
 	MinPaymentSource string  `json:"min_payment_source"` // user | bill (the bank's statement email) | missing
 	MonthlyInterest  int64   `json:"monthly_interest"`
@@ -99,7 +100,13 @@ func (s *Server) debtReport(ctx context.Context, hh int64, extra int64) (debtRep
 		if a.APRBps != nil {
 			d.APRBps, d.APRSource = *a.APRBps, "user"
 		}
-		d.MonthlyInterest = debt.MonthlyInterest(owed, d.APRBps)
+		promoMonths := 0
+		if a.PromoUntil != nil && *a.PromoUntil >= today.Format(time.DateOnly) {
+			d.PromoUntil = *a.PromoUntil
+			promoMonths = monthsThrough(today, d.PromoUntil)
+		} else {
+			d.MonthlyInterest = debt.MonthlyInterest(owed, d.APRBps)
+		}
 		switch {
 		case a.MinPaymentCents != nil:
 			d.MinPayment, d.MinPaymentSource = *a.MinPaymentCents, "user"
@@ -112,7 +119,7 @@ func (s *Server) debtReport(ctx context.Context, hh int64, extra int64) (debtRep
 		rep.Debts = append(rep.Debts, d)
 		rep.Total += owed
 		rep.MonthlyInterest += d.MonthlyInterest
-		sims = append(sims, debt.Debt{ID: a.ID, Name: a.Name, Balance: owed, APRBps: d.APRBps, MinPayment: d.MinPayment})
+		sims = append(sims, debt.Debt{ID: a.ID, Name: a.Name, Balance: owed, APRBps: d.APRBps, MinPayment: d.MinPayment, PromoMonths: promoMonths})
 	}
 	for _, c := range charges {
 		rep.InterestPaid12m += c.Total
@@ -167,4 +174,14 @@ func (s *Server) debtReport(ctx context.Context, hh int64, extra int64) (debtRep
 		rep.History = append(rep.History, p)
 	}
 	return rep, nil
+}
+
+// monthsThrough counts the plan months (each ending a month after the last) that end on or
+// before until: how many statements an intro rate ending that day still covers.
+func monthsThrough(today time.Time, until string) int {
+	n := 0
+	for n < debt.MaxMonths && today.AddDate(0, n+1, 0).Format(time.DateOnly) <= until {
+		n++
+	}
+	return n
 }

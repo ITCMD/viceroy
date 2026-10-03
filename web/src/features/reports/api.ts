@@ -97,6 +97,8 @@ export type Debt = {
   balance: number;
   apr_bps: number;
   apr_source: "user" | "missing";
+  /** 0% intro rate through this date (YYYY-MM-DD), then apr_bps. */
+  promo_until?: string;
   min_payment: number;
   min_payment_source: "user" | "bill" | "missing";
   monthly_interest: number;

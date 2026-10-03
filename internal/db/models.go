@@ -40,6 +40,7 @@ type Account struct {
 	AdoptRows         int64          `json:"adopt_rows"`
 	AprBps            sql.NullInt64  `json:"apr_bps"`
 	MinPaymentCents   sql.NullInt64  `json:"min_payment_cents"`
+	PromoUntil        sql.NullString `json:"promo_until"`
 }
 
 type AccountBill struct {

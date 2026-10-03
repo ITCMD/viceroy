@@ -384,7 +384,7 @@ func debtForModel(rep debtReport) map[string]any {
 	for _, d := range rep.Debts {
 		debts = append(debts, map[string]any{
 			"name": d.Name, "type": d.Type, "owed": usd(d.Balance), "apr_percent": float64(d.APRBps) / 100, "apr_source": d.APRSource,
-			"min_payment": usd(d.MinPayment), "min_payment_source": d.MinPaymentSource,
+			"min_payment": usd(d.MinPayment), "min_payment_source": d.MinPaymentSource, "zero_percent_intro_until": d.PromoUntil,
 			"monthly_interest": usd(d.MonthlyInterest), "interest_charged_last_12_months": usd(d.InterestPaid12m),
 		})
 	}

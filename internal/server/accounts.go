@@ -77,6 +77,7 @@ type accountDTO struct {
 	OwnerID           *int64   `json:"owner_id"`       // household member, nil = shared
 	APRBps            *int64   `json:"apr_bps"`        // debts: yearly rate in basis points, nil = not entered
 	MinPaymentCents   *int64   `json:"min_payment_cents"`
+	PromoUntil        *string  `json:"promo_until"` // debts: 0% intro rate through this date (YYYY-MM-DD)
 }
 
 // billDTO is an account's payment state. Amounts are cents; dates YYYY-MM-DD.
@@ -163,7 +164,7 @@ func (s *Server) accountDTOs(ctx context.Context, hh int64) ([]accountDTO, error
 			Hidden: a.Hidden == 1, IsManual: a.IsManual == 1, ConnectionID: ptr(a.ConnectionID), InstitutionStatus: "ok",
 			Builtin: a.Builtin, Color: a.Color, ColorSource: a.ColorSource, OwnerID: ptr(a.OwnerUserID),
 			InvertBalance: a.InvertBalance == 1, Offered: a.OfferedAt.Valid && a.Status == "ignored", ReplacedBy: ptr(a.ReplacedBy),
-			APRBps: ptr(a.AprBps), MinPaymentCents: ptr(a.MinPaymentCents),
+			APRBps: ptr(a.AprBps), MinPaymentCents: ptr(a.MinPaymentCents), PromoUntil: strPtr(a.PromoUntil),
 		}
 		if v, ok := logos[a.ID]; ok {
 			u := fmt.Sprintf("/api/accounts/%d/logo?v=%d", a.ID, v)
@@ -301,9 +302,11 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		Color             *string         `json:"color"` // #rrggbb, or "" to let Viceroy pick again
 		InvertBalance     *bool           `json:"invert_balance"`
 		OwnerID           json.RawMessage `json:"owner_id"` // member id, or null for shared
-		// Debts: "24.99" (percent) and "85.00" (dollars); "" clears.
+		// Debts: "24.99" (percent), "85.00" (dollars) and a 0% intro rate's last day
+		// (YYYY-MM-DD); "" clears.
 		APR        *string `json:"apr"`
 		MinPayment *string `json:"min_payment"`
+		PromoUntil *string `json:"promo_until"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -378,10 +381,21 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 			minPay = sql.NullInt64{Int64: c, Valid: true}
 		}
 	}
+	promo := a.PromoUntil
+	if in.PromoUntil != nil {
+		promo = sql.NullString{}
+		if v := strings.TrimSpace(*in.PromoUntil); v != "" {
+			if _, err := time.Parse(time.DateOnly, v); err != nil {
+				writeError(w, http.StatusBadRequest, "Enter the intro rate's end date as YYYY-MM-DD.")
+				return
+			}
+			promo = sql.NullString{String: v, Valid: true}
+		}
+	}
 	q := db.New(s.db)
-	if in.APR != nil || in.MinPayment != nil {
+	if in.APR != nil || in.MinPayment != nil || in.PromoUntil != nil {
 		if err := q.SetAccountDebtTerms(r.Context(), db.SetAccountDebtTermsParams{
-			AprBps: apr, MinPaymentCents: minPay, UpdatedAt: p.UpdatedAt, ID: a.ID, HouseholdID: a.HouseholdID,
+			AprBps: apr, MinPaymentCents: minPay, PromoUntil: promo, UpdatedAt: p.UpdatedAt, ID: a.ID, HouseholdID: a.HouseholdID,
 		}); err != nil {
 			s.internalError(w, err)
 			return

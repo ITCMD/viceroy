@@ -147,6 +147,20 @@ test("debt free future: debts, terms and payoff plans", async ({ page }) => {
   await expect(table.getByTestId("debt-row").filter({ hasText: "Car Loan" })).toContainText("6.9%");
   await expect(table.getByTestId("debt-row").filter({ hasText: "Car Loan" })).toContainText("$310.00");
 
+  // A 0% intro rate on the card: shown in the table, and its end date flagged if the plan runs past it.
+  await page.getByRole("button", { name: "Edit Visa Rewards rate and minimum" }).click();
+  await page.getByRole("switch", { name: "0% intro APR" }).click();
+  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+  await page.getByLabel("0% until").fill("2027-02-28");
+  await expect(page.getByLabel("APR after the intro (%)")).toHaveValue("24.99");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(table.getByTestId("debt-row").filter({ hasText: "Visa Rewards" })).toContainText("until Feb 28, 2027, then 24.99%");
+  await shot(page, "234-debt-promo");
+  await page.getByRole("button", { name: "Edit Visa Rewards rate and minimum" }).click();
+  await page.getByRole("switch", { name: "0% intro APR" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(table.getByTestId("debt-row").filter({ hasText: "Visa Rewards" })).not.toContainText("until");
+
   await page.getByLabel("Extra each month").fill("250");
   await expect(page.getByTestId("debt-insight")).toContainText("$250 extra a month saves");
   // Highest rate first: the 24.99% card before the 6.9% loan (other specs add their own debts).

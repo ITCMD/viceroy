@@ -74,3 +74,33 @@ func TestSimulateNever(t *testing.T) {
 		t.Fatal("with $200 extra it gets paid")
 	}
 }
+
+func TestPromo(t *testing.T) {
+	// No interest for the promo months, then the regular rate.
+	one := []Debt{{ID: 1, Balance: 100000, APRBps: 2400, MinPayment: 10000, PromoMonths: 3}}
+	p := Simulate(one, Minimum, 0)
+	if p.Balances[2] != 70000 || p.Balances[3] != 60000+MonthlyInterest(70000, 2400) {
+		t.Fatalf("balances = %v", p.Balances[:4])
+	}
+	one[0].PromoMonths = 0
+	if full := Simulate(one, Minimum, 0); !(p.Interest > 0 && p.Interest < full.Interest) {
+		t.Fatalf("promo interest %d vs full %d", p.Interest, full.Interest)
+	}
+
+	// A 0% transfer for a year (27% after) and a 20% card: avalanche pays the card first
+	// while the transfer costs nothing, though by regular rates the transfer ranks first.
+	ds := []Debt{
+		{ID: 1, Name: "Transfer", Balance: 300000, APRBps: 2700, MinPayment: 6000, PromoMonths: 12},
+		{ID: 2, Name: "Card", Balance: 300000, APRBps: 2000, MinPayment: 9000},
+	}
+	if Order(ds, Avalanche)[0] != 0 {
+		t.Fatal("by regular rates, the 27% debt comes first")
+	}
+	ava := Simulate(ds, Avalanche, 30000)
+	if ava.Debts[1].Order != 1 || ava.Debts[0].Order != 2 || ava.Debts[1].Months > 12 {
+		t.Fatalf("avalanche during promo = %+v", ava.Debts)
+	}
+	if static := Simulate([]Debt{ds[0], ds[1]}, Snowball, 30000); ava.Interest > static.Interest {
+		t.Fatalf("avalanche %d should not cost more than snowball %d here", ava.Interest, static.Interest)
+	}
+}
