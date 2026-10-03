@@ -7,12 +7,12 @@ export type NavItem = { to: string; label: string; icon: LucideIcon; mobile?: bo
 /** Single source of truth for navigation; the sidebar and mobile tab bar both render this. */
 export const navItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, mobile: true },
-  { to: "/accounts", label: "Accounts", icon: Landmark, mobile: true },
+  { to: "/accounts", label: "Accounts", icon: Landmark },
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight, mobile: true },
   { to: "/budget", label: "Budget", icon: PiggyBank, mobile: true },
   { to: "/recurring", label: "Recurring", icon: Repeat },
   { to: "/rules", label: "Rules", icon: ListFilter },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/reports", label: "Reports", icon: BarChart3, mobile: true },
   { to: "/goals", label: "Goals", icon: Target },
   { to: "/wishlist", label: "Wishlist", icon: ShootingStar },
   { to: "/settings", label: "Settings", icon: Settings },

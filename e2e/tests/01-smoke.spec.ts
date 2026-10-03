@@ -66,9 +66,11 @@ test("mobile layout uses bottom tab bar", async ({ browser }) => {
   await expect(page.getByRole("heading", { name: "Budget", level: 1 })).toBeVisible();
   await shot(page, "04-mobile-budget");
   // Pages that aren't tabs live under More.
-  await page.getByRole("button", { name: "More" }).click();
-  await page.getByRole("menuitem", { name: "Reports" }).click();
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Reports", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Accounts" }).click();
+  await expect(page.getByRole("heading", { name: "Accounts", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "More" }).click();
   await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible();
   await shot(page, "04-mobile-more");
