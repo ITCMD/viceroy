@@ -7,6 +7,7 @@ import { Button, Card, CategoryIcon, MoneyText, PageHeader, Segmented } from "@/
 import { AccountAvatar } from "@/features/accounts/AccountAvatar";
 import { accountsQuery } from "@/features/accounts/api";
 import { ChatSheet } from "@/features/chat/ChatSheet";
+import { CloseoutBanner } from "@/features/closeout/CloseoutBanner";
 import type { ChatContext } from "@/features/chat/api";
 import { reportQuery, type Report } from "@/features/reports/api";
 import { dollars } from "@/features/reports/shared";
@@ -105,6 +106,7 @@ export function BudgetPage() {
         }
       />
       <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6">
+        <CloseoutBanner showClosed />
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="sm" aria-label="Previous period" onClick={() => b && setDate(b.prev)}>

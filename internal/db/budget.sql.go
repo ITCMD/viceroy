@@ -556,7 +556,8 @@ const listGoals = `-- name: ListGoals :many
 
 SELECT g.id, g.household_id, g.name, g.icon, g.target_cents, g.target_date, g.starting_cents, g.archived, g.sort, g.created_at, g.builtin, CAST(COALESCE((
     SELECT SUM(ABS(t.amount_cents)) FROM transactions t
-    WHERE t.goal_id = g.id AND t.goal_withdrawal = 0 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS contributed_cents,
+    WHERE t.goal_id = g.id AND t.goal_withdrawal = 0 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0)
+    + COALESCE((SELECT SUM(a.amount_cents) FROM closeout_allocations a WHERE a.goal_id = g.id), 0) AS INTEGER) AS contributed_cents,
   CAST(COALESCE((
     SELECT SUM(ABS(t.amount_cents)) FROM transactions t
     WHERE t.goal_id = g.id AND t.goal_withdrawal = 1 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS withdrawn_cents
@@ -580,6 +581,7 @@ type ListGoalsRow struct {
 }
 
 // ---- goals ----
+// contributed_cents includes money a month's close-out put toward the goal.
 func (q *Queries) ListGoals(ctx context.Context, householdID int64) ([]ListGoalsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listGoals, householdID)
 	if err != nil {

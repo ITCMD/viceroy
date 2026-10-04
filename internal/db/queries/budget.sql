@@ -53,10 +53,12 @@ GROUP BY t.goal_id, t.date;
 
 -- ---- goals ----
 
+-- contributed_cents includes money a month's close-out put toward the goal.
 -- name: ListGoals :many
 SELECT g.*, CAST(COALESCE((
     SELECT SUM(ABS(t.amount_cents)) FROM transactions t
-    WHERE t.goal_id = g.id AND t.goal_withdrawal = 0 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS contributed_cents,
+    WHERE t.goal_id = g.id AND t.goal_withdrawal = 0 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0)
+    + COALESCE((SELECT SUM(a.amount_cents) FROM closeout_allocations a WHERE a.goal_id = g.id), 0) AS INTEGER) AS contributed_cents,
   CAST(COALESCE((
     SELECT SUM(ABS(t.amount_cents)) FROM transactions t
     WHERE t.goal_id = g.id AND t.goal_withdrawal = 1 AND t.hidden = 0 AND t.linked_txn_id IS NULL), 0) AS INTEGER) AS withdrawn_cents

@@ -16,6 +16,8 @@ const suggestions = [
   "How has my net worth changed this year?",
 ];
 
+const contextJSON = (c: ChatContext) => JSON.stringify({ page: c.page, ...(c.data as object) });
+
 const headerButton = "grid size-7 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text";
 
 /** "Chat with your budget": a side panel with the conversation and a composer. With a
@@ -35,10 +37,11 @@ export function ChatSheet({ open, onOpenChange, context }: { open: boolean; onOp
       setThreadId(null);
       clearError();
       setDiscussing(true);
+      if (context.ask) send(null, context.ask, contextJSON(context));
     }
     // Only on opening: a refreshed context mid-chat doesn't restart it.
   }, [open]);
-  const pageContext = discussing && context ? JSON.stringify({ page: context.page, ...(context.data as object) }) : undefined;
+  const pageContext = discussing && context ? contextJSON(context) : undefined;
 
   const messages: ChatMessage[] = thread && thread.thread.id === threadId ? thread.messages : [];
   // While streaming, the server copy of the new question may already be loaded; show it once.

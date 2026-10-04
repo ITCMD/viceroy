@@ -6,7 +6,7 @@ import { Badge, Button, CategoryIcon, Dialog, Field, FormError, Select, Tabs, Te
 import { aiSettingsQuery } from "@/features/settings/ai";
 import { api } from "@/lib/api";
 import { shrinkImage } from "@/lib/image";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, toCents } from "@/lib/format";
 import { budgetQuery, centsToInput, chunkLabel, monthLabel, useBudgetMutation, type Chunk } from "./api";
 
 type Source = "csv" | "text" | "image";
@@ -39,11 +39,6 @@ const sources: { value: Source; label: string }[] = [
   { value: "text", label: "Paste text" },
   { value: "image", label: "Screenshot" },
 ];
-
-const toCents = (s: string) => {
-  const v = Number(s.replace(/[$,\s]/g, ""));
-  return s.trim() === "" ? 0 : Number.isFinite(v) && v >= 0 ? Math.round(v * 100) : null;
-};
 
 const sameTiming = (a: Chunk | null, b: Chunk | null) => !a || !b || JSON.stringify(a) === JSON.stringify(b);
 

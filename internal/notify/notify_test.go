@@ -24,11 +24,29 @@ func TestDollars(t *testing.T) {
 	}
 }
 
+func TestPaceDay(t *testing.T) {
+	sept := budget.MonthPeriod(budget.Date(2026, 9, 1))
+	for today, want := range map[string]string{
+		"2026-09-01": "2026-09-07", // Tue: the first week runs to Sat 5th, but at least day 7
+		"2026-09-08": "2026-09-12", // Tue → Sat
+		"2026-09-13": "2026-09-19", // Sun starts a week
+		"2026-09-29": "2026-09-30", // capped at month end
+	} {
+		d, _ := budget.ParseDate(today)
+		if got := budget.FormatDate(budgetview.PaceDay(sept, d, time.Sunday)); got != want {
+			t.Errorf("PaceDay(%s) = %s, want %s", today, got, want)
+		}
+	}
+	if d := budgetview.PaceDay(sept, budget.Date(2026, 10, 1), time.Sunday); !d.IsZero() {
+		t.Errorf("outside the period = %v", d)
+	}
+}
+
 func TestBudgetAlerts(t *testing.T) {
 	line := func(id int64, budget, actual, expected int64) budgetview.Line {
-		return budgetview.Line{ID: id, Name: "Cat", Budget: budget, Actual: actual, Expected: expected}
+		return budgetview.Line{ID: id, Name: "Cat", Budget: budget, Actual: actual, WeekExpected: expected}
 	}
-	v := budgetview.View{Month: "2026-09", Groups: []budgetview.Group{
+	v := budgetview.View{Month: "2026-09", PaceThrough: "2026-09-12", Groups: []budgetview.Group{
 		{Kind: "income", Lines: []budgetview.Line{line(1, 100_00, 500_00, 50_00)}}, // income never alerts
 		{Kind: "flexible", Lines: []budgetview.Line{
 			line(2, 300_00, 320_00, 200_00), // over
@@ -44,11 +62,14 @@ func TestBudgetAlerts(t *testing.T) {
 	for _, a := range got {
 		keys = append(keys, a.Key)
 	}
-	if strings.Join(keys, ",") != "over:2:2026-09,pace:3:2026-09" {
+	if strings.Join(keys, ",") != "over:2:2026-09,pace:3:2026-09-12" {
 		t.Fatalf("keys = %v", keys)
 	}
 	if got[0].Body != "$320.00 spent of $300.00 this month ($20.00 over)." {
 		t.Errorf("over body = %q", got[0].Body)
+	}
+	if got[1].Body != "$200.00 spent so far; about $100.00 was planned through Sat, Sep 12 ($300.00 budget)." {
+		t.Errorf("pace body = %q", got[1].Body)
 	}
 	p := DefaultPrefs
 	p.OverBudget = false
@@ -58,7 +79,7 @@ func TestBudgetAlerts(t *testing.T) {
 	for _, a := range got {
 		keys = append(keys, a.Key)
 	}
-	if strings.Join(keys, ",") != "pace:3:2026-09,pace:4:2026-09" {
+	if strings.Join(keys, ",") != "pace:3:2026-09-12,pace:4:2026-09-12" {
 		t.Fatalf("keys with pacing 5%% and no over alerts = %v", keys)
 	}
 }

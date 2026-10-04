@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"viceroy/internal/budget"
 	"viceroy/internal/budgetview"
 	"viceroy/internal/db"
 )
@@ -52,7 +53,8 @@ type Alert struct {
 const minPaceGap = 10_00
 
 // BudgetAlerts checks the expense lines of a month budget view: over budget, or (when not over)
-// spending more than PacingPct ahead of what the category's schedule expects by today.
+// spending more than PacingPct ahead of what the category's schedule plans through the end of
+// this week (Line.WeekExpected). Pacing alerts at most once per category per week.
 func BudgetAlerts(v budgetview.View, p Prefs) []Alert {
 	var out []Alert
 	for _, g := range v.Groups {
@@ -72,18 +74,27 @@ func BudgetAlerts(v budgetview.View, p Prefs) []Alert {
 						Body:  fmt.Sprintf("%s spent of %s this month (%s over).", Dollars(l.Actual), Dollars(l.Budget), Dollars(l.Actual-l.Budget)),
 					})
 				}
-			case p.Pacing && l.Expected > 0 && l.Expected < l.Budget &&
-				l.Actual*100 > l.Expected*int64(100+p.PacingPct) && l.Actual-l.Expected >= minPaceGap:
+			case p.Pacing && l.WeekExpected > 0 && l.WeekExpected < l.Budget &&
+				l.Actual*100 > l.WeekExpected*int64(100+p.PacingPct) && l.Actual-l.WeekExpected >= minPaceGap:
 				out = append(out, Alert{
-					Kind: "pacing", Key: fmt.Sprintf("pace:%d:%s", l.ID, v.Month), URL: "/budget",
+					Kind: "pacing", Key: fmt.Sprintf("pace:%d:%s", l.ID, v.PaceThrough), URL: "/budget",
 					Title: l.Name + " is ahead of pace",
-					Body: fmt.Sprintf("%s spent so far; about %s was planned by today (%s budget).",
-						Dollars(l.Actual), Dollars(l.Expected), Dollars(l.Budget)),
+					Body: fmt.Sprintf("%s spent so far; about %s was planned through %s (%s budget).",
+						Dollars(l.Actual), Dollars(l.WeekExpected), paceDayLabel(v.PaceThrough), Dollars(l.Budget)),
 				})
 			}
 		}
 	}
 	return out
+}
+
+// paceDayLabel formats a YYYY-MM-DD date as "Sat, Oct 10".
+func paceDayLabel(d string) string {
+	t, err := budget.ParseDate(d)
+	if err != nil {
+		return "this week"
+	}
+	return t.Format("Mon, Jan 2")
 }
 
 // LargeTxnAlert describes a large transaction.

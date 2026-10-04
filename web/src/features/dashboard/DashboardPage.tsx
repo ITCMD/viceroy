@@ -8,6 +8,8 @@ import { SeriesChart, type Series } from "@/components/charts/SeriesChart";
 import { useChartTokens } from "@/components/charts/tokens";
 import { Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader, Glyph } from "@/components/ui";
 import { ChatSheet } from "@/features/chat/ChatSheet";
+import { CloseoutBanner } from "@/features/closeout/CloseoutBanner";
+import { RiskCard } from "@/features/closeout/RiskCard";
 import { accountsQuery, accountSubtitle } from "@/features/accounts/api";
 import { NetWorthCard } from "@/features/accounts/NetWorthCard";
 import { budgetQuery, monthLabel, type BudgetGroup } from "@/features/budget/api";
@@ -44,6 +46,8 @@ export function DashboardPage() {
           {greeting()}
           {first ? `, ${first}` : ""}
         </h2>
+        <CloseoutBanner />
+        <RiskCard />
         <div className="grid gap-4 lg:grid-cols-2">
           <NetWorthCard />
           <SpendingCard />

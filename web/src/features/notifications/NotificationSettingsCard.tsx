@@ -55,7 +55,7 @@ export function NotificationSettingsCard() {
           />
           <Switch
             label="Spending runs ahead of pace"
-            hint="Compared with what the category's spending timing expects by today."
+            hint="Compared with what the category's spending timing plans through the end of this week. At most once a week per category."
             checked={prefs?.pacing ?? true}
             disabled={!prefs || save.isPending}
             onCheckedChange={(v) => update({ pacing: v })}

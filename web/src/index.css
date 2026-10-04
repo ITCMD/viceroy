@@ -17,6 +17,7 @@
   --c-sidebar: #ffffff;
   /* Recurring charges still to come (budget bars, calendar). */
   --c-upcoming: #2a78d6;
+  --c-warning: #b7860b;
   /* Categorical chart hues, fixed order (validated for colorblind separation). */
   --c-chart-1: #2a78d6;
   --c-chart-2: #eb6834;
@@ -44,6 +45,7 @@
     --c-negative: #f0675b;
     --c-sidebar: #191816;
     --c-upcoming: #3987e5;
+    --c-warning: #e0b23c;
     --c-chart-1: #3987e5;
     --c-chart-2: #d95926;
     --c-chart-3: #199e70;
@@ -70,6 +72,7 @@
   --color-negative: var(--c-negative);
   --color-sidebar: var(--c-sidebar);
   --color-upcoming: var(--c-upcoming);
+  --color-warning: var(--c-warning);
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 

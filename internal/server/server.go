@@ -90,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 			s.settingsRoutes(r)
 			s.emailRoutes(r)
 			s.budgetRoutes(r)
+			s.closeoutRoutes(r)
 			s.budgetIORoutes(r)
 			s.reportRoutes(r)
 			s.recurringRoutes(r)

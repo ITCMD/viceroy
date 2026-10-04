@@ -31,3 +31,9 @@ export function formatMicros(micros: number) {
   if (micros < 1_000_000) return `$${(micros / 1_000_000).toFixed(4)}`;
   return formatMoney(Math.round(micros / 10_000));
 }
+
+/** Cents from a typed amount like "$1,250.50"; 0 when empty, null when not a valid non-negative amount. */
+export function toCents(s: string) {
+  const v = Number(s.replace(/[$,\s]/g, ""));
+  return s.trim() === "" ? 0 : Number.isFinite(v) && v >= 0 ? Math.round(v * 100) : null;
+}

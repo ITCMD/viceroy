@@ -118,6 +118,20 @@ type BudgetAmount struct {
 	AccountID   sql.NullInt64 `json:"account_id"`
 }
 
+type BudgetCloseout struct {
+	ID           int64         `json:"id"`
+	HouseholdID  int64         `json:"household_id"`
+	Month        string        `json:"month"`
+	ClosedAt     int64         `json:"closed_at"`
+	ClosedBy     sql.NullInt64 `json:"closed_by"`
+	BudgetCents  int64         `json:"budget_cents"`
+	ActualCents  int64         `json:"actual_cents"`
+	SurplusCents int64         `json:"surplus_cents"`
+	Review       string        `json:"review"`
+	Analysis     string        `json:"analysis"`
+	AnalysisAt   sql.NullInt64 `json:"analysis_at"`
+}
+
 type Category struct {
 	ID           int64  `json:"id"`
 	HouseholdID  int64  `json:"household_id"`
@@ -163,6 +177,16 @@ type ChatThread struct {
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`
 	Context   string `json:"context"`
+}
+
+type CloseoutAllocation struct {
+	ID          int64         `json:"id"`
+	CloseoutID  int64         `json:"closeout_id"`
+	HouseholdID int64         `json:"household_id"`
+	CategoryID  sql.NullInt64 `json:"category_id"`
+	GoalID      sql.NullInt64 `json:"goal_id"`
+	Month       string        `json:"month"`
+	AmountCents int64         `json:"amount_cents"`
 }
 
 type Connection struct {

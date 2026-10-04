@@ -127,16 +127,19 @@ func Today() time.Time {
 // ---- budget view ----
 
 type Line struct {
-	ID          int64        `json:"id"`
-	Name        string       `json:"name"`
-	Icon        string       `json:"icon"`
-	Budget      int64        `json:"budget"`       // allowance for the period
-	Actual      int64        `json:"actual"`       // spent (expenses, goals) or received (income)
-	Expected    int64        `json:"expected"`     // pacing: allowance through today, 0 outside the period
-	MonthBudget int64        `json:"month_budget"` // the editable monthly amount (month of the period start)
-	Chunk       budget.Chunk `json:"chunk"`
-	Hidden      bool         `json:"hidden"`   // hidden from the budget (still counted in totals)
-	Upcoming    int64        `json:"upcoming"` // recurring charges still to come in the upcoming window (set by the API)
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Icon     string `json:"icon"`
+	Budget   int64  `json:"budget"`   // allowance for the period
+	Actual   int64  `json:"actual"`   // spent (expenses, goals) or received (income)
+	Expected int64  `json:"expected"` // pacing: allowance through today, 0 outside the period
+	// WeekExpected is the allowance through View.PaceThrough (the end of this week): what
+	// alerts and the overspending risk pace against, so one early purchase isn't "ahead".
+	WeekExpected int64        `json:"week_expected"`
+	MonthBudget  int64        `json:"month_budget"` // the editable monthly amount (month of the period start)
+	Chunk        budget.Chunk `json:"chunk"`
+	Hidden       bool         `json:"hidden"`   // hidden from the budget (still counted in totals)
+	Upcoming     int64        `json:"upcoming"` // recurring charges still to come in the upcoming window (set by the API)
 	// Rollover is what a non-monthly category carries into this month from earlier ones
 	// (unspent budget, or overspending when negative). Budget already includes it.
 	Rollover int64 `json:"rollover"`
@@ -171,16 +174,18 @@ type Summary struct {
 }
 
 type View struct {
-	View     string   `json:"view"`
-	Start    string   `json:"start"` // inclusive
-	End      string   `json:"end"`   // inclusive (last day)
-	Prev     string   `json:"prev"`  // a date in the previous period
-	Next     string   `json:"next"`
-	Month    string   `json:"month"` // YYYY-MM whose amounts the editor changes
-	Today    string   `json:"today"`
-	Settings Settings `json:"settings"`
-	Groups   []Group  `json:"groups"`
-	Summary  Summary  `json:"summary"`
+	View  string `json:"view"`
+	Start string `json:"start"` // inclusive
+	End   string `json:"end"`   // inclusive (last day)
+	Prev  string `json:"prev"`  // a date in the previous period
+	Next  string `json:"next"`
+	Month string `json:"month"` // YYYY-MM whose amounts the editor changes
+	Today string `json:"today"`
+	// PaceThrough is the last day weekly pacing counts (see PaceDay); "" outside the period.
+	PaceThrough string   `json:"pace_through"`
+	Settings    Settings `json:"settings"`
+	Groups      []Group  `json:"groups"`
+	Summary     Summary  `json:"summary"`
 }
 
 // Totals indexes signed per-day totals by owner (category or goal) id.
@@ -274,6 +279,23 @@ var Kinds = map[string]bool{"income": true, "fixed": true, "flexible": true, "no
 // into the next month.
 func Rollover(kind string) bool { return kind == "non_monthly" }
 
+// PaceDay is the last day of the week containing today (at least the period's 7th day, so a
+// partial first week isn't judged on a day or two), capped at the period's last day. It is
+// the zero time when today is outside p.
+func PaceDay(p budget.Period, today time.Time, weekStart time.Weekday) time.Time {
+	if !p.Contains(today) {
+		return time.Time{}
+	}
+	end := budget.WeekPeriod(today, weekStart).End.AddDate(0, 0, -1)
+	if d7 := p.Start.AddDate(0, 0, 6); end.Before(d7) {
+		end = d7
+	}
+	if last := p.End.AddDate(0, 0, -1); end.After(last) {
+		end = last
+	}
+	return end
+}
+
 // Build computes the budget for the period of the given view containing at. now is today's
 // date (it decides pacing).
 func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, now time.Time) (View, error) {
@@ -326,6 +348,10 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 		Prev: budget.FormatDate(p.Start.AddDate(0, 0, -1)), Next: budget.FormatDate(p.End),
 		Month: month, Today: budget.FormatDate(now), Settings: st, Groups: []Group{},
 	}
+	paceDay := PaceDay(p, now, time.Weekday(st.WeekStart))
+	if !paceDay.IsZero() {
+		out.PaceThrough = budget.FormatDate(paceDay)
+	}
 	gidx := map[int64]int{}
 	for _, g := range groups {
 		if !Kinds[g.Kind] {
@@ -352,11 +378,15 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 			ID: c.ID, Name: c.Name, Icon: c.Icon, Budget: l.Budget, Actual: l.Actual, Expected: l.Expected,
 			MonthBudget: budget.Resolve(rows, month), Chunk: chunk, Hidden: c.BudgetHidden == 1,
 		}
+		var carry func(time.Time) int64
 		if Rollover(g.Kind) {
-			carry := func(m time.Time) int64 { return budget.Carryover(rows, m, spent) }
+			carry = func(m time.Time) int64 { return budget.Carryover(rows, m, spent) }
 			withCarry := budget.ComputeLine(p, chunk, rows, now, spent, carry)
 			g.Rollover += withCarry.Budget - l.Budget
 			line.Budget, line.Expected, line.Rollover = withCarry.Budget, withCarry.Expected, carry(p.Start)
+		}
+		if !paceDay.IsZero() {
+			line.WeekExpected = budget.ComputeLine(p, chunk, rows, paceDay, spent, carry).Expected
 		}
 		if c.Builtin == DebtRepaymentKey {
 			split, err := LoadDebtSplit(ctx, q, hh, c.ID, from, p.End, st.DebtActual)
@@ -364,7 +394,8 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 				return View{}, err
 			}
 			if subs := split.Lines(p, chunk, amounts, month, now); len(subs) > 0 {
-				line.Lines, line.Budget, line.Actual, line.Expected, line.MonthBudget = subs, 0, 0, 0, 0
+				// Paying debt ahead of plan isn't overspending: no weekly pacing for these.
+				line.Lines, line.Budget, line.Actual, line.Expected, line.MonthBudget, line.WeekExpected = subs, 0, 0, 0, 0, 0
 				for _, sl := range subs {
 					line.Budget += sl.Budget
 					line.Actual += sl.Actual
@@ -374,7 +405,7 @@ func Build(ctx context.Context, q *db.Queries, hh int64, view budget.View, at, n
 			}
 		}
 		if chunk.NoPacing {
-			line.Expected = 0
+			line.Expected, line.WeekExpected = 0, 0
 			for i := range line.Lines {
 				line.Lines[i].Expected = 0
 			}

@@ -25,4 +25,6 @@ cd "$dir"
 sed -i "s/127.0.0.1:8420/127.0.0.1:${PORT:-18421}/" viceroy.toml
 sed -i 's#^openrouter_key = ""#openrouter_key = "test-key"#; s#^base_url = ""#base_url = "http://127.0.0.1:28433"#' viceroy.toml
 # The wishlist's link reader normally refuses private addresses; the fake store is local.
-VICEROY_ALLOW_PRIVATE_FETCH=1 "$root/bin/viceroy" serve
+# Close-out windows follow this date (the 3rd: last month can be closed out) so that suite
+# doesn't depend on the day it runs.
+VICEROY_CLOSEOUT_TODAY="$(date +%Y-%m-03)" VICEROY_ALLOW_PRIVATE_FETCH=1 "$root/bin/viceroy" serve

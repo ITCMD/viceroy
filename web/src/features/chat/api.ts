@@ -6,7 +6,14 @@ export type ChatThread = { id: number; title: string; updated_at: number };
 
 /** What a page's Discuss button hands the chat: a title for the panel and the data on screen
  * (sent as JSON with the first message; money in dollars). */
-export type ChatContext = { title: string; page: string; data: unknown; suggestions: string[] };
+export type ChatContext = {
+  title: string;
+  page: string;
+  data: unknown;
+  suggestions: string[];
+  /** Sent as the first question as soon as the chat opens (e.g. "why is my risk high?"). */
+  ask?: string;
+};
 export type ChatMessage = { id: number; role: "user" | "assistant"; content: string; tools?: string[] };
 
 export const chatInfoQuery = queryOptions({
