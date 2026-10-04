@@ -106,22 +106,23 @@ const (
 )
 
 type Verdict struct {
-	Answer   string   `json:"answer"`
-	Headline string   `json:"headline"`
-	Details  []string `json:"details"`
-	Budget   int64    `json:"budget"`   // this month's allowance
-	Spent    int64    `json:"spent"`    // so far
-	After    int64    `json:"after"`    // spent after the purchase
-	Planned  int64    `json:"planned"`  // allowance through the end of this week (pacing)
-	Upcoming int64    `json:"upcoming"` // recurring charges still due this month
-	Left     int64    `json:"left"`     // budget − after (negative = over)
+	Answer       string   `json:"answer"`
+	Headline     string   `json:"headline"`
+	Details      []string `json:"details"`
+	Budget       int64    `json:"budget"`        // this month's allowance
+	Spent        int64    `json:"spent"`         // so far
+	After        int64    `json:"after"`         // spent after the purchase
+	Planned      int64    `json:"planned"`       // allowance through the end of this week (what pacing judges)
+	PlannedToday int64    `json:"planned_today"` // allowance through today (where you "should" be now)
+	Upcoming     int64    `json:"upcoming"`      // recurring charges still due this month
+	Left         int64    `json:"left"`          // budget − after (negative = over)
 }
 
 // Judge decides from the month's line for the category. group is the line's group (for
 // "move money from another category" hints); paceThrough/end are dates in the month view.
 func Judge(l budgetview.Line, group budgetview.Group, amount int64, today, paceThrough, end time.Time) Verdict {
 	usd := notify.Dollars
-	v := Verdict{Budget: l.Budget, Spent: l.Actual, After: l.Actual + amount, Planned: l.WeekExpected, Upcoming: l.Upcoming}
+	v := Verdict{Budget: l.Budget, Spent: l.Actual, After: l.Actual + amount, Planned: l.WeekExpected, PlannedToday: l.Expected, Upcoming: l.Upcoming}
 	v.Left = l.Budget - v.After
 	daysLeft := int(end.Sub(today).Hours()/24) + 1 // today included
 	groupLeft := group.Budget - group.Actual - amount

@@ -15,6 +15,7 @@ type Verdict = {
   spent: number;
   after: number;
   planned: number;
+  planned_today: number;
   upcoming: number;
   left: number;
 };
@@ -75,7 +76,14 @@ export function CanIBuyDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Can I buy it?" description="Checks it against this month's budget and your pace so far.">
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      // On phones it sits at the top so the keyboard doesn't cover the fields.
+      className="max-md:top-3 max-md:max-h-[calc(100dvh-1.5rem)] max-md:translate-y-0"
+      title="Can I buy it?"
+      description="Checks it against this month's budget and your pace so far."
+    >
       <form className="flex flex-col gap-3" onSubmit={submit}>
         <div className="flex items-end gap-2">
           <Field
@@ -160,15 +168,15 @@ function Answer({ r }: { r: Result }) {
           {v.upcoming > 0 && (
             <span className="absolute inset-y-0 bg-upcoming/70" style={{ left: pct(v.after), width: `calc(${pct(v.after + v.upcoming)} - ${pct(v.after)})` }} />
           )}
-          {v.budget > 0 && v.planned > 0 && v.planned < v.budget && (
-            <span className="absolute -inset-y-0.5 w-0.5 rounded bg-text/50" style={{ left: pct(v.planned) }} />
+          {v.budget > 0 && v.planned_today > 0 && v.planned_today < v.budget && (
+            <span className="absolute -inset-y-0.5 w-0.5 rounded bg-text/50" style={{ left: pct(v.planned_today) }} data-testid="can-i-buy-tick" />
           )}
           {v.budget > 0 && v.budget < scale && <span className="absolute -inset-y-1 w-0.5 rounded bg-negative" style={{ left: pct(v.budget) }} />}
         </div>
         <p className="mt-1.5 text-xs text-muted">
           Spent {formatMoney(v.spent)} · this purchase {formatMoney(r.amount_cents)}
           {v.upcoming > 0 && <> · {formatMoney(v.upcoming)} recurring still due</>}
-          {v.planned > 0 && <> · tick = planned by end of week ({formatMoney(v.planned)})</>}
+          {v.planned_today > 0 && <> · tick = planned by today ({formatMoney(v.planned_today)})</>}
         </p>
         <p className="mt-1 text-xs text-muted">Price: {source}.</p>
       </div>

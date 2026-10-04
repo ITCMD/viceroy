@@ -30,6 +30,7 @@ test("can I buy it: the budget and pace answer, the AI only reads the request", 
   await expect(answer).toHaveAttribute("data-answer", "yes");
   await expect(answer).toContainText("You're under budget in Coffee Shops.");
   await expect(dialog.getByLabel("Price")).toHaveValue(/^\d+\.\d{2}$/);
+  await expect(answer).toContainText("tick = planned by today");
   await page.screenshot({ path: `${shots}/27-can-i-buy-yes.png` });
 
   // A real price that blows the budget: no AI round trip, and the answer is no.
@@ -47,5 +48,7 @@ test("can I buy it: the budget and pace answer, the AI only reads the request", 
   await dialog.getByLabel("What do you want to buy?").fill("bagels from the bagel shop");
   await dialog.getByRole("button", { name: "Check", exact: true }).click();
   await expect(answer).toContainText("Restaurants & Bars");
+  // At the top on phones, clear of the keyboard.
+  expect((await dialog.boundingBox())!.y).toBeLessThan(20);
   await page.screenshot({ path: `${shots}/27-can-i-buy-mobile.png` });
 });
