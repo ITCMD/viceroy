@@ -44,7 +44,7 @@ export type Member = { id: number; name: string };
 
 export type Wishlist = { items: WishItem[]; bought: WishItem[]; members: Member[]; afford: Afford; sort: WishSort };
 
-export type Preview = { url: string; store: string; title: string; price_cents: number | null; image_url: string; blocked: boolean };
+export type Preview = { url: string; store: string; title: string; price_cents: number | null; image_url: string; blocked: boolean; /** The store answered with an error page; nothing was read. */ refused: boolean };
 
 export const wishlistQuery = (sort: WishSort, person: number) =>
   queryOptions({

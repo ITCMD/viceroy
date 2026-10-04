@@ -246,7 +246,7 @@ func (s *Server) handleWishlistPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, capitalize(err.Error())+".")
 		return
 	}
-	if p.Price == nil {
+	if p.Price == nil && !p.Refused {
 		if client, err := s.ai.EmailClient(r.Context(), HouseholdID(r)); err == nil && client.Configured() {
 			client.Feature = "wishlist"
 			if err := wishlist.AIFill(r.Context(), client, &p); err != nil && !errors.Is(err, ai.ErrNotConfigured) {

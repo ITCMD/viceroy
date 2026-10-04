@@ -40,7 +40,7 @@ test("wishlist: add from a link, sort, afford card, mark as bought", async ({ pa
   await page.getByRole("button", { name: "Add item" }).click();
   await dialog.getByLabel("Link").fill(`${shop}/captcha`);
   await dialog.getByLabel("Link").blur();
-  await expect(page.getByTestId("wish-preview-note")).toContainText("didn't share the price");
+  await expect(page.getByTestId("wish-preview-note")).toContainText("blocked the request");
   await dialog.getByLabel("Name").fill("Noise Cancelling Headphones");
   await dialog.getByLabel("Price").fill("300");
   await page.getByRole("button", { name: "Save" }).click();

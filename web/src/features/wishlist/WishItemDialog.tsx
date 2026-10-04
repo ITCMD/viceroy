@@ -50,7 +50,9 @@ export function WishItemDialog({
       }
       if (p.image_url) setImg((cur) => (cur.kind === "none" ? { kind: "url", src: p.image_url } : cur));
       setNote(
-        p.blocked
+        p.refused
+          ? `${p.store || "The store"} blocked the request, so nothing could be read. Fill in the details.`
+          : p.blocked
           ? p.price_cents === null
             ? `${p.store || "The store"} didn't share the price. Fill in what's missing.`
             : `${p.store || "The store"} didn't share everything. Check the details.`

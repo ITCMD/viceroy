@@ -41,6 +41,9 @@ type Preview struct {
 	// Blocked is set when the store refused the request (a captcha or an error page) or no
 	// price could be read; the user fills in what's missing.
 	Blocked bool `json:"blocked"`
+	// Refused is set when the store answered with an error page (e.g. eBay's 403 to
+	// non-browser clients): nothing was read from it, not even the title.
+	Refused bool `json:"refused"`
 	// Text is the page's visible text (capped), for the AI fallback. Not sent to the client.
 	Text string `json:"-"`
 }
@@ -157,11 +160,11 @@ func (f *Fetcher) Fetch(ctx context.Context, raw string) (Preview, error) {
 	if err != nil {
 		return Preview{}, err
 	}
-	p := Parse(resp.Request.URL, body)
 	if resp.StatusCode >= 400 {
-		p.Blocked = true
+		// An error page's title ("Error Page", "Access Denied") isn't the product's.
+		return Preview{URL: CleanURL(resp.Request.URL).String(), Store: StoreName(resp.Request.URL.Hostname()), Blocked: true, Refused: true}, nil
 	}
-	return p, nil
+	return Parse(resp.Request.URL, body), nil
 }
 
 // Image downloads an image (at most 5 MB) and returns its bytes and sniffed type.
@@ -496,11 +499,13 @@ func StoreName(host string) string {
 }
 
 var (
+	ebayItem   = regexp.MustCompile(`^/itm/(?:[^/]+/)?\d+$`)
 	amazonASIN = regexp.MustCompile(`/(?:dp|gp/product|gp/aw/d)/([A-Z0-9]{10})`)
 	tracking   = regexp.MustCompile(`^(utm_.*|ref|ref_|tag|psc|pd_rd_.*|pf_rd_.*|_encoding|qid|sr|keywords|crid|sprefix|dib|dib_tag|th|linkcode|linkid|content-id|smid|spla|sp_csd|gclid|fbclid|msclkid|mc_cid|mc_eid|_trkparms|_trksid|hash|amdata|mkcid|mkevt|mkrid|campid|toolid|customid|afsrc|clickid|irgwc|cjevent|srsltid)$`)
 )
 
-// CleanURL drops tracking parameters, and turns Amazon product links into /dp/<ASIN>.
+// CleanURL drops tracking parameters, turns Amazon product links into /dp/<ASIN>, and drops
+// the query from eBay item links (/itm/<id>), which is all tracking.
 func CleanURL(u *url.URL) *url.URL {
 	c := *u
 	c.Fragment = ""
@@ -509,6 +514,10 @@ func CleanURL(u *url.URL) *url.URL {
 			c.Path, c.RawPath, c.RawQuery = "/dp/"+m[1], "", ""
 			return &c
 		}
+	}
+	if strings.Contains(c.Hostname(), "ebay.") && ebayItem.MatchString(c.Path) {
+		c.RawQuery = ""
+		return &c
 	}
 	q := c.Query()
 	for k := range q {

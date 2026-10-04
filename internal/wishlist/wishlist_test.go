@@ -87,8 +87,14 @@ func TestBlockedIP(t *testing.T) {
 
 func TestFetchGuard(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/hop" {
+		switch r.URL.Path {
+		case "/hop":
 			http.Redirect(w, r, "/p", http.StatusFound)
+			return
+		case "/denied":
+			// What eBay sends non-browser clients.
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`<html><head><title>Error Page | eBay</title></head><body>Error Page</body></html>`))
 			return
 		}
 		w.Write(fixture(t, "jsonld.html"))
@@ -111,8 +117,28 @@ func TestFetchGuard(t *testing.T) {
 
 	open := Fetcher{AllowPrivate: true}
 	p, err := open.Fetch(ctx, ts.URL+"/hop?utm_campaign=x")
-	if err != nil || p.Title != "Brightside Reading Lamp" || p.URL != ts.URL+"/p" || p.Price == nil {
+	if err != nil || p.Title != "Brightside Reading Lamp" || p.URL != ts.URL+"/p" || p.Price == nil || p.Refused {
 		t.Fatalf("fetch = %+v, %v", p, err)
+	}
+	// An error page is refused: nothing from it, not even its title.
+	p, err = open.Fetch(ctx, ts.URL+"/denied")
+	if err != nil || !p.Refused || !p.Blocked || p.Title != "" || p.Text != "" || p.URL != ts.URL+"/denied" {
+		t.Fatalf("refused fetch = %+v, %v", p, err)
+	}
+}
+
+func TestCleanURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://www.ebay.com/itm/205076351376?boolp=5&ul_noapp=true":         "https://www.ebay.com/itm/205076351376",
+		"https://www.ebay.com/itm/Brass-Lamp/205076351376?_trksid=p1&hash=x1": "https://www.ebay.com/itm/Brass-Lamp/205076351376",
+		"https://www.ebay.com/sch/i.html?_nkw=lamp&_trksid=p1":                "https://www.ebay.com/sch/i.html?_nkw=lamp",
+		"https://www.amazon.com/Lamp/dp/B0ABCDEFGH/ref=sr_1_1?qid=1":          "https://www.amazon.com/dp/B0ABCDEFGH",
+		"https://shop.example.com/p/1?utm_source=x&color=red#reviews":         "https://shop.example.com/p/1?color=red",
+	} {
+		u, _ := url.Parse(in)
+		if got := CleanURL(u).String(); got != want {
+			t.Errorf("CleanURL(%s) = %s, want %s", in, got, want)
+		}
 	}
 }
 
