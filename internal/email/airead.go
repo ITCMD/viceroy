@@ -554,7 +554,7 @@ func (s *Service) learnFilter(ctx context.Context, q *db.Queries, m db.EmailMess
 		dir = "to"
 	}
 	return &Notice{
-		Kind: "bank_notice", Key: fmt.Sprintf("filter:%d", m.ID), URL: "/settings#email-filters",
+		Kind: "bank_notice", Key: fmt.Sprintf("filter:%d", m.ID), URL: "/settings?tab=email#email-filters",
 		Title: "New email filter · " + acct.Name,
 		Body: fmt.Sprintf("Viceroy %s “%s” emails without AI. Added %s %s %s %s; it's marked for review.",
 			verb, clip(what, 60), "$"+r.Amount, r.Merchant, dir, acct.Name),

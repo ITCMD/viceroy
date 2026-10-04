@@ -17,6 +17,7 @@ export function EmailReviewBanner() {
   return (
     <Link
       to={"/settings" as string}
+      search={{ tab: "email" } as never}
       hash="emails-to-review"
       className="flex items-center gap-3 rounded-xl border border-accent/40 bg-accent-soft px-4 py-3 text-left text-sm text-accent"
       data-testid="email-review-banner"

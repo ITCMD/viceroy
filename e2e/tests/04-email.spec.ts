@@ -18,6 +18,7 @@ async function login(page: Page) {
 async function openSettings(page: Page) {
   await page.getByRole("link", { name: "Settings" }).first().click();
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  await page.getByRole("tab", { name: "Email alerts" }).click();
 }
 
 async function chooseAccount(page: Page, dialog: ReturnType<Page["getByRole"]>, name: string) {
@@ -57,6 +58,7 @@ test("connect a mailbox and list emails to review", async ({ page }) => {
   await expect(page.getByTestId("email-review-banner")).toContainText("4 emails need a filter");
   await page.getByTestId("email-review-banner").click();
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Email alerts" })).toHaveAttribute("aria-selected", "true");
 
   // Viewing an email shows its text, never raw HTML.
   await reviewRow(page, "Your $12.34 transaction").getByRole("button").first().click();

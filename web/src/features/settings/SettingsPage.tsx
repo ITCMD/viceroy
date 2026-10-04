@@ -42,18 +42,21 @@ function AccountsCard() {
   );
 }
 
-type SettingsTab = "general" | "household" | "notifications" | "categories";
+type SettingsTab = "general" | "household" | "notifications" | "email" | "categories";
 const tabs: { value: SettingsTab; label: string }[] = [
   { value: "general", label: "General" },
   { value: "household", label: "Household" },
   { value: "notifications", label: "Notifications" },
+  { value: "email", label: "Email alerts" },
   { value: "categories", label: "Categories" },
 ];
 
 export function SettingsPage() {
   const hash = useLocation({ select: (l) => l.hash });
   const asked = useLocation({ select: (l) => (l.search as { tab?: string }).tab });
-  const tab = tabs.find((t) => t.value === asked)?.value ?? "general";
+  // Older links (bank notices already sent) point at the email anchors without a tab.
+  const legacyEmail = !asked && ["#email-filters", "#emails-to-review", "email-filters", "emails-to-review"].includes(hash);
+  const tab = tabs.find((t) => t.value === asked)?.value ?? (legacyEmail ? "email" : "general");
   const navigate = useNavigate();
   useEffect(() => {
     if (hash) document.getElementById(hash)?.scrollIntoView({ block: "start" });
@@ -73,6 +76,8 @@ export function SettingsPage() {
           <HouseholdSettings />
         ) : tab === "notifications" ? (
           <NotificationSettingsCard />
+        ) : tab === "email" ? (
+          <EmailSettings />
         ) : (
           <GeneralSettings />
         )}
@@ -94,7 +99,6 @@ function GeneralSettings() {
       <div id="api" className="scroll-mt-16">
         <ApiSettingsCard />
       </div>
-      <EmailSettings />
       <div id="backups" className="scroll-mt-16">
         <BackupsCard />
       </div>

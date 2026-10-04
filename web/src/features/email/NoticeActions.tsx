@@ -1,20 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { BellOff, Check, CircleDollarSign, Plus, Scale } from "lucide-react";
+import { BellOff, Check, ChevronRight, CircleDollarSign, Plus, Scale, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button, Field, FormError, Select, Switch } from "@/components/ui";
+import { Button, Field, FormError, Select, Sheet, Switch } from "@/components/ui";
 import { accountLabel, accountsQuery } from "@/features/accounts/api";
 import { AddTransactionDialog } from "@/features/transactions/AddTransactionDialog";
 import { api } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
-import { draftFromMessage, useEmailMutation, type EmailMessage } from "./api";
-import { EmailViewer } from "./EmailSettings";
+import { draftFromMessage, messageQuery, useEmailMutation, type EmailMessage } from "./api";
 
 type ActionResult = { applied: string; filter_id: number | null };
 
+const kindTitles: Record<string, string> = {
+  payment_due: "Payment due",
+  payment_scheduled: "Payment scheduled",
+  payment_received: "Payment received",
+  security_alert: "Security alert",
+  statement_ready: "Statement ready",
+  balance_summary: "Balance update",
+  transaction_alert: "Transaction alert",
+};
+
 /**
  * Opens the email named by `?email=<id>` (bank notices in the bell and their push
- * notifications link there) with what Viceroy can do about it. Closing drops the parameter.
+ * notifications link there) in a sheet over the current page: what the bank said, what
+ * Viceroy can do about it, and the original email folded away. Closing drops the parameter.
  */
 export function EmailNoticeHost() {
   const search = useRouterState({
@@ -23,20 +33,50 @@ export function EmailNoticeHost() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const id = Number(search.email) || 0;
+  const { data: m, error } = useQuery({ ...messageQuery(id), enabled: id > 0 });
   const close = () => {
     const { email: _, ...rest } = search;
     navigate({ to: pathname as string, search: rest as never, replace: true });
   };
+  const from = m ? m.from_name || m.from_addr : "";
   return (
-    <EmailViewer
-      message={id ? { id, from_addr: "", subject: "" } : null}
-      onClose={close}
-      renderActions={(m) => <NoticeActions message={m} />}
-    />
+    <Sheet open={id > 0} onOpenChange={(o) => !o && close()} title={m ? (kindTitles[m.ai_kind] ?? "From your bank") : "From your bank"}>
+      <div className="flex flex-col gap-4" data-testid="notice-sheet">
+        {!m ? (
+          error ? <FormError error={error} /> : <p className="text-sm text-muted">Loading…</p>
+        ) : (
+          <>
+            <div>
+              <p className="text-[15px] font-medium">{m.subject || "(no subject)"}</p>
+              <p className="mt-0.5 text-[13px] text-muted">
+                {from} · {new Date(m.received_at * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              </p>
+              {m.ai_summary && (
+                <p className="mt-3 flex gap-2 text-sm">
+                  <Sparkles size={14} className="mt-0.5 shrink-0 text-accent" aria-label="AI summary" />
+                  {m.ai_summary}
+                </p>
+              )}
+            </div>
+            <NoticeActions message={m} />
+            <details className="group rounded-lg border border-border">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2.5 text-[13px] font-semibold">
+                <ChevronRight size={14} className="text-muted transition group-open:rotate-90" />
+                Original email
+                <span className="ml-auto truncate pl-2 font-normal text-muted">{m.from_addr}</span>
+              </summary>
+              <pre className="whitespace-pre-wrap break-words border-t border-border px-3 py-3 font-sans text-[13px]">
+                {m.body_text || "The body of this email is no longer stored."}
+              </pre>
+            </details>
+          </>
+        )}
+      </div>
+    </Sheet>
   );
 }
 
-/** The actions panel above a notice email: set the balance, mark the bill paid, add a transaction, ignore. */
+/** What Viceroy can do about a notice email: set the balance, mark the bill paid, add a transaction, ignore. */
 export function NoticeActions({ message: m }: { message: EmailMessage }) {
   const { data: acctData } = useQuery(accountsQuery);
   const accounts = acctData?.accounts ?? [];
@@ -72,7 +112,8 @@ export function NoticeActions({ message: m }: { message: EmailMessage }) {
   const isoDate = `${received.getFullYear()}-${String(received.getMonth() + 1).padStart(2, "0")}-${String(received.getDate()).padStart(2, "0")}`;
 
   return (
-    <div className="mb-4 flex flex-col gap-3 rounded-xl border border-border bg-surface-2 p-3" data-testid="notice-actions">
+    <section className="flex flex-col gap-3 rounded-lg border border-border p-3" data-testid="notice-actions">
+      <h3 className="text-[13px] font-semibold">{applied ? "Done" : "What do you want to do?"}</h3>
       {applied && (
         <p className="flex items-center gap-2 text-[13px] font-medium text-positive" data-testid="notice-applied">
           <Check size={14} className="shrink-0" /> {applied}
@@ -194,6 +235,6 @@ export function NoticeActions({ message: m }: { message: EmailMessage }) {
           setDone("Created a transaction");
         }}
       />
-    </div>
+    </section>
   );
 }

@@ -52,13 +52,16 @@ test("a balance summary from the bank updates the card's balance, and can do so 
     )
     .toContain("Balance · Quicksilver Card (3333)");
 
-  // The notice opens the email with what Viceroy can do about it.
+  // The notice opens a sheet over the current page with what Viceroy can do about it.
   await page.reload();
   await page.getByRole("button", { name: /^Notifications/ }).first().click();
-  await page.getByRole("button", { name: /From your bank/ }).click();
   await page.getByTestId("notification-list").getByRole("button", { name: /Balance · Quicksilver/ }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("Your requested balance summary");
+  await expect(page).toHaveURL(/\/\?email=\d+$/); // still on the dashboard
+  await expect(dialog.getByText("Quicksilver (3333) has a balance of $14.99")).toBeHidden(); // original email folded
+  await dialog.getByText("Original email").click();
+  await expect(dialog.getByText("Quicksilver (3333) has a balance of $14.99")).toBeVisible();
   const actions = dialog.getByTestId("notice-actions");
   const update = actions.getByRole("button", { name: "Update Quicksilver Card (3333) balance to $14.99" });
   await expect(update).toBeVisible();
@@ -83,12 +86,11 @@ test("a balance summary from the bank updates the card's balance, and can do so 
       { timeout: 20_000 },
     )
     .toBe(-2000);
-  await page.goto("/settings#email-filters");
+  await page.goto("/settings?tab=email#email-filters");
   await expect(page.getByTestId("email-filter-row").filter({ hasText: "updates the balance" })).toBeVisible();
 
   // Ignore emails like the security alert from the AI spec.
   await page.getByRole("button", { name: /^Notifications/ }).first().click();
-  await page.getByRole("button", { name: /From your bank/ }).click();
   await page.getByTestId("notification-list").getByRole("button", { name: /Security alert · Quicksilver/ }).click();
   const secActions = page.getByRole("dialog").getByTestId("notice-actions");
   await secActions.getByRole("button", { name: "Ignore emails like this" }).click();

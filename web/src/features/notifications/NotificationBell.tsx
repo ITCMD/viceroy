@@ -1,10 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Bell, BellRing, CalendarClock, Gauge, Landmark, Receipt, TriangleAlert, Unplug, type LucideIcon } from "lucide-react";
+import {
+  Bell,
+  BellRing,
+  CalendarCheck,
+  CalendarClock,
+  CircleCheck,
+  FileText,
+  Filter,
+  Gauge,
+  Landmark,
+  Receipt,
+  Scale,
+  ShieldAlert,
+  TriangleAlert,
+  Unplug,
+  type LucideIcon,
+} from "lucide-react";
 import { Popover } from "radix-ui";
 import { useState } from "react";
-import { Segmented } from "@/components/ui";
 import { timeAgo } from "@/lib/format";
 import { notificationsQuery, useMarkRead, type NotificationItem } from "./api";
 
@@ -18,6 +33,23 @@ const kindIcon: Record<NotificationItem["kind"], { icon: LucideIcon; tone: strin
   test: { icon: BellRing, tone: "bg-surface-2 text-muted" },
 };
 
+// Bank notices share one kind; their titles start with what the email was about
+// (see noticeTitle and learnFilter in internal/email/airead.go).
+const noticeIcon: [string, { icon: LucideIcon; tone: string }][] = [
+  ["Payment due", { icon: CalendarClock, tone: "bg-negative/10 text-negative" }],
+  ["Payment scheduled", { icon: CalendarCheck, tone: "bg-accent-soft text-accent" }],
+  ["Payment received", { icon: CircleCheck, tone: "bg-positive/10 text-positive" }],
+  ["Security alert", { icon: ShieldAlert, tone: "bg-negative/10 text-negative" }],
+  ["Statement ready", { icon: FileText, tone: "bg-surface-2 text-muted" }],
+  ["Balance", { icon: Scale, tone: "bg-accent-soft text-accent" }],
+  ["New email filter", { icon: Filter, tone: "bg-accent-soft text-accent" }],
+];
+
+function iconFor(n: NotificationItem) {
+  if (n.kind === "bank_notice") return noticeIcon.find(([p]) => n.title.startsWith(p))?.[1] ?? kindIcon.bank_notice;
+  return kindIcon[n.kind] ?? kindIcon.test;
+}
+
 /** Bell with an unread count; opening it lists recent alerts and marks them read. */
 export function NotificationBell({ className }: { className?: string }) {
   const { data } = useQuery(notificationsQuery);
@@ -25,13 +57,22 @@ export function NotificationBell({ className }: { className?: string }) {
   const navigate = useNavigate();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"alerts" | "bank">("alerts");
+  const location = useRouterState({ select: (s) => s.location });
   const unread = data?.unread ?? 0;
-  const all = data?.notifications ?? [];
-  // Messages the AI read from bank emails get their own tab, apart from Viceroy's own alerts.
-  const bank = all.filter((n) => n.kind === "bank_notice");
-  const items = tab === "bank" ? bank : all.filter((n) => n.kind !== "bank_notice");
-  const unreadIn = (list: NotificationItem[]) => list.filter((n) => !n.read).length;
+  const items = data?.notifications ?? [];
+
+  const go = (url: string) => {
+    if (!url) return;
+    const u = new URL(url, window.location.origin);
+    // A bank notice opens its email in a sheet over whatever page is showing, so it
+    // doesn't pull you away to Accounts (push notifications still land there).
+    const email = u.searchParams.get("email");
+    if (email) {
+      navigate({ to: location.pathname as string, search: { ...(location.search as object), email: Number(email) } as never });
+    } else {
+      router.history.push(url); // URLs may carry a query or a hash
+    }
+  };
 
   const onOpenChange = (v: boolean) => {
     setOpen(v);
@@ -70,37 +111,21 @@ export function NotificationBell({ className }: { className?: string }) {
               Settings
             </button>
           </header>
-          {bank.length > 0 && (
-            <div className="border-b border-border px-4 py-2">
-              <Segmented
-                label="Notification type"
-                value={tab}
-                onChange={setTab}
-                items={[
-                  { value: "alerts", label: `Alerts${unreadIn(all) - unreadIn(bank) ? ` (${unreadIn(all) - unreadIn(bank)})` : ""}` },
-                  { value: "bank", label: `From your bank${unreadIn(bank) ? ` (${unreadIn(bank)})` : ""}` },
-                ]}
-              />
-            </div>
-          )}
           {items.length === 0 ? (
             <p className="px-4 py-10 text-center text-sm text-muted">
-              {tab === "bank"
-                ? "Nothing from your bank yet."
-                : "No alerts yet. Over-budget, pacing, large transaction, payment and sync alerts show up here."}
+              No alerts yet. Over-budget, pacing, large transaction, payment and sync alerts show up here, along with anything your bank emails about.
             </p>
           ) : (
             <ul className="divide-y divide-border overflow-y-auto" data-testid="notification-list">
               {items.map((n) => {
-                const { icon: Icon, tone } = kindIcon[n.kind] ?? kindIcon.test;
+                const { icon: Icon, tone } = iconFor(n);
                 return (
                   <li key={n.id}>
                     <button
                       className="flex w-full gap-3 px-4 py-3 text-left hover:bg-surface-2"
                       onClick={() => {
                         onOpenChange(false);
-                        // URLs may carry a query, e.g. a bank notice's "/accounts?email=12".
-                        if (n.url) router.history.push(n.url);
+                        go(n.url);
                       }}
                     >
                       <span className={clsx("grid size-8 shrink-0 place-items-center rounded-full", tone)}>

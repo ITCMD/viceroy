@@ -77,9 +77,8 @@ test("AI reads unmatched bank emails: payment due, security alert, purchase hint
   await expect(card.getByTestId("bill-badges")).toContainText(`Due ${shortDate(2)}`);
   await card.screenshot({ path: `${shots}/11-bill-badge.png` });
 
-  // Bank messages have their own tab under the bell.
+  // Bank messages show up in the bell with the other alerts.
   await page.getByRole("button", { name: /^Notifications/ }).first().click();
-  await page.getByRole("button", { name: /From your bank/ }).click();
   const list = page.getByTestId("notification-list");
   await expect(list).toContainText("Security alert · Quicksilver");
   await expect(list).toContainText(`Payment due ${shortDate(2)} · Quicksilver`);
@@ -92,7 +91,7 @@ test("AI reads unmatched bank emails: payment due, security alert, purchase hint
   const row = page.getByTestId("review-email-row").filter({ hasText: "Purchase alert" });
   await expect(async () => {
     for (const m of await (await req.get("/api/email/mailboxes")).json()) await req.post(`/api/email/mailboxes/${m.id}/check`, { headers: { "X-Viceroy-CSRF": "1" } });
-    await page.goto("/settings");
+    await page.goto("/settings?tab=email");
     await expect(row.getByTestId("email-ai-note")).toContainText("looks like a transaction", { timeout: 3000 });
   }).toPass({ timeout: 30_000 });
   // No merchant in it, so the AI couldn't set up a filter; the dialog starts from its reading.

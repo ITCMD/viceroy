@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useRefreshSession, useSession } from "@/lib/session";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
 import { EmailNoticeHost } from "@/features/email/NoticeActions";
+import { InstallBanner } from "@/features/pwa/InstallBanner";
 import { settingsQuery } from "@/features/settings/settings";
 import { AppLogo, applyLogo, cachedLogo } from "./AppLogo";
 import { navItems } from "./nav";
@@ -61,6 +62,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <EmailNoticeHost />
+      <InstallBanner />
 
       <nav className="fixed inset-x-0 bottom-0 z-20 flex border-t border-border bg-sidebar pb-[env(safe-area-inset-bottom)] md:hidden">
         {navItems

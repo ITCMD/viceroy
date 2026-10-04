@@ -73,7 +73,14 @@ test("over-budget alert after a manual transaction", async ({ page }) => {
   const req = page.request;
   const budget = await (await req.get("/api/budget")).json();
   let coffee = 0;
-  for (const g of budget.groups) for (const l of g.lines) if (l.name === "Coffee Shops") coffee = l.id;
+  // The fake bank's Blue Bottle charge (3 days ago) falls in this month from the 4th on.
+  let already = 0;
+  for (const g of budget.groups)
+    for (const l of g.lines)
+      if (l.name === "Coffee Shops") {
+        coffee = l.id;
+        already = l.actual;
+      }
   expect(coffee).toBeGreaterThan(0);
   await req.put("/api/budget/amount", { headers, data: { category_id: coffee, month: thisMonth(), amount: "20", apply_forward: false } });
   const acct = await (await req.post("/api/accounts", { headers, data: { name: "Alert Wallet", type: "cash", balance: "100" } })).json();
@@ -88,7 +95,8 @@ test("over-budget alert after a manual transaction", async ({ page }) => {
   await page.reload();
   await page.getByRole("button", { name: /Notifications \(\d+ unread\)/ }).click();
   const item = page.getByTestId("notification-list").getByRole("button", { name: /Over budget: Coffee Shops/ });
-  await expect(item).toContainText("$32.50 spent of $20.00 this month ($12.50 over).");
+  const usd = (c: number) => "$" + (c / 100).toFixed(2);
+  await expect(item).toContainText(`${usd(already + 3250)} spent of $20.00 this month (${usd(already + 3250 - 2000)} over).`);
   await item.click();
   await expect(page.getByRole("heading", { name: "Budget", level: 1 })).toBeVisible();
 });

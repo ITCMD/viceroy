@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Inbox, Mail, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Badge, Button, Card, Dialog, EmptyState, FormError } from "@/components/ui";
 import { accountLabel, accountsQuery } from "@/features/accounts/api";
 import { api } from "@/lib/api";
@@ -15,14 +15,13 @@ import {
   templatesQuery,
   useEmailMutation,
   type EmailFilter,
-  type EmailMessage,
   type EmailMessageRow,
   type Mailbox,
 } from "./api";
 import { FilterDialog } from "./FilterDialog";
 import { MailboxDialog } from "./MailboxDialog";
 
-/** Settings → Email alerts: mailboxes, filters, and emails that still need a filter. */
+/** Settings → Email alerts tab: mailboxes, filters, and emails that still need a filter. */
 export function EmailSettings() {
   const { data: acctData } = useQuery(accountsQuery);
   const accounts = acctData?.accounts ?? [];
@@ -68,7 +67,7 @@ function MailboxesCard() {
 
   return (
     <Card
-      title="Email alerts"
+      title="Mailboxes"
       action={
         <Button size="sm" variant="secondary" onClick={() => edit(null)}>
           <Plus size={14} /> Connect mailbox
@@ -231,13 +230,10 @@ export function EmailViewer({
   message,
   onClose,
   onCreateFilter,
-  renderActions,
 }: {
   message: { id: number; from_addr: string; subject: string } | null;
   onClose: () => void;
   onCreateFilter?: (m: EmailMessageRow) => void;
-  /** Shown above the email text once it has loaded (e.g. a bank notice's actions). */
-  renderActions?: (m: EmailMessage) => ReactNode;
 }) {
   const { data } = useQuery({ ...messageQuery(message?.id ?? 0), enabled: !!message });
   return (
@@ -261,7 +257,6 @@ export function EmailViewer({
         ) : undefined
       }
     >
-      {data && renderActions?.(data)}
       <pre className="whitespace-pre-wrap break-words font-sans text-[13px]">
         {data ? data.body_text || "The body of this email is no longer stored." : "Loading…"}
       </pre>
