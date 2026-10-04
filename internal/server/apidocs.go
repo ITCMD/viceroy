@@ -111,6 +111,7 @@ var apiDocs = []apiDoc{
 	doc("Budget", "GET", "/budget/history", "A category's or goal's budget and actuals for the month and the 6 before.", "month, category_id or goal_id"),
 	doc("Budget", "PUT", "/budget/categories/{id}/chunk", "When in the month a category's money is spent.", "kind (even | day | week | every_n_weeks), day, week, weeks, anchor"),
 	doc("Budget", "PUT", "/budget/categories/{id}/hidden", "Hide a category from the budget (it stays usable on transactions; shown again while it has activity).", "hidden"),
+	doc("Budget", "POST", "/can-i-buy", "Check a purchase against this month's budget and weekly pacing: answer yes, careful or no with the numbers. The AI fills in a missing category or price (past purchases beat its price guess).", "text, amount (dollars, optional), category_id (optional)"),
 	doc("Budget", "GET", "/budget/risk", "Risk of overspending this month (0-100 score and level) from weekly pacing, with the categories driving it. Leaves out categories hidden from the budget.", ""),
 	doc("Budget", "GET", "/closeout", "Which month can be closed out now (its last 2 days through the next month's first 7) and whether it is.", ""),
 	doc("Budget", "GET", "/closeout/{month}", "A month's close-out: over/under review, next month's risk outlook, where leftover money can go, and the close-out once done.", ""),

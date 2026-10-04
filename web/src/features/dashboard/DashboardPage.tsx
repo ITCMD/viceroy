@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
-import { CalendarClock, LineChart, Sparkles, Target } from "lucide-react";
+import { CalendarClock, LineChart, ShoppingBag, Sparkles, Target } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Legend } from "@/components/charts/Legend";
 import { SeriesChart, type Series } from "@/components/charts/SeriesChart";
 import { useChartTokens } from "@/components/charts/tokens";
 import { Button, Card, CategoryIcon, EmptyState, MoneyText, PageHeader, Glyph } from "@/components/ui";
+import { CanIBuyDialog } from "@/features/canibuy/CanIBuyDialog";
 import { ChatSheet } from "@/features/chat/ChatSheet";
 import { CloseoutBanner } from "@/features/closeout/CloseoutBanner";
 import { RiskCard } from "@/features/closeout/RiskCard";
@@ -28,19 +29,27 @@ export function DashboardPage() {
   const { data: session } = useSession();
   const first = session?.user?.name.split(" ")[0];
   const [chatOpen, setChatOpen] = useState(false);
+  const [buyOpen, setBuyOpen] = useState(false);
   return (
     <>
       <PageHeader
         title="Dashboard"
         actions={
-          <Button size="sm" variant="secondary" onClick={() => setChatOpen(true)}>
-            <Sparkles size={14} className="text-accent" />
-            <span className="sm:hidden">Chat</span>
-            <span className="hidden sm:inline">Chat with your budget</span>
-          </Button>
+          <>
+            <Button size="sm" variant="secondary" onClick={() => setBuyOpen(true)}>
+              <ShoppingBag size={14} className="text-accent" />
+              Can I buy?
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setChatOpen(true)}>
+              <Sparkles size={14} className="text-accent" />
+              <span className="sm:hidden">Chat</span>
+              <span className="hidden sm:inline">Chat with your budget</span>
+            </Button>
+          </>
         }
       />
       <ChatSheet open={chatOpen} onOpenChange={setChatOpen} />
+      <CanIBuyDialog open={buyOpen} onOpenChange={setBuyOpen} />
       <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6">
         <h2 className="text-xl font-semibold tracking-tight">
           {greeting()}

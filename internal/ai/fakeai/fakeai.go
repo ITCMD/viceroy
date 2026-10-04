@@ -107,6 +107,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(req.Messages[0].Content, "brand colors") {
 			content = brandColors(last.Content)
 		}
+		if strings.Contains(req.Messages[0].Content, `answer "can I buy this?"`) {
+			content = canIBuyReply(req.Messages[0].Content, last.Content)
+		}
 		if strings.Contains(req.Messages[0].Content, "product pages for a shopping wishlist") {
 			content = productPrice(last.Content)
 		}
@@ -485,6 +488,37 @@ func categorizeReply(system, user string) string {
 		items = append(items, it)
 	}
 	b, _ := json.Marshal(map[string]any{"items": items})
+	return string(b)
+}
+
+// canIBuyReply plays the "can I buy" reader (canibuy.Messages): a keyword picks the category,
+// price and search word; anything else is a $15 restaurant meal.
+func canIBuyReply(system, user string) string {
+	ids := map[string]int64{}
+	for _, line := range strings.Split(system, "\n") {
+		var id int64
+		if i := strings.Index(line, ": "); i > 0 {
+			if _, err := fmt.Sscanf(line[:i], "%d", &id); err == nil {
+				rest := line[i+2:]
+				if j := strings.LastIndex(rest, " ("); j > 0 {
+					rest = rest[:j]
+				}
+				ids[strings.ToLower(rest)] = id
+			}
+		}
+	}
+	low := strings.ToLower(user)
+	cat, price, search := "restaurants & bars", 15.0, "lunch"
+	for _, k := range []struct {
+		word, cat string
+		price     float64
+	}{{"coffee", "coffee shops", 5.5}, {"bagel", "restaurants & bars", 9}, {"groceries", "groceries", 80}, {"gas", "gas", 45}} {
+		if strings.Contains(low, k.word) {
+			cat, price, search = k.cat, k.price, k.word
+			break
+		}
+	}
+	b, _ := json.Marshal(map[string]any{"category_id": ids[cat], "price": price, "search": search})
 	return string(b)
 }
 
