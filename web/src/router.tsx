@@ -16,7 +16,6 @@ import { WishlistPage } from "@/features/wishlist/WishlistPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ReportsPage } from "@/features/reports/ReportsPage";
 import { RecurringPage } from "@/features/recurring/RecurringPage";
-import { ComingSoon } from "@/features/placeholders/ComingSoon";
 import { loadSession } from "@/lib/session";
 
 type Ctx = { queryClient: QueryClient };
@@ -58,10 +57,6 @@ const appRoute = createRoute({
   component: AppShell,
 });
 
-const phases: Record<string, number> = {
-  "/settings": 7,
-};
-
 const pages: Record<string, () => React.ReactNode> = {
   "/": DashboardPage,
   "/reports": ReportsPage,
@@ -79,7 +74,7 @@ const pageRoutes = navItems.map((item) =>
   createRoute({
     getParentRoute: () => appRoute,
     path: item.to,
-    component: pages[item.to] ?? (() => <ComingSoon item={item} phase={phases[item.to]} />),
+    component: pages[item.to],
   }),
 );
 

@@ -70,7 +70,7 @@ func SeedDefaults(ctx context.Context, q *db.Queries, householdID int64) error {
 	return nil
 }
 
-// SeedAll seeds every household that has no categories (households created before phase 3).
+// SeedAll seeds every household that has no categories (households created before categories existed).
 func SeedAll(ctx context.Context, q *db.Queries) error {
 	ids, err := q.ListHouseholdIDs(ctx)
 	if err != nil {
