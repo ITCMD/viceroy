@@ -15,10 +15,10 @@ func bill(id, acct int64, kind, date string, created int64) db.AccountBill {
 func TestByAccount(t *testing.T) {
 	today := "2026-10-01"
 	rows := []db.AccountBill{ // newest first
-		bill(9, 4, Scheduled, "2026-09-20", 900), // account 4: scheduled date passed → paid
+		bill(9, 4, Scheduled, "2026-09-20", 900), // account 4: scheduled date passed > paid
 		bill(8, 4, Due, "2026-09-25", 800),
-		bill(7, 3, Due, "2026-09-01", 700),  // account 3: due a month ago, nothing since → stale
-		bill(6, 2, Paid, "2026-09-28", 600), // account 2: paid after the due → covered
+		bill(7, 3, Due, "2026-09-01", 700),  // account 3: due a month ago, nothing since > stale
+		bill(6, 2, Paid, "2026-09-28", 600), // account 2: paid after the due > covered
 		bill(5, 2, Due, "2026-10-05", 500),
 		bill(4, 1, Scheduled, "2026-10-08", 400), // account 1: due + scheduled
 		bill(3, 1, Due, "2026-10-10", 300),

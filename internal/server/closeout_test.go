@@ -30,7 +30,7 @@ func TestCloseoutAPI(t *testing.T) {
 		c.do("PATCH", fmt.Sprint("/api/transactions/", out["id"]), `{"category_id":`+catID+`}`, true)
 	}
 	spend("2026-09-05", "-450", restID) // $50 over
-	spend("2026-09-06", "-300", grocID) // $200 under → $150 left overall
+	spend("2026-09-06", "-300", grocID) // $200 under > $150 left overall
 
 	if code, st := c.do("GET", "/api/closeout", "", false); code != 200 || st["month"] != "2026-09" || st["closes"] != "2026-10-07" || st["closed"] != false {
 		t.Fatalf("status = %d %v", code, st)

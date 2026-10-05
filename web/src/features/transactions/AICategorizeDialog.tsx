@@ -6,7 +6,7 @@ import { useTxnMutation } from "./api";
 
 type Result = { merchants: number; categorized: number; skipped: number };
 
-/** Transactions → ⋯ → Categorize with AI: the light AI model sorts uncategorized transactions. */
+/** Transactions > ⋯ > Categorize with AI: the light AI model sorts uncategorized transactions. */
 export function AICategorizeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [days, setDays] = useState("31");
   const [result, setResult] = useState<Result | null>(null);

@@ -7,7 +7,7 @@ import { useSession } from "@/lib/session";
 import { timeAgo, timeUntil } from "@/lib/format";
 import { householdQuery, inviteLink, type HouseholdInfo, type Member, type NewInvite } from "./api";
 
-/** Settings → Household: name, members and their roles, join and password reset links. */
+/** Settings > Household: name, members and their roles, join and password reset links. */
 export function HouseholdSettings() {
   const { data } = useQuery(householdQuery);
   return (

@@ -185,7 +185,7 @@ func Messages(cats []Category, batch []*group) []ai.Message {
 	return []ai.Message{{Role: "system", Content: system}, {Role: "user", Content: user}}
 }
 
-// ParseReply maps batch index → category id for valid picks; anything else is dropped.
+// ParseReply maps batch index > category id for valid picks; anything else is dropped.
 func ParseReply(text string, n int, cats []Category) map[int]int64 {
 	text = strings.TrimSpace(text)
 	text = strings.TrimPrefix(strings.TrimPrefix(text, "```json"), "```")

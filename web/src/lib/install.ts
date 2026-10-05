@@ -28,7 +28,7 @@ if (typeof window !== "undefined") {
 
 export type InstallMode =
   | "prompt" // the browser handed us an install prompt
-  | "ios" // Safari on iPhone/iPad: Share → Add to Home Screen
+  | "ios" // Safari on iPhone/iPad: Share > Add to Home Screen
   | "insecure" // plain http: browsers won't install or allow push
   | "menu" // secure, but no prompt (yet): the browser menu has the option
   | null; // already installed, or not a phone

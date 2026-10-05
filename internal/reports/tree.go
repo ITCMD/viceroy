@@ -37,8 +37,8 @@ type Node struct {
 	Children []*Node `json:"children,omitempty"`
 }
 
-// Tree splits a range's money into income (category → merchant) and spending
-// (group → category → merchant, plus Contributions → goal → merchant and Uncategorized → merchant).
+// Tree splits a range's money into income (category > merchant) and spending
+// (group > category > merchant, plus Contributions > goal > merchant and Uncategorized > merchant).
 // Totals are positive; refunds net against their category. Transfers are left out unless put toward a goal.
 type Tree struct {
 	Income   *Node `json:"income"`

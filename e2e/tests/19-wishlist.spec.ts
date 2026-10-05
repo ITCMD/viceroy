@@ -64,7 +64,7 @@ test("wishlist: add from a link, sort, afford card, mark as bought", async ({ pa
   await page.getByRole("button", { name: "Best value" }).click();
   await expect(page.getByTestId("wish-score").first()).toContainText("3★ × 1 person ÷ $20 × 1.5");
 
-  // Fund the goal: $100 already saved, $50/month with nothing in yet → $150 by month end.
+  // Fund the goal: $100 already saved, $50/month with nothing in yet > $150 by month end.
   const wl = await (await page.request.get("/api/wishlist")).json();
   const goal = wl.afford.goal_id;
   await page.request.patch(`/api/goals/${goal}`, { headers: csrf, data: { starting: "100" } });

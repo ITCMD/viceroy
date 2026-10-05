@@ -560,7 +560,7 @@ func productPrice(user string) string {
 }
 
 // serveShop serves the product page fixtures in ShopDir under /shop/ for the wishlist e2e:
-// /shop/<name> → <name>.html, images as they are. /shop/short/<name> redirects there.
+// /shop/<name> > <name>.html, images as they are. /shop/short/<name> redirects there.
 func (s *Server) serveShop(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/shop/")
 	if rest, ok := strings.CutPrefix(name, "short/"); ok {

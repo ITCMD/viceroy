@@ -126,7 +126,7 @@ func (s *Server) reportRange(w http.ResponseWriter, r *http.Request) (from, to t
 	return from, to, true
 }
 
-// GET /reports/tree?from=&to=: income (category → merchant) and spending (group → category →
+// GET /reports/tree?from=&to=: income (category > merchant) and spending (group > category >
 // merchant, plus Contributions and Uncategorized) totals over the range, for the cash flow
 // diagram and the spending breakdown.
 func (s *Server) handleReportTree(w http.ResponseWriter, r *http.Request) {

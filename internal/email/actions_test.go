@@ -31,7 +31,7 @@ func TestParseBalance(t *testing.T) {
 	} {
 		b, err := ParseBalance("generic", "", Message{Text: c.text, Date: rcv})
 		if err != nil || b.AmountCents != c.amount || b.AsOf != c.asOf {
-			t.Errorf("%q → %+v %v", c.text, b, err)
+			t.Errorf("%q > %+v %v", c.text, b, err)
 		}
 	}
 	if _, err := ParseBalance("generic", "", Message{Text: "Your statement is ready.", Date: rcv}); err == nil {
@@ -189,7 +189,7 @@ func TestCheckBalanceProblems(t *testing.T) {
 			t.Fatal(err)
 		}
 		if (c.want == "") != (f.Problem == "") || !strings.Contains(f.Problem, c.want) {
-			t.Errorf("%+v → problem %q, want %q", c.res, f.Problem, c.want)
+			t.Errorf("%+v > problem %q, want %q", c.res, f.Problem, c.want)
 		}
 		if c.want == "" && f.BalanceCents != 50000 {
 			t.Errorf("checking balance = %d", f.BalanceCents)

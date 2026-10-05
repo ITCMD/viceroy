@@ -153,7 +153,7 @@ export function chunkLabel(c: Chunk) {
 
 export const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-/** Cents → the editable dollars string ("250", "12.50"). */
+/** Cents > the editable dollars string ("250", "12.50"). */
 export function centsToInput(c: number) {
   return c % 100 === 0 ? String(c / 100) : (c / 100).toFixed(2);
 }

@@ -18,7 +18,7 @@ const groupHints: Record<string, string> = {
 
 type Drag = { id: number; from: number };
 
-/** Settings → Categories: reorder categories and move them between Fixed, Flexible and Non-monthly. */
+/** Settings > Categories: reorder categories and move them between Fixed, Flexible and Non-monthly. */
 export function CategoriesSettings() {
   const qc = useQueryClient();
   const { data } = useQuery(categoriesQuery);

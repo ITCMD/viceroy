@@ -1,5 +1,5 @@
 // Package categorize assigns merchants and categories to new transactions:
-// user rules → merchant history → (optional AI suggester) → uncategorized + needs review.
+// user rules > merchant history > (optional AI suggester) > uncategorized + needs review.
 package categorize
 
 import (
@@ -120,7 +120,7 @@ type Categorizer struct {
 	q         *db.Queries
 	household int64
 	rules     []db.Rule
-	tags      map[int64][]int64 // rule id → tag ids
+	tags      map[int64][]int64 // rule id > tag ids
 	Suggester Suggester
 }
 

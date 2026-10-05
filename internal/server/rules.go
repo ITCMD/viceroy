@@ -51,7 +51,7 @@ func toRuleDTO(r db.Rule, tags []ruleTagDTO) ruleDTO {
 	}
 }
 
-// ruleTagNames maps rule id → its tags, for DTOs.
+// ruleTagNames maps rule id > its tags, for DTOs.
 func ruleTagNames(r *http.Request, q *db.Queries) (map[int64][]ruleTagDTO, error) {
 	rows, err := q.ListRuleTags(r.Context(), HouseholdID(r))
 	if err != nil {

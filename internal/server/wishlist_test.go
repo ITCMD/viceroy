@@ -81,7 +81,7 @@ func TestWishlistAPI(t *testing.T) {
 		t.Fatalf("image = %d", code)
 	}
 
-	// Budget $100/month, $60 put in so far, $200 already saved → $260 now, $300 by month end.
+	// Budget $100/month, $60 put in so far, $200 already saved > $260 now, $300 by month end.
 	today := time.Now().Format(time.DateOnly)
 	month := today[:7]
 	c.do("PATCH", "/api/goals/"+goal, `{"starting":"200"}`, true)

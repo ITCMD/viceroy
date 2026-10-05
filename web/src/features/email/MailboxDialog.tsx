@@ -20,7 +20,7 @@ const securityOptions = [
 ];
 
 /** Add or edit an IMAP mailbox. Saving tests the login first. `turnOnAI` opens it with AI
- * reading switched on and scrolled into view (Settings → AI's "Turn on"). */
+ * reading switched on and scrolled into view (Settings > AI's "Turn on"). */
 export function MailboxDialog({
   open,
   onOpenChange,

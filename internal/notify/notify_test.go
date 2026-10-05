@@ -28,7 +28,7 @@ func TestPaceDay(t *testing.T) {
 	sept := budget.MonthPeriod(budget.Date(2026, 9, 1))
 	for today, want := range map[string]string{
 		"2026-09-01": "2026-09-07", // Tue: the first week runs to Sat 5th, but at least day 7
-		"2026-09-08": "2026-09-12", // Tue → Sat
+		"2026-09-08": "2026-09-12", // Tue > Sat
 		"2026-09-13": "2026-09-19", // Sun starts a week
 		"2026-09-29": "2026-09-30", // capped at month end
 	} {

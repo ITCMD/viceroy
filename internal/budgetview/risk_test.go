@@ -19,7 +19,7 @@ func TestComputeRisk(t *testing.T) {
 	v := View{Month: "2026-10", PaceThrough: "2026-10-10", Groups: []Group{
 		{Kind: "income", Lines: []Line{l(1, 5000_00, 0, 0)}},
 		{Kind: "flexible", Lines: []Line{
-			l(2, 400_00, 200_00, 100_00), // $100 ahead of this week's plan → ends $100 over
+			l(2, 400_00, 200_00, 100_00), // $100 ahead of this week's plan > ends $100 over
 			l(3, 400_00, 50_00, 100_00),  // behind: fine
 			l(4, 300_00, 90_00, 70_00),   // $20 ahead
 			noPace,                       // already $50 over

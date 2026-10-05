@@ -87,7 +87,7 @@ func Fill(ctx context.Context, conn *sql.DB, client Client, hh int64) (int, erro
 		}
 	}
 	type pick struct{ color, source string }
-	known := map[string]pick{} // bank key → color already used at that bank
+	known := map[string]pick{} // bank key > color already used at that bank
 	for _, a := range all {
 		if a.Color == "" || a.Builtin != "" {
 			continue
@@ -177,7 +177,7 @@ func Messages(banks []Bank) []ai.Message {
 	return []ai.Message{{Role: "system", Content: system}, {Role: "user", Content: user}}
 }
 
-// ParseReply maps index → color for valid answers.
+// ParseReply maps index > color for valid answers.
 func ParseReply(text string, n int) map[int]string {
 	text = strings.TrimSpace(text)
 	text = strings.TrimPrefix(strings.TrimPrefix(text, "```json"), "```")

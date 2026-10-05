@@ -67,7 +67,7 @@ func TestAllowance(t *testing.T) {
 		from, to            int
 		want                int64
 	}{
-		// Spec example: $300 left with three weeks to go → $100 this week.
+		// Example: $300 left with three weeks to go > $100 this week.
 		{"spec: 300 left, 3 weeks", 40000, 10000, even28, 8, 14, 10000},
 		{"whole month is the budget", 40000, 0, even28, 1, 28, 40000},
 		{"first week of even", 28000, 0, even28, 1, 7, 7000},
@@ -154,7 +154,7 @@ func TestPeriodAllowanceAcrossMonths(t *testing.T) {
 		k := MonthKey(mp.Month)
 		return budgets[k], spent[k]
 	})
-	// Sep: 4000 left over 4 remaining days, all in the period → 4000. Oct: 31000 × 3/31 = 3000.
+	// Sep: 4000 left over 4 remaining days, all in the period > 4000. Oct: 31000 × 3/31 = 3000.
 	if got != 7000 {
 		t.Fatalf("got %d", got)
 	}
@@ -234,7 +234,7 @@ func TestComputeLine(t *testing.T) {
 	}
 	week2 := Period{d("2026-02-08"), d("2026-02-15")}
 	l := ComputeLine(week2, Chunk{}, rows, d("2026-02-10"), spent, nil)
-	// $300 left over 21 days → $100 for the week; 3 days in → $300×3/21 ≈ $42.86.
+	// $300 left over 21 days > $100 for the week; 3 days in > $300×3/21 ≈ $42.86.
 	if l.Budget != 10000 || l.Actual != 0 || l.Expected != 4286 {
 		t.Fatalf("%+v", l)
 	}

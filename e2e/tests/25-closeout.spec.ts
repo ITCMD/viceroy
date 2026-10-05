@@ -76,7 +76,7 @@ test("close out last month: review, put leftover toward a goal, next month's ris
 
 test("the risk meter asks the AI why", async ({ page }) => {
   await login(page);
-  // This month: $100 for restaurants, already $150 spent → over budget, driving the risk up.
+  // This month: $100 for restaurants, already $150 spent > over budget, driving the risk up.
   const b = await (await page.request.get("/api/budget", { headers })).json();
   const rest = b.groups.flatMap((g: { lines: { id: number; name: string }[] }) => g.lines).find((l: { name: string }) => l.name === "Restaurants & Bars");
   await page.request.put("/api/budget/amount", { headers, data: { category_id: rest.id, month: b.month, amount: "100" } });

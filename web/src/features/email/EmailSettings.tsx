@@ -21,7 +21,7 @@ import {
 import { FilterDialog } from "./FilterDialog";
 import { MailboxDialog } from "./MailboxDialog";
 
-/** Settings → Email alerts tab: mailboxes, filters, and emails that still need a filter. */
+/** Settings > Email alerts tab: mailboxes, filters, and emails that still need a filter. */
 export function EmailSettings() {
   const { data: acctData } = useQuery(accountsQuery);
   const accounts = acctData?.accounts ?? [];

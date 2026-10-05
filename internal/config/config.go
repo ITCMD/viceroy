@@ -226,20 +226,20 @@ cert = ""
 key = ""
 
 [ai]
-# The easiest place for these is Settings → AI in the app (saved there, it wins over this file).
+# The easiest place for these is Settings > AI in the app (saved there, it wins over this file).
 # OpenRouter API key (https://openrouter.ai/keys) for "Chat with your budget". Empty = chat off.
 openrouter_key = ""
 # Any OpenRouter model id that supports tool calling.
 chat_model = "anthropic/claude-sonnet-5.5"
 # Optional: another OpenAI-compatible endpoint instead of OpenRouter.
 base_url = ""
-# Model that reads bank emails no filter caught (turn it on per mailbox in Settings → Email).
+# Model that reads bank emails no filter caught (turn it on per mailbox in Settings > Email).
 # A cheap, fast model is plenty. Empty = chat_model.
 email_model = ""
 # Optional: read those emails with a self-hosted OpenAI-compatible endpoint instead, so they
 # never leave this machine, e.g. Ollama: "http://127.0.0.1:11434/v1" (no API key is sent).
 email_base_url = ""
-# Multimodal model that reads budgets you paste or screenshot (Budget → Import). It must
+# Multimodal model that reads budgets you paste or screenshot (Budget > Import). It must
 # accept images for screenshots. Empty = chat_model.
 vision_model = ""
 local_categorizer = true

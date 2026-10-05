@@ -122,7 +122,7 @@ export function dueLabel(date: string, today: string) {
   return short;
 }
 
-/** "12.50" / "$1,200" → cents; NaN when it isn't a number. */
+/** "12.50" / "$1,200" > cents; NaN when it isn't a number. */
 export function inputToCents(s: string) {
   const n = Number(s.replace(/[$,\s]/g, ""));
   return s.trim() === "" ? NaN : Math.round(n * 100);

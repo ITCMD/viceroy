@@ -50,7 +50,7 @@ type Schedule struct {
 	Suggestions []Series // detected, not tracked and not dismissed (strong and weak)
 	Dismissed   []Series
 
-	paid map[int64][]occ // tracked item id → matched transactions, by date
+	paid map[int64][]occ // tracked item id > matched transactions, by date
 }
 
 // Upcoming is what counts as coming up: tracked items plus strong suggestions, by next date.

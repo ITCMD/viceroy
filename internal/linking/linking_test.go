@@ -191,7 +191,7 @@ func TestRanges(t *testing.T) {
 		for _, posted := range []int64{lo, hi, (lo + hi) / 2} {
 			plo, phi := provisionalRange(posted)
 			if amt < plo || amt > phi {
-				t.Errorf("prov %d → posted %d → prov range [%d, %d] excludes it", amt, posted, plo, phi)
+				t.Errorf("prov %d > posted %d > prov range [%d, %d] excludes it", amt, posted, plo, phi)
 			}
 		}
 	}

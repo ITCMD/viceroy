@@ -28,7 +28,7 @@ func TestCanIBuy(t *testing.T) {
 		t.Fatalf("estimate = %d %v", code, r)
 	}
 
-	// Two past coffees: their median beats the AI's guess. $9 + $7 spent → $8 more is over $10.
+	// Two past coffees: their median beats the AI's guess. $9 + $7 spent > $8 more is over $10.
 	for _, a := range []string{"-9", "-7"} {
 		_, tx := c.do("POST", "/api/transactions", `{"account_id":`+acct+`,"date":"`+today+`","amount":"`+a+`","description":"Corner Coffee"}`, true)
 		c.do("PATCH", fmt.Sprintf("/api/transactions/%v", tx["id"]), `{"category_id":`+coffeeID+`}`, true)

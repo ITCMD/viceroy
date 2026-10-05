@@ -1,4 +1,4 @@
-// Package monarch reads Monarch Money's CSV exports: Transactions (Settings → Data → Export)
+// Package monarch reads Monarch Money's CSV exports: Transactions (Settings > Data > Export)
 // and account Balances history.
 package monarch
 

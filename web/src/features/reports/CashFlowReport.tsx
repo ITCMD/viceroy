@@ -138,7 +138,7 @@ export function CashFlowReport({
   );
 }
 
-/** The spending tree for the model: sections → categories → top merchants. */
+/** The spending tree for the model: sections > categories > top merchants. */
 export function contextTree(root: TreeNode) {
   return (root.children ?? []).map((s) => ({
     section: s.name,
@@ -155,7 +155,7 @@ export function contextTree(root: TreeNode) {
 type Hit = { node: TreeNode; parent?: TreeNode; side: "income" | "spending" };
 
 /**
- * Income sources → Income → spending sections (plus what was saved) → categories, as boxes
+ * Income sources > Income > spending sections (plus what was saved) > categories, as boxes
  * and flows. When spending beat income, "From savings" makes up the difference on the left.
  */
 function buildFlow(tree: ReportTree, t: ReturnType<typeof useChartTokens>) {

@@ -50,7 +50,7 @@ func (s *Server) handleCategoryLayout(w http.ResponseWriter, r *http.Request) {
 	for _, g := range groups {
 		kind[g.ID] = g.Kind
 	}
-	current := map[int64]int64{} // category → group
+	current := map[int64]int64{} // category > group
 	for _, c := range cats {
 		current[c.ID] = c.GroupID
 	}
