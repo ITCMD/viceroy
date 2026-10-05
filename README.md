@@ -18,13 +18,15 @@ Self-hosted budgeting app (Monarch-style). Single binary + one config file.
 I initially came up with the name Viceroy since it's also a kind of royal name like Monarch. Then I found out there's a Viceroy butterfly that looks like a Monarch one. That was just too good not to do.
 
 ## Requiorements
-- A Email account with IMAP access (dedicated is preferred but really doesn't need to be) - this is what you'll point bank notifications to for Viceroy to parse
+- A Email account with IMAP access (dedicated is preferred but really doesn't need to be) - this is what you'll point bank notifications to for Viceroy to parse. I have my own domain and do email through Dynu, which gives me a bunch of email accounts on my domain for pretty cheap. Gave Viceroy budgeting-randomstring@mydomain.com
 - A VPS or local machine to run it on (doesn't need much, maybe 2GB of ram and 1CPU)
 - Ideally a reverse proxy for https (required for the app and notifications)
 - [OpenRouter API key](https://openrouter.ai/) - I use the deepseek pro and flash models and usually pay about $0.05/month in usage currently. Local LLMs work too.
 - A bit of patience as you first train it on emails.
 
-Yes, these screenshots show my real finances, which hopefully shows why I wanted to make this. For reference, I live in New England about as cheaply as you can and just finally got to a job where we're able to save consistently. I say that because in many places in the world, my expenses might seem super high or super cheap. It's all relative to location.
+All of this costs significantly less than a subscription to Monarch, for example, at the time of writing.
+
+Overly honest note, Yes, these screenshots show my real finances, which hopefully shows why I wanted to make this. For reference, I live in New England about as cheaply as you can and just finally got to a job where we're able to save consistently. I say that because in many places in the world, my expenses might seem super high or super cheap. It's all relative to location. Also one of my accounts was missing for a bit since SimpleFin had to update the Cap1 connection (an infrequent issue) so the finances are a bit off.
 
 ## Screenshots
 <img width="1833" height="946" alt="image" src="https://github.com/user-attachments/assets/90560c39-dd79-44df-9f66-fba8e51b7f2e" />
