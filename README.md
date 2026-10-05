@@ -17,7 +17,7 @@ Self-hosted budgeting app (Monarch-style). Single binary + one config file.
 
 I initially came up with the name Viceroy since it's also a kind of royal name like Monarch. Then I found out there's a Viceroy butterfly that looks like a Monarch one. That was just too good not to do.
 
-## Requiorements
+## Requirements
 - A Email account with IMAP access (dedicated is preferred but really doesn't need to be) - this is what you'll point bank notifications to for Viceroy to parse. I have my own domain and do email through Dynu, which gives me a bunch of email accounts on my domain for pretty cheap. Gave Viceroy budgeting-randomstring@mydomain.com
 - A VPS or local machine to run it on (doesn't need much, maybe 2GB of ram and 1CPU)
 - Ideally a reverse proxy for https (required for the app and notifications)
