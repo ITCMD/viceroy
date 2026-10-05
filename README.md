@@ -26,7 +26,7 @@ I initially came up with the name Viceroy since it's also a kind of royal name l
 
 All of this costs significantly less than a subscription to Monarch, for example, at the time of writing.
 
-Overly honest note, Yes, these screenshots show my real finances, which hopefully shows why I wanted to make this. For reference, I live in New England about as cheaply as you can and just finally got to a job where we're able to save consistently. I say that because in many places in the world, my expenses might seem super high or super cheap. It's all relative to location. Also one of my accounts was missing for a bit since SimpleFin had to update the Cap1 connection (an infrequent issue) so the finances are a bit off.
+Overly honest note, Yes, these screenshots show my real finances, which hopefully shows why I wanted to make this. In many places in the world, my expenses might seem super high or super cheap. It's all relative to location. Also one of my accounts was missing for a bit since SimpleFin had to update the Cap1 connection (an infrequent issue) so the finances are a bit off. Anyway...
 
 ## Screenshots
 <img width="1833" height="946" alt="image" src="https://github.com/user-attachments/assets/90560c39-dd79-44df-9f66-fba8e51b7f2e" />
