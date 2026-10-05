@@ -28,6 +28,8 @@ viceroy restore data/backups/viceroy-<time>.tar.gz     # with the server stopped
 viceroy reset-password you@example.com                 # locked out? prints a reset link
 ```
 
+Worst case, ask AI, this is a pretty simple thing a free model should be able to do.
+
 "Chat with your budget" on the dashboard needs an OpenRouter key: set
 `[ai] openrouter_key` (and optionally `chat_model`) and restart.
 
